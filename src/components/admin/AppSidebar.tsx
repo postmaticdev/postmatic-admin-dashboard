@@ -12,6 +12,7 @@ import {
   Users,
   ChevronUp,
   Briefcase,
+  BookOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,6 +33,7 @@ const items = [
   { title: "Workspace Management", url: "/workspace", icon: Briefcase, group: "Utama" },
   { title: "Financing", url: "/financing", icon: BarChart3, group: "Utama" },
   { title: "Feedback & Report", url: "/feedback", icon: MessagesSquare, group: "Layanan" },
+  { title: "Docs Management", url: "/docs-management", icon: BookOpen, group: "Layanan" },
   { title: "Role Management", url: "/roles", icon: ShieldCheck, group: "Sistem" },
   { title: "Log Activity", url: "/logs", icon: ScrollText, group: "Sistem" },
 ];

@@ -23,11 +23,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { messages } from "@/lib/mock/data";
 
 export const Route = createFileRoute("/_admin/compose")({
   validateSearch: (search: Record<string, unknown>) => {
     return {
       type: (search.type as string) || "gmail",
+      replyToId: (search.replyToId as string) || undefined,
+      to: (search.to as string) || undefined,
+      subject: (search.subject as string) || undefined,
     };
   },
   head: () => ({
@@ -37,11 +41,11 @@ export const Route = createFileRoute("/_admin/compose")({
 });
 
 function ComposePage() {
-  const { type } = Route.useSearch();
+  const { type, replyToId, to: searchTo, subject: searchSubject } = Route.useSearch();
   const navigate = useNavigate();
   
-  const [to, setTo] = useState("");
-  const [subject, setSubject] = useState("");
+  const [to, setTo] = useState(searchTo || "");
+  const [subject, setSubject] = useState(searchSubject || "");
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,13 +59,53 @@ function ComposePage() {
       toast.error("Isi pesan tidak boleh kosong!");
       return;
     }
-    if (type === "gmail" && !subject.trim()) {
-      toast.error("Subjek email wajib diisi!");
+    if ((type === "gmail" || type === "report") && !subject.trim()) {
+      toast.error("Subjek wajib diisi!");
       return;
     }
 
+    // Persist to mock data in-memory thread if it is a reply
+    if (replyToId) {
+      const parentMessage = messages.find((m) => m.id === replyToId);
+      if (parentMessage) {
+        const formattedDate = new Date()
+          .toISOString()
+          .replace("T", " ")
+          .substring(0, 16);
+
+        parentMessage.thread.push({
+          id: `t${parentMessage.id}-${parentMessage.thread.length + 1}`,
+          from: "us",
+          body: message,
+          at: formattedDate,
+          attachments: attachments.map((file, idx) => ({
+            id: `att-reply-${idx}`,
+            name: file.name,
+            type: file.type.startsWith("image/") ? "image" : "document",
+            url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+          })),
+        });
+
+        parentMessage.preview = message.substring(0, 80) + "...";
+        parentMessage.unread = false;
+        parentMessage.at = formattedDate;
+
+        if (parentMessage.channel === "Report" && parentMessage.reportStatus === "Open") {
+          parentMessage.reportStatus = "In Progress";
+        }
+      }
+    }
+
     toast.success(`Pesan berhasil dikirim via ${type === "gmail" ? "Gmail" : type === "whatsapp" ? "WhatsApp" : "Report"}!`);
-    navigate({ to: "/feedback", search: { tab: "Chat" } });
+    
+    const targetTab = type === "gmail" ? "Email" : type === "report" ? "Report" : "Chat";
+    navigate({
+      to: "/feedback",
+      search: {
+        tab: targetTab,
+        messageId: replyToId,
+      },
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,7 +130,10 @@ function ComposePage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate({ to: "/feedback", search: { tab: "Chat" } })}
+            onClick={() => {
+              const targetTab = type === "gmail" ? "Email" : type === "report" ? "Report" : "Chat";
+              navigate({ to: "/feedback", search: { tab: targetTab, messageId: replyToId } });
+            }}
             className="hover:bg-muted h-8 w-8"
           >
             <ArrowLeft className="h-5 w-5 text-muted-foreground" />
@@ -158,21 +205,21 @@ function ComposePage() {
             <Input
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              placeholder={type === "gmail" ? "contoh@email.com" : "+62 812-3456-7890"}
+              placeholder={type === "gmail" || type === "report" ? "contoh@email.com atau nama" : "+62 812-3456-7890"}
               className="border-none focus-visible:ring-0 p-0 h-auto bg-transparent text-foreground placeholder:text-muted-foreground/50 w-full text-sm font-normal"
             />
           </div>
           <ChevronDown className="h-4 w-4 text-muted-foreground/60 cursor-pointer" />
         </div>
 
-        {/* Subject Input (Gmail-specific) */}
-        {type === "gmail" && (
+        {/* Subject Input (Gmail & Report) */}
+        {(type === "gmail" || type === "report") && (
           <div className="flex items-center border-b pb-3 text-sm text-muted-foreground">
             <span className="w-16 text-left">Subjek</span>
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Tambahkan subjek email"
+              placeholder={type === "gmail" ? "Tambahkan subjek email" : "Tambahkan subjek laporan"}
               className="border-none focus-visible:ring-0 p-0 h-auto bg-transparent text-foreground placeholder:text-muted-foreground/50 w-full text-sm font-normal"
             />
           </div>

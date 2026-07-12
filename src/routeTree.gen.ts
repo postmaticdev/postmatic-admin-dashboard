@@ -18,6 +18,7 @@ import { Route as AdminRolesRouteImport } from './routes/_admin.roles'
 import { Route as AdminLogsRouteImport } from './routes/_admin.logs'
 import { Route as AdminFinancingRouteImport } from './routes/_admin.financing'
 import { Route as AdminFeedbackRouteImport } from './routes/_admin.feedback'
+import { Route as AdminDocsManagementRouteImport } from './routes/_admin.docs-management'
 import { Route as AdminDashboardRouteImport } from './routes/_admin.dashboard'
 import { Route as AdminComposeRouteImport } from './routes/_admin.compose'
 import { Route as AdminBlastRouteImport } from './routes/_admin.blast'
@@ -67,6 +68,11 @@ const AdminFeedbackRoute = AdminFeedbackRouteImport.update({
   path: '/feedback',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDocsManagementRoute = AdminDocsManagementRouteImport.update({
+  id: '/docs-management',
+  path: '/docs-management',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/blast': typeof AdminBlastRoute
   '/compose': typeof AdminComposeRoute
   '/dashboard': typeof AdminDashboardRoute
+  '/docs-management': typeof AdminDocsManagementRoute
   '/feedback': typeof AdminFeedbackRoute
   '/financing': typeof AdminFinancingRoute
   '/logs': typeof AdminLogsRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByTo {
   '/blast': typeof AdminBlastRoute
   '/compose': typeof AdminComposeRoute
   '/dashboard': typeof AdminDashboardRoute
+  '/docs-management': typeof AdminDocsManagementRoute
   '/feedback': typeof AdminFeedbackRoute
   '/financing': typeof AdminFinancingRoute
   '/logs': typeof AdminLogsRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/_admin/blast': typeof AdminBlastRoute
   '/_admin/compose': typeof AdminComposeRoute
   '/_admin/dashboard': typeof AdminDashboardRoute
+  '/_admin/docs-management': typeof AdminDocsManagementRoute
   '/_admin/feedback': typeof AdminFeedbackRoute
   '/_admin/financing': typeof AdminFinancingRoute
   '/_admin/logs': typeof AdminLogsRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/blast'
     | '/compose'
     | '/dashboard'
+    | '/docs-management'
     | '/feedback'
     | '/financing'
     | '/logs'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/blast'
     | '/compose'
     | '/dashboard'
+    | '/docs-management'
     | '/feedback'
     | '/financing'
     | '/logs'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/_admin/blast'
     | '/_admin/compose'
     | '/_admin/dashboard'
+    | '/_admin/docs-management'
     | '/_admin/feedback'
     | '/_admin/financing'
     | '/_admin/logs'
@@ -248,6 +260,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFeedbackRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/_admin/docs-management': {
+      id: '/_admin/docs-management'
+      path: '/docs-management'
+      fullPath: '/docs-management'
+      preLoaderRoute: typeof AdminDocsManagementRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_admin/dashboard': {
       id: '/_admin/dashboard'
       path: '/dashboard'
@@ -283,6 +302,7 @@ interface AdminRouteChildren {
   AdminBlastRoute: typeof AdminBlastRoute
   AdminComposeRoute: typeof AdminComposeRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminDocsManagementRoute: typeof AdminDocsManagementRoute
   AdminFeedbackRoute: typeof AdminFeedbackRoute
   AdminFinancingRoute: typeof AdminFinancingRoute
   AdminLogsRoute: typeof AdminLogsRoute
@@ -297,6 +317,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBlastRoute: AdminBlastRoute,
   AdminComposeRoute: AdminComposeRoute,
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminDocsManagementRoute: AdminDocsManagementRoute,
   AdminFeedbackRoute: AdminFeedbackRoute,
   AdminFinancingRoute: AdminFinancingRoute,
   AdminLogsRoute: AdminLogsRoute,

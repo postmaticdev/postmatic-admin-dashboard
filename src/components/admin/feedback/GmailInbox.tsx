@@ -20,15 +20,23 @@ const folders = [
 export function GmailInbox({
   messages,
   variant = "email",
+  activeId,
 }: {
   messages: MessageRow[];
   variant?: "email" | "report";
+  activeId?: string;
 }) {
   const navigate = useNavigate();
   const [folder, setFolder] = useState<string>("inbox");
   const [search, setSearch] = useState("");
   const filtered = messages.filter((m) => (m.folder ?? "inbox") === folder || folder === "inbox");
-  const [active, setActive] = useState<MessageRow | null>(filtered[0] ?? null);
+  const [active, setActive] = useState<MessageRow | null>(() => {
+    if (activeId) {
+      const found = messages.find((m) => m.id === activeId);
+      if (found) return found;
+    }
+    return filtered[0] ?? null;
+  });
 
   const [expandedThreads, setExpandedThreads] = useState<Record<string, boolean>>({});
 
@@ -253,50 +261,80 @@ export function GmailInbox({
                   variant="outline"
                   size="sm"
                   className="gap-2 bg-blue-600 hover:bg-blue-700 text-white border-none"
-                  onClick={() => navigate({ to: "/compose", search: { type: "gmail" } })}
+                  onClick={() =>
+                    navigate({
+                      to: "/compose",
+                      search: {
+                        type: "gmail",
+                        replyToId: active.id,
+                        to: active.contactEmail || active.contact,
+                        subject: active.subject.startsWith("Re:") ? active.subject : `Re: ${active.subject}`,
+                      },
+                    })
+                  }
                 >
                   <Send className="h-4 w-4" /> Balas Email
                 </Button>
               </footer>
             ) : (
               <footer className="border-t p-4 bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="text-xs text-muted-foreground font-semibold">
-                  Lacak Status Tiket Laporan:
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant={active.reportStatus === "Open" ? "default" : "outline"}
-                    className={cn("text-xs font-semibold", active.reportStatus === "Open" && "bg-amber-600 hover:bg-amber-700 text-white")}
-                    onClick={() => {
-                      active.reportStatus = "Open";
-                      toast.success("Status laporan diperbarui: Review");
-                    }}
-                  >
-                    Review
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={active.reportStatus === "In Progress" ? "default" : "outline"}
-                    className={cn("text-xs font-semibold", active.reportStatus === "In Progress" && "bg-blue-600 hover:bg-blue-700 text-white")}
-                    onClick={() => {
-                      active.reportStatus = "In Progress";
-                      toast.success("Status laporan diperbarui: In Progress");
-                    }}
-                  >
-                    In Progress
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={active.reportStatus === "Resolved" ? "default" : "outline"}
-                    className={cn("text-xs font-semibold", active.reportStatus === "Resolved" && "bg-emerald-600 hover:bg-emerald-700 text-white")}
-                    onClick={() => {
-                      active.reportStatus = "Resolved";
-                      toast.success("Status laporan diperbarui: Done");
-                    }}
-                  >
-                    Done
-                  </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-violet-600 hover:bg-violet-700 text-white border-none shrink-0"
+                  onClick={() =>
+                    navigate({
+                      to: "/compose",
+                      search: {
+                        type: "report",
+                        replyToId: active.id,
+                        to: active.contact,
+                        subject: active.subject.startsWith("Re:") ? active.subject : `Re: ${active.subject}`,
+                      },
+                    })
+                  }
+                >
+                  <Send className="h-4 w-4" /> Balas Report
+                </Button>
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <div className="text-xs text-muted-foreground font-semibold">
+                    Lacak Status Tiket Laporan:
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={active.reportStatus === "Open" ? "default" : "outline"}
+                      className={cn("text-xs font-semibold", active.reportStatus === "Open" && "bg-amber-600 hover:bg-amber-700 text-white")}
+                      onClick={() => {
+                        active.reportStatus = "Open";
+                        toast.success("Status laporan diperbarui: Review");
+                      }}
+                    >
+                      Review
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={active.reportStatus === "In Progress" ? "default" : "outline"}
+                      className={cn("text-xs font-semibold", active.reportStatus === "In Progress" && "bg-blue-600 hover:bg-blue-700 text-white")}
+                      onClick={() => {
+                        active.reportStatus = "In Progress";
+                        toast.success("Status laporan diperbarui: In Progress");
+                      }}
+                    >
+                      In Progress
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={active.reportStatus === "Resolved" ? "default" : "outline"}
+                      className={cn("text-xs font-semibold", active.reportStatus === "Resolved" && "bg-emerald-600 hover:bg-emerald-700 text-white")}
+                      onClick={() => {
+                        active.reportStatus = "Resolved";
+                        toast.success("Status laporan diperbarui: Done");
+                      }}
+                    >
+                      Done
+                    </Button>
+                  </div>
                 </div>
               </footer>
             )}

@@ -11,6 +11,7 @@ export const Route = createFileRoute("/_admin/feedback")({
   validateSearch: (search: Record<string, unknown>) => {
     return {
       tab: (search.tab as string) || "Chat",
+      messageId: (search.messageId as string) || undefined,
     };
   },
   head: () => ({
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/_admin/feedback")({
 type Ch = "CRM" | "Email" | "Chat" | "Report";
 
 function FeedbackPage() {
-  const { tab: tabParam } = Route.useSearch();
+  const { tab: tabParam, messageId } = Route.useSearch();
   const [tab, setTab] = useState<Ch>((tabParam as Ch) || "Chat");
 
   const handleTabChange = (val: Ch) => {
@@ -33,6 +34,8 @@ function FeedbackPage() {
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.set("tab", val);
+      // Remove messageId parameter on tab change to prevent locking it in search parameters
+      url.searchParams.delete("messageId");
       window.history.replaceState(null, "", url.toString());
     }
   };
@@ -58,9 +61,9 @@ function FeedbackPage() {
       </Tabs>
 
       {tab === "CRM" ? <CrmTab /> : null}
-      {tab === "Email" ? <GmailInbox messages={emailMessages} variant="email" /> : null}
+      {tab === "Email" ? <GmailInbox messages={emailMessages} variant="email" activeId={messageId} /> : null}
       {tab === "Chat" ? <ChatPanel messages={chatMessages} /> : null}
-      {tab === "Report" ? <GmailInbox messages={reportMessages} variant="report" /> : null}
+      {tab === "Report" ? <GmailInbox messages={reportMessages} variant="report" activeId={messageId} /> : null}
     </>
   );
 }
