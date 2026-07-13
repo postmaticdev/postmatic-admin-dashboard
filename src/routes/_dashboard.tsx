@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { AuthGate } from "@/components/auth/AuthGate";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -14,18 +15,19 @@ function DashboardLayout() {
 
   return (
     <ThemeProvider>
-      <TicketsProvider>
-        <div className="flex h-screen w-full flex-col bg-background text-foreground">
-          <AppHeader collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-          <div className="flex min-h-0 flex-1">
-            <AppSidebar collapsed={collapsed} />
-            <main className="min-w-0 flex-1 overflow-hidden">
-              <Outlet />
-            </main>
+      <AuthGate>
+        <TicketsProvider>
+          <div className="flex h-screen w-full flex-col bg-background text-foreground">
+            <AppHeader collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+            <div className="flex min-h-0 flex-1">
+              <AppSidebar collapsed={collapsed} />
+              <main className="min-w-0 flex-1 overflow-hidden">
+                <Outlet />
+              </main>
+            </div>
           </div>
-        </div>
-      </TicketsProvider>
+        </TicketsProvider>
+      </AuthGate>
     </ThemeProvider>
   );
 }
-

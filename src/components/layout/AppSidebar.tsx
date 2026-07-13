@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface NavChild {
@@ -67,6 +68,10 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { logout, user } = useAuth();
+  const profileName = user?.name ?? "Admin";
+  const profileEmail = user?.email ?? "Authenticated";
+  const profileInitials = user?.initials ?? "A";
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -90,22 +95,14 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
         <TooltipProvider delayDuration={100}>
           <ul className="flex flex-col gap-1">
             {NAV.map((item) => (
-              <SidebarItem
-                key={item.label}
-                item={item}
-                collapsed={collapsed}
-                pathname={pathname}
-              />
+              <SidebarItem key={item.label} item={item} collapsed={collapsed} pathname={pathname} />
             ))}
           </ul>
         </TooltipProvider>
       </nav>
 
       {/* Profile section */}
-      <div
-        ref={dropdownRef}
-        className="relative border-t border-border/60 p-2"
-      >
+      <div ref={dropdownRef} className="relative border-t border-border/60 p-2">
         {/* Dropdown menu — appears above the trigger */}
         {profileOpen && (
           <div
@@ -130,7 +127,7 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
                 type="button"
                 onClick={() => {
                   setProfileOpen(false);
-                  // Logout logic placeholder
+                  logout();
                 }}
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-destructive/80 transition-colors hover:bg-destructive/10 hover:text-destructive"
               >
@@ -152,11 +149,11 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
                   className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground ring-2 ring-primary/20">
-                    A
+                    {profileInitials}
                   </div>
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">Admin Profile</TooltipContent>
+              <TooltipContent side="right">{profileName}</TooltipContent>
             </Tooltip>
           ) : (
             <button
@@ -171,11 +168,15 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
             >
               {/* Avatar */}
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-primary/20">
-                A
+                {profileInitials}
               </div>
               <div className="flex min-w-0 flex-1 flex-col items-start text-left">
-                <span className="truncate text-xs font-semibold text-sidebar-foreground">Admin Postmatic</span>
-                <span className="truncate text-[10px] text-sidebar-foreground/50">admin@postmatic.id</span>
+                <span className="truncate text-xs font-semibold text-sidebar-foreground">
+                  {profileName}
+                </span>
+                <span className="truncate text-[10px] text-sidebar-foreground/50">
+                  {profileEmail}
+                </span>
               </div>
               <ChevronDown
                 className={cn(
