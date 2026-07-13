@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { TicketListPanel } from "./TicketListPanel";
 import { TicketDetailPanel } from "./TicketDetailPanel";
 import { GmailComposer } from "./detail/GmailComposer";
+import { useTickets } from "@/contexts/TicketsContext";
 import type { Ticket } from "@/lib/types/ticket";
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
+  const { markAsRead } = useTickets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isComposingEmail, setIsComposingEmail] = useState(false);
   const [replyToData, setReplyToData] = useState<{ to: string; subject: string; ticketId: string } | null>(null);
@@ -20,6 +22,12 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
     setIsComposingEmail(false);
     setReplyToData(null);
   }, [scopeKey]);
+
+  useEffect(() => {
+    if (selectedId) {
+      markAsRead(selectedId);
+    }
+  }, [selectedId, markAsRead]);
 
   const handleSelect = (id: string) => {
     setSelectedId(id);

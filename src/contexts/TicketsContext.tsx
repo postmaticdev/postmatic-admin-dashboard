@@ -11,8 +11,9 @@ interface TicketsContextValue {
   unmarkAsTicket: (id: string) => void;
   togglePinTicket: (id: string) => void;
   createTicket: (ticket: Omit<Ticket, "id" | "updatedAt" | "isSavedAsTicket" | "status"> & { status?: TicketStatus; isSavedAsTicket?: boolean }) => Ticket;
-  updateTicketStatus: (id: string, status: TicketStatus) => void;
+  updateTicketStatus: (id: string, status?: TicketStatus) => void;
   addMessage: (ticketId: string, message: Omit<TicketMessage, "id" | "createdAt">) => void;
+  markAsRead: (id: string) => void;
   getDraft: (key: string) => any;
   setDraft: (key: string, val: any) => void;
 }
@@ -71,7 +72,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   const createTicket = useCallback((newTicketData: Omit<Ticket, "id" | "updatedAt" | "isSavedAsTicket" | "status"> & { status?: TicketStatus; isSavedAsTicket?: boolean }) => {
     const newId = `t-${newTicketData.source}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newTicket: Ticket = {
-      status: newTicketData.status || "review",
+      status: newTicketData.status,
       ...newTicketData,
       id: newId,
       updatedAt: new Date().toISOString(),
@@ -81,17 +82,44 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     return newTicket;
   }, []);
 
-  const updateTicketStatus = useCallback((id: string, status: TicketStatus) => {
+  const updateTicketStatus = useCallback((id: string, status?: TicketStatus) => {
     setTickets((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              status,
-              updatedAt: new Date().toISOString(),
-            }
-          : t,
-      ),
+      prev.map((t) => {
+        if (t.id !== id) return t;
+
+        const oldStatus = t.status;
+        const newStatus = status;
+
+        if (oldStatus === newStatus) return t;
+
+        let content = "";
+        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+        if (!oldStatus && newStatus) {
+          content = `Status ditambahkan menjadi ${capitalize(newStatus)}`;
+        } else if (oldStatus && !newStatus) {
+          content = `Status dihapus`;
+        } else if (oldStatus && newStatus) {
+          content = `Status diubah dari ${capitalize(oldStatus)} menjadi ${capitalize(newStatus)}`;
+        }
+
+        const systemMsg: TicketMessage = {
+          id: `m-system-${Date.now()}`,
+          authorId: "system",
+          authorName: "System",
+          content,
+          createdAt: new Date().toISOString(),
+          direction: "in",
+        };
+
+        return {
+          ...t,
+          status,
+          updatedAt: new Date().toISOString(),
+          snippet: content,
+          messages: [...t.messages, systemMsg],
+        };
+      }),
     );
   }, []);
 
@@ -117,6 +145,16 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const markAsRead = useCallback((id: string) => {
+    setTickets((prev) =>
+      prev.map((t) =>
+        t.id === id && t.unread
+          ? { ...t, unread: false }
+          : t
+      )
+    );
+  }, []);
+
   const value = useMemo<TicketsContextValue>(
     () => ({
       tickets,
@@ -129,10 +167,11 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       createTicket,
       updateTicketStatus,
       addMessage,
+      markAsRead,
       getDraft,
       setDraft,
     }),
-    [tickets, markAsTicket, unmarkAsTicket, togglePinTicket, createTicket, updateTicketStatus, addMessage, getDraft, setDraft],
+    [tickets, markAsTicket, unmarkAsTicket, togglePinTicket, createTicket, updateTicketStatus, addMessage, markAsRead, getDraft, setDraft],
   );
 
   return <TicketsContext.Provider value={value}>{children}</TicketsContext.Provider>;

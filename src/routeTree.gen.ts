@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as DashboardRouteImport } from './routes/_dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardSettingsRouteImport } from './routes/_dashboard.settings'
 import { Route as DashboardFinancingRouteImport } from './routes/_dashboard.financing'
 import { Route as DashboardDocsRouteImport } from './routes/_dashboard.docs'
 import { Route as DashboardCustomerServiceRouteImport } from './routes/_dashboard.customer-service'
@@ -31,6 +32,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardFinancingRoute = DashboardFinancingRouteImport.update({
   id: '/financing',
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
   '/docs': typeof DashboardDocsRoute
   '/financing': typeof DashboardFinancingRoute
+  '/settings': typeof DashboardSettingsRoute
   '/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
   '/docs': typeof DashboardDocsRoute
   '/financing': typeof DashboardFinancingRoute
+  '/settings': typeof DashboardSettingsRoute
   '/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/_dashboard/customer-service': typeof DashboardCustomerServiceRouteWithChildren
   '/_dashboard/docs': typeof DashboardDocsRoute
   '/_dashboard/financing': typeof DashboardFinancingRoute
+  '/_dashboard/settings': typeof DashboardSettingsRoute
   '/_dashboard/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/_dashboard/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/_dashboard/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
@@ -148,6 +157,7 @@ export interface FileRouteTypes {
     | '/customer-service'
     | '/docs'
     | '/financing'
+    | '/settings'
     | '/customer-service/all'
     | '/customer-service/gmail'
     | '/customer-service/website'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/customer-service'
     | '/docs'
     | '/financing'
+    | '/settings'
     | '/customer-service/all'
     | '/customer-service/gmail'
     | '/customer-service/website'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/_dashboard/customer-service'
     | '/_dashboard/docs'
     | '/_dashboard/financing'
+    | '/_dashboard/settings'
     | '/_dashboard/customer-service/all'
     | '/_dashboard/customer-service/gmail'
     | '/_dashboard/customer-service/website'
@@ -206,6 +218,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_dashboard/settings': {
+      id: '/_dashboard/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof DashboardSettingsRouteImport
+      parentRoute: typeof DashboardRoute
     }
     '/_dashboard/financing': {
       id: '/_dashboard/financing'
@@ -313,6 +332,7 @@ interface DashboardRouteChildren {
   DashboardCustomerServiceRoute: typeof DashboardCustomerServiceRouteWithChildren
   DashboardDocsRoute: typeof DashboardDocsRoute
   DashboardFinancingRoute: typeof DashboardFinancingRoute
+  DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRoute
   DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRoute
   DashboardWorkspaceCreatorRoute: typeof DashboardWorkspaceCreatorRoute
@@ -323,6 +343,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardCustomerServiceRoute: DashboardCustomerServiceRouteWithChildren,
   DashboardDocsRoute: DashboardDocsRoute,
   DashboardFinancingRoute: DashboardFinancingRoute,
+  DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRoute,
   DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRoute,
   DashboardWorkspaceCreatorRoute: DashboardWorkspaceCreatorRoute,

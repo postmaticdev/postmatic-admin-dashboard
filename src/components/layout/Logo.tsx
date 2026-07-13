@@ -1,13 +1,20 @@
-import { Send } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export function Logo({ collapsed = false }: { collapsed?: boolean }) {
+  const { theme } = useTheme();
+  const logoSrc = theme === "dark" ? "/logo2.png" : "/logo1.png";
+
   return (
     <div className="flex items-center gap-2">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-        <Send className="h-4 w-4" />
-      </div>
+      <img
+        src={logoSrc}
+        alt="Postmatic Logo"
+        className="h-8 w-auto object-contain"
+      />
       {!collapsed && (
-        <span className="text-lg font-semibold tracking-tight text-foreground">Postmatic</span>
+        <span className="text-lg font-semibold tracking-tight text-foreground">
+          Postmatic
+        </span>
       )}
     </div>
   );

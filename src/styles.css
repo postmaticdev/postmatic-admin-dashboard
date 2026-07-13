@@ -301,3 +301,14 @@
 .docs-btn-red { background-color: #ef4444 !important; border-color: #dc2626 !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.28) !important; }
 .docs-btn-green { background-color: #22c55e !important; border-color: #16a34a !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.28) !important; }
 .docs-btn-grey { background-color: #e2e8f0 !important; border-color: #cbd5e1 !important; color: #0f172a !important; box-shadow: 0 4px 12px rgba(148, 163, 184, 0.12) !important; }
+
+/* Styles for alphabetical list format */
+ol[type="a"], ol.list-alpha {
+  list-style-type: lower-alpha !important;
+}
+.prose ol[type="a"], .prose ol.list-alpha {
+  list-style-type: lower-alpha !important;
+}
+.prose ol[type="a"] > li::marker, .prose ol.list-alpha > li::marker {
+  content: counter(list-item, lower-alpha) ". " !important;
+}

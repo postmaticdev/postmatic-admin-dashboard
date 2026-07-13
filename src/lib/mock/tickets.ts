@@ -13,7 +13,6 @@ export const MOCK_TICKETS: Ticket[] = [
     senderHandle: "+62 812-1000-5000",
     senderAvatar: "https://i.pravatar.cc/80?img=11",
     updatedAt: ago(2),
-    status: "blast",
     isSavedAsTicket: true,
     messages: [
       {
@@ -35,7 +34,6 @@ export const MOCK_TICKETS: Ticket[] = [
     senderHandle: "ahmad.jalal@gmail.com",
     senderAvatar: "https://i.pravatar.cc/80?img=14",
     updatedAt: ago(15),
-    status: "blast",
     isSavedAsTicket: true,
     messages: [
       {
@@ -58,7 +56,6 @@ export const MOCK_TICKETS: Ticket[] = [
     senderHandle: "farida@website.com",
     senderAvatar: "https://i.pravatar.cc/80?img=20",
     updatedAt: ago(45),
-    status: "blast",
     isSavedAsTicket: true,
     messages: [
       {
@@ -82,6 +79,7 @@ export const MOCK_TICKETS: Ticket[] = [
     senderAvatar: "https://i.pravatar.cc/80?img=12",
     updatedAt: ago(5),
     status: "review",
+    unread: true,
     isSavedAsTicket: false,
     messages: [
       {

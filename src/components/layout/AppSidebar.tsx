@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { useState, useRef, useEffect } from "react";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
   FileText,
@@ -16,6 +16,8 @@ import {
   Sparkles,
   Building2,
   Megaphone,
+  Settings,
+  LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -62,6 +64,20 @@ const NAV: NavItem[] = [
 
 export function AppSidebar({ collapsed }: { collapsed: boolean }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [profileOpen, setProfileOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   return (
     <aside
@@ -84,6 +100,93 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
           </ul>
         </TooltipProvider>
       </nav>
+
+      {/* Profile section */}
+      <div
+        ref={dropdownRef}
+        className="relative border-t border-border/60 p-2"
+      >
+        {/* Dropdown menu — appears above the trigger */}
+        {profileOpen && (
+          <div
+            className={cn(
+              "absolute bottom-full left-2 right-2 mb-1 overflow-hidden rounded-xl border border-border bg-popover shadow-xl shadow-black/10 backdrop-blur-sm",
+              "animate-in fade-in slide-in-from-bottom-2 duration-150",
+            )}
+          >
+            <div className="p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileOpen(false);
+                  navigate({ to: "/settings" });
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span>Settings</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileOpen(false);
+                  // Logout logic placeholder
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-destructive/80 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Profile trigger button */}
+        <TooltipProvider delayDuration={100}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen((o) => !o)}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground ring-2 ring-primary/20">
+                    A
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Admin Profile</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setProfileOpen((o) => !o)}
+              className={cn(
+                "flex h-11 w-full items-center gap-3 rounded-xl px-3 transition-colors",
+                profileOpen
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              )}
+            >
+              {/* Avatar */}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-primary/20">
+                A
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col items-start text-left">
+                <span className="truncate text-xs font-semibold text-sidebar-foreground">Admin Postmatic</span>
+                <span className="truncate text-[10px] text-sidebar-foreground/50">admin@postmatic.id</span>
+              </div>
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50 transition-transform duration-200",
+                  profileOpen && "rotate-180",
+                )}
+              />
+            </button>
+          )}
+        </TooltipProvider>
+      </div>
     </aside>
   );
 }

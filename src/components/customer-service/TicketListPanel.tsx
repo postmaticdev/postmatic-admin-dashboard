@@ -124,7 +124,11 @@ export function TicketListPanel({
     // 2. Status Filter
     let matchesStatus = true;
     if (statusFilter !== "all") {
-      matchesStatus = t.status === statusFilter;
+      if (statusFilter === "none") {
+        matchesStatus = !t.status;
+      } else {
+        matchesStatus = t.status === statusFilter;
+      }
     }
 
     // 3. Platform Filter (only if scopeKey === "all")
@@ -194,7 +198,7 @@ export function TicketListPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="text-xs">Semua Status</SelectItem>
-              <SelectItem value="blast" className="text-xs">Blast</SelectItem>
+              <SelectItem value="none" className="text-xs">Tanpa Status</SelectItem>
               <SelectItem value="review" className="text-xs">Review</SelectItem>
               <SelectItem value="progress" className="text-xs">Progress</SelectItem>
               <SelectItem value="done" className="text-xs">Done</SelectItem>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Paperclip, Send, X, FileText, CornerUpLeft, Image as ImageIcon, Video as VideoIcon } from "lucide-react";
 import { MarkAsTicketButton } from "../MarkAsTicketButton";
@@ -122,6 +122,15 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
     setDraft(draftKey, null);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (inputText.trim() || attachments.length > 0) {
+        handleSend(e);
+      }
+    }
+  };
+
   const isImage = (name: string, type?: string) => {
     if (type?.startsWith("image/")) return true;
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(name);
@@ -155,6 +164,15 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
       <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="flex flex-col gap-3 px-6 py-6">
           {ticket.messages.map((m) => {
+            if (m.authorId === "system") {
+              return (
+                <div key={m.id} className="flex justify-center my-1 w-full">
+                  <div className="rounded-full bg-muted/80 border border-border/50 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                    {m.content} ({formatTime(m.createdAt)})
+                  </div>
+                </div>
+              );
+            }
             const out = m.direction === "out";
             return (
               <div
@@ -341,11 +359,13 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
             >
               <Paperclip className="h-4 w-4" />
             </Button>
-            <Input
+            <Textarea
               value={inputText}
               onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Ketik pesan..."
-              className="flex-1 h-9 text-sm placeholder:text-muted-foreground/70 bg-muted/30 focus-visible:ring-1"
+              rows={1}
+              className="flex-1 min-h-[36px] h-9 max-h-24 py-2 resize-none text-sm placeholder:text-muted-foreground/70 bg-muted/30 focus-visible:ring-1"
             />
             <Button
               type="submit"

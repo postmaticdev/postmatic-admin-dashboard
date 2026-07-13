@@ -2,10 +2,6 @@ import { cn } from "@/lib/utils";
 import type { TicketStatus } from "@/lib/types/ticket";
 
 const MAP: Record<TicketStatus, { label: string; cls: string }> = {
-  blast: {
-    label: "Blast",
-    cls: "bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/20",
-  },
   review: {
     label: "Review",
     cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20",
@@ -20,8 +16,10 @@ const MAP: Record<TicketStatus, { label: string; cls: string }> = {
   },
 };
 
-export function StatusBadge({ status }: { status: TicketStatus }) {
+export function StatusBadge({ status }: { status?: TicketStatus }) {
+  if (!status) return null;
   const cfg = MAP[status];
+  if (!cfg) return null;
   return (
     <span
       className={cn(

@@ -16,6 +16,10 @@ interface Props {
 export function TicketCard({ ticket, active, onSelect }: Props) {
   const { togglePinTicket } = useTickets();
 
+  const lastMessage = ticket.messages[ticket.messages.length - 1];
+  const isUnread = ticket.unread === true;
+  const isUnreplied = !isUnread && lastMessage && lastMessage.direction === "in";
+
   return (
     <button
       type="button"
@@ -38,6 +42,12 @@ export function TicketCard({ ticket, active, onSelect }: Props) {
               <span className="text-[11px] text-muted-foreground">
                 {formatRelative(ticket.updatedAt)}
               </span>
+              {isUnread && (
+                <span className="h-2 w-2 rounded-full bg-[#ff3b30] shrink-0" title="Belum dibaca" />
+              )}
+              {isUnreplied && (
+                <span className="h-2 w-2 rounded-full bg-neutral-400 dark:bg-neutral-500 shrink-0" title="Belum dibalas" />
+              )}
               <button
                 type="button"
                 onClick={(e) => {

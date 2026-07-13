@@ -3,13 +3,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import TextAlign from "@tiptap/extension-text-align";
+import LinkExtension from "@tiptap/extension-link";
+import OrderedList from "@tiptap/extension-ordered-list";
 import {
   Paperclip,
   Send,
   Bold,
   Italic,
-  Underline,
-  Link,
+  Underline as UnderlineIcon,
+  Link as LinkIcon,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -22,8 +28,26 @@ import { MarkAsTicketButton } from "../MarkAsTicketButton";
 import { StatusBadge } from "../StatusBadge";
 import { TicketStatusSelector } from "../TicketStatusSelector";
 import { useTickets } from "@/contexts/TicketsContext";
-import { formatRelative } from "@/lib/utils/date";
+import { cn } from "@/lib/utils";
+import { formatRelative, formatDateTime } from "@/lib/utils/date";
 import type { Ticket, TicketMessage } from "@/lib/types/ticket";
+
+const CustomOrderedList = OrderedList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      type: {
+        default: "1",
+        parseHTML: (element) => element.getAttribute("type"),
+        renderHTML: (attributes) => {
+          return {
+            type: attributes.type,
+          };
+        },
+      },
+    };
+  },
+});
 
 export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   const { addMessage, getDraft, setDraft } = useTickets();
@@ -34,8 +58,32 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   const [replyingTo, setReplyingTo] = useState<TicketMessage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2, 3],
+        },
+        orderedList: false,
+      }),
+      CustomOrderedList,
+      Underline,
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+      }),
+      LinkExtension.configure({
+        openOnClick: false,
+      }),
+    ],
+    content: editorHtml,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      setEditorHtml(html);
+      saveDraft(subject, html);
+    },
+  });
 
   // Load draft when ticket.id changes
   useEffect(() => {
@@ -43,21 +91,17 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
     if (saved) {
       setSubject(saved.subject || "");
       setEditorHtml(saved.html || "");
-      if (editorRef.current) {
-        editorRef.current.innerHTML = saved.html || "";
-      }
+      editor?.commands.setContent(saved.html || "");
     } else {
       setSubject("");
       setEditorHtml("");
-      if (editorRef.current) {
-        editorRef.current.innerHTML = "";
-      }
+      editor?.commands.setContent("");
     }
     setReplyingTo(null);
-  }, [ticket.id, getDraft, draftKey]);
+  }, [ticket.id, getDraft, draftKey, editor]);
 
   const saveDraft = (sub: string, html: string) => {
-    if (sub.trim() || (html && html !== "<br>")) {
+    if (sub.trim() || (html && html !== "<p></p>")) {
       setDraft(draftKey, { subject: sub, html });
     } else {
       setDraft(draftKey, null);
@@ -67,11 +111,6 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   const handleSubjectChange = (val: string) => {
     setSubject(val);
     saveDraft(val, editorHtml);
-  };
-
-  const handleEditorInput = (html: string) => {
-    setEditorHtml(html);
-    saveDraft(subject, html);
   };
 
   // Recursively extract all messages and replies, then sort them chronologically
@@ -100,76 +139,16 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
     }
   }, [ticket.messages, replyingTo]);
 
-  const execCommand = (command: string, value: string = "") => {
-    document.execCommand(command, false, value);
-    if (editorRef.current) {
-      handleEditorInput(editorRef.current.innerHTML);
-    }
-  };
-
-  const execListCommand = (listType: "bullet" | "number" | "abc") => {
-    if (listType === "bullet") {
-      execCommand("insertUnorderedList");
-    } else if (listType === "number") {
-      execCommand("insertOrderedList");
-    } else if (listType === "abc") {
-      execCommand("insertOrderedList");
-      // Find the active <ol> in selection and set type="a"
-      const sel = window.getSelection();
-      if (sel && sel.anchorNode) {
-        const parentOl = sel.anchorNode.parentElement?.closest("ol");
-        if (parentOl) {
-          parentOl.setAttribute("type", "a");
-        } else if (editorRef.current) {
-          const ols = editorRef.current.getElementsByTagName("ol");
-          if (ols.length > 0) {
-            ols[ols.length - 1].setAttribute("type", "a");
-          }
-        }
-      }
-    }
-  };
-
   const handleLink = () => {
     const url = prompt("Masukkan URL:");
     if (url) {
-      execCommand("createLink", url);
-    }
-  };
-
-  const insertHtmlAtCursor = (html: string) => {
-    const sel = window.getSelection();
-    if (sel && sel.getRangeAt && sel.rangeCount) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const el = document.createElement("div");
-      el.innerHTML = html;
-      const frag = document.createDocumentFragment();
-      let node;
-      let lastNode;
-      while ((node = el.firstChild)) {
-        lastNode = frag.appendChild(node);
-      }
-      range.insertNode(frag);
-      if (lastNode) {
-        range.setStartAfter(lastNode);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    } else {
-      if (editorRef.current) {
-        editorRef.current.innerHTML += html;
-      }
-    }
-    if (editorRef.current) {
-      handleEditorInput(editorRef.current.innerHTML);
+      editor?.chain().focus().toggleLink({ href: url }).run();
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || !editor) return;
 
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
@@ -186,7 +165,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
             htmlToInsert = `<a href="${dataUrl}" download="${file.name}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; text-decoration: underline; font-weight: 500; font-size: 12px; margin: 4px 0; color: inherit;">📎 ${file.name}</a>`;
           }
 
-          insertHtmlAtCursor(htmlToInsert);
+          editor.chain().focus().insertContent(htmlToInsert).run();
         }
       };
       reader.readAsDataURL(file);
@@ -198,7 +177,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     const content = editorHtml.trim();
-    if (!content || content === "<br>") return;
+    if (!content || content === "<p></p>" || content === "<br>") return;
 
     addMessage(ticket.id, {
       authorId: "cs-agent",
@@ -216,9 +195,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
 
     setSubject("");
     setEditorHtml("");
-    if (editorRef.current) {
-      editorRef.current.innerHTML = "";
-    }
+    editor?.commands.setContent("");
     setReplyingTo(null);
     setDraft(draftKey, null);
   };
@@ -243,8 +220,18 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
 
       <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
-          {flatMessages.map((m) => (
-            <article key={m.id} className="rounded-lg border border-border bg-card p-4 shadow-sm relative group flex items-start justify-between gap-3">
+          {flatMessages.map((m) => {
+            if (m.authorId === "system") {
+              return (
+                <div key={m.id} className="flex justify-center my-3 w-full">
+                  <div className="rounded-full bg-muted border border-border/50 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                    {m.content} ({formatDateTime(m.createdAt)})
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <article key={m.id} className="rounded-lg border border-border bg-card p-4 shadow-sm relative group flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="mb-3 flex items-center gap-3">
                   <Avatar className="h-8 w-8">
@@ -301,7 +288,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
                 <CornerUpLeft className="h-3.5 w-3.5" />
               </button>
             </article>
-          ))}
+          )})}
         </div>
       </ScrollArea>
 
@@ -344,32 +331,52 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("formatBlock", "H1")}
-              className="h-7 px-2 text-xs font-bold hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+              className={cn(
+                "h-7 px-2 text-xs font-bold rounded transition-colors shrink-0",
+                editor?.isActive("heading", { level: 1 })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               H1
             </button>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("formatBlock", "H2")}
-              className="h-7 px-2 text-xs font-bold hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+              className={cn(
+                "h-7 px-2 text-xs font-bold rounded transition-colors shrink-0",
+                editor?.isActive("heading", { level: 2 })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               H2
             </button>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("formatBlock", "H3")}
-              className="h-7 px-2 text-xs font-bold hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
+              className={cn(
+                "h-7 px-2 text-xs font-bold rounded transition-colors shrink-0",
+                editor?.isActive("heading", { level: 3 })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               H3
             </button>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("formatBlock", "P")}
-              className="h-7 px-2 text-xs font-semibold hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              onClick={() => editor?.chain().focus().setParagraph().run()}
+              className={cn(
+                "h-7 px-2 text-xs font-semibold rounded transition-colors shrink-0",
+                editor?.isActive("paragraph")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               Paragraf
             </button>
@@ -380,9 +387,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("bold") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("bold")}
+              onClick={() => editor?.chain().focus().toggleBold().run()}
             >
               <Bold className="h-3.5 w-3.5" />
             </Button>
@@ -390,9 +400,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("italic") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("italic")}
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
             >
               <Italic className="h-3.5 w-3.5" />
             </Button>
@@ -400,21 +413,27 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("underline") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("underline")}
+              onClick={() => editor?.chain().focus().toggleUnderline().run()}
             >
-              <Underline className="h-3.5 w-3.5" />
+              <UnderlineIcon className="h-3.5 w-3.5" />
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("link") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleLink}
             >
-              <Link className="h-3.5 w-3.5" />
+              <LinkIcon className="h-3.5 w-3.5" />
             </Button>
 
             <span className="w-px h-4 bg-border mx-1 shrink-0" />
@@ -423,9 +442,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive({ textAlign: "left" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("justifyLeft")}
+              onClick={() => editor?.chain().focus().setTextAlign("left").run()}
             >
               <AlignLeft className="h-3.5 w-3.5" />
             </Button>
@@ -433,9 +455,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive({ textAlign: "center" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("justifyCenter")}
+              onClick={() => editor?.chain().focus().setTextAlign("center").run()}
             >
               <AlignCenter className="h-3.5 w-3.5" />
             </Button>
@@ -443,9 +468,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive({ textAlign: "right" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execCommand("justifyRight")}
+              onClick={() => editor?.chain().focus().setTextAlign("right").run()}
             >
               <AlignRight className="h-3.5 w-3.5" />
             </Button>
@@ -456,9 +484,12 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("bulletList") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execListCommand("bullet")}
+              onClick={() => editor?.chain().focus().toggleBulletList().run()}
               title="Bullet list"
             >
               <List className="h-3.5 w-3.5" />
@@ -467,18 +498,30 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "h-7 w-7 shrink-0",
+                editor?.isActive("orderedList") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execListCommand("number")}
+              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
               title="Numbered list"
             >
               <ListOrdered className="h-3.5 w-3.5" />
             </Button>
             <button
               type="button"
-              className="h-7 px-1 text-[10px] font-bold border border-border hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 flex items-center justify-center gap-0.5"
+              className={cn(
+                "h-7 px-1 text-[10px] font-bold border border-border rounded transition-colors shrink-0 flex items-center justify-center gap-0.5",
+                editor?.isActive("orderedList", { type: "a" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => execListCommand("abc")}
+              onClick={() => {
+                if (editor?.isActive("orderedList", { type: "a" })) {
+                  editor.chain().focus().toggleOrderedList().run();
+                } else {
+                  editor?.chain().focus().toggleOrderedList().updateAttributes("orderedList", { type: "a" }).run();
+                }
+              }}
               title="ABC list"
             >
               <ListOrdered className="h-3 w-3 shrink-0" />
@@ -505,16 +548,16 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
             </Button>
           </div>
 
-          {/* Contenteditable Editor */}
-          <div className="relative">
-            <div
-              ref={editorRef}
-              contentEditable
-              onInput={(e) => handleEditorInput(e.currentTarget.innerHTML)}
-              onBlur={(e) => handleEditorInput(e.currentTarget.innerHTML)}
-              data-placeholder="Tulis balasan laporan di sini... (Sisipkan media tepat pada kursor)"
-              className="min-h-[100px] max-h-48 overflow-y-auto w-full bg-muted/20 border border-t-0 border-border/70 rounded-b-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring focus:border-border/70 select-text
-                empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60 empty:before:pointer-events-none"
+          {/* Tiptap Editor Content */}
+          <div className="relative border border-t-0 border-border/70 rounded-b-md bg-muted/20">
+            {editor && editor.isEmpty && (
+              <div className="absolute left-3 top-2 text-muted-foreground/60 text-sm pointer-events-none select-none">
+                Tulis balasan laporan di sini... (Sisipkan media tepat pada kursor)
+              </div>
+            )}
+            <EditorContent
+              editor={editor}
+              className="min-h-[100px] max-h-48 overflow-y-auto w-full px-3 py-2 text-sm focus:outline-none select-text prose prose-sm max-w-none focus-within:ring-1 focus-within:ring-ring [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[84px] [&_.ProseMirror]:max-h-44"
             />
           </div>
 
@@ -522,7 +565,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
           <div className="flex justify-end shrink-0">
             <Button
               type="submit"
-              disabled={!editorHtml.trim() || editorHtml === "<br>"}
+              disabled={!editorHtml.trim() || editorHtml === "<p></p>" || editorHtml === "<br>"}
               className="h-9 px-4 gap-1.5 font-medium text-xs rounded shadow-sm"
             >
               <Send className="h-3.5 w-3.5" />

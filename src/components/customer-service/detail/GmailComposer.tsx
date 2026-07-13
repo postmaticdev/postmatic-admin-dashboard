@@ -5,12 +5,8 @@ import {
   Bold,
   Italic,
   Underline,
-  Baseline,
-  Highlighter,
   List,
   ListOrdered,
-  CaseSensitive,
-  Type,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -371,32 +367,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
         >
           <Underline className="h-4 w-4" />
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const color = prompt("Masukkan warna teks (hex atau nama warna):", "#ff0000");
-            if (color) execCommand("foreColor", color);
-          }}
-          className="h-8 w-8 text-muted-foreground"
-        >
-          <Baseline className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const color = prompt("Masukkan warna highlighter:", "#ffff00");
-            if (color) execCommand("hiliteColor", color);
-          }}
-          className="h-8 w-8 text-muted-foreground"
-        >
-          <Highlighter className="h-4 w-4" />
-        </Button>
+
 
         <span className="w-px h-4 bg-border mx-1 shrink-0" />
 
@@ -498,31 +469,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
           <Paperclip className="h-4 w-4" />
         </Button>
 
-        <span className="w-px h-4 bg-border mx-1 shrink-0" />
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const size = prompt("Masukkan ukuran font (1-7):", "3");
-            if (size) execCommand("fontSize", size);
-          }}
-          className="h-8 w-8 text-muted-foreground"
-        >
-          <CaseSensitive className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => execCommand("removeFormat")}
-          className="h-8 w-8 text-muted-foreground"
-        >
-          <Type className="h-4 w-4" />
-        </Button>
       </div>
     </div>
   );

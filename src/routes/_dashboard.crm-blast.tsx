@@ -216,7 +216,6 @@ function CrmBlastPage() {
         senderName: contactName,
         senderHandle: handle,
         senderAvatar: `https://i.pravatar.cc/80?u=${encodeURIComponent(handle)}`,
-        status: "blast",
         isSavedAsTicket: true,
         messages: [
           {

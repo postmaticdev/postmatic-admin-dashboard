@@ -1,5 +1,5 @@
 export type TicketSource = "whatsapp" | "gmail" | "website";
-export type TicketStatus = "blast" | "review" | "progress" | "done";
+export type TicketStatus = "review" | "progress" | "done";
 
 export interface TicketMessage {
   id: string;
@@ -24,7 +24,8 @@ export interface Ticket {
   senderHandle: string;
   senderAvatar?: string;
   updatedAt: string;
-  status: TicketStatus;
+  status?: TicketStatus;
+  unread?: boolean;
   isSavedAsTicket: boolean;
   isPinned?: boolean;
   messages: TicketMessage[];

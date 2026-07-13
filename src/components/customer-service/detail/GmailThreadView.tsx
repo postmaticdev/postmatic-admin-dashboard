@@ -35,11 +35,21 @@ export function GmailThreadView({ ticket, onReplyEmail }: Props) {
 
       <ScrollArea className="flex-1 pb-20">
         <div className="mx-auto max-w-3xl px-6 py-6">
-          {ticket.messages.map((m, i) => (
-            <div key={m.id}>
-              {i > 0 && <Separator className="my-4" />}
-              <article className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-3">
+          {ticket.messages.map((m, i) => {
+            if (m.authorId === "system") {
+              return (
+                <div key={m.id} className="flex justify-center my-3 w-full">
+                  <div className="rounded-full bg-muted border border-border/50 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                    {m.content} ({formatDateTime(m.createdAt)})
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={m.id}>
+                {i > 0 && <Separator className="my-4" />}
+                <article className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-3">
                   <Avatar className="h-9 w-9">
                     <AvatarImage src={m.authorAvatar ?? ticket.senderAvatar} alt={m.authorName} />
                     <AvatarFallback>{m.authorName.charAt(0)}</AvatarFallback>
@@ -64,7 +74,7 @@ export function GmailThreadView({ ticket, onReplyEmail }: Props) {
                 />
               </article>
             </div>
-          ))}
+          )})}
         </div>
       </ScrollArea>
 
