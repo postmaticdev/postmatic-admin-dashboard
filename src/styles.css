@@ -1,5 +1,6 @@
 @import "tailwindcss" source(none);
 @source "../src";
+@plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -46,14 +47,6 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-ring-offset-background: var(--background);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-info: var(--info);
-  --color-info-foreground: var(--info-foreground);
-  --shadow-card: var(--shadow-card);
-  --shadow-elevated: var(--shadow-elevated);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -71,46 +64,38 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.977 0.004 247);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.546 0.215 262);
-  --primary-foreground: oklch(1 0 0);
+  --primary: oklch(0.55 0.19 255);
+  --primary-foreground: oklch(0.985 0.005 255);
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
   --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.955 0.02 253);
-  --accent-foreground: oklch(0.546 0.215 262);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.546 0.215 262);
-  --success: oklch(0.63 0.17 149);
-  --success-foreground: oklch(1 0 0);
-  --warning: oklch(0.78 0.16 76);
-  --warning-foreground: oklch(0.25 0.05 70);
-  --info: oklch(0.65 0.15 232);
-  --info-foreground: oklch(1 0 0);
-  --shadow-card: 0 1px 2px 0 oklch(0.2 0.04 265 / 0.04), 0 1px 3px 0 oklch(0.2 0.04 265 / 0.06);
-  --shadow-elevated: 0 4px 12px -2px oklch(0.2 0.04 265 / 0.08), 0 2px 4px -2px oklch(0.2 0.04 265 / 0.05);
+  --ring: oklch(0.704 0.04 256.788);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.984 0.003 247.858);
   --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.546 0.215 262);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.955 0.02 253);
-  --sidebar-accent-foreground: oklch(0.546 0.215 262);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.546 0.215 262);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
 }
 
 .dark {
@@ -120,8 +105,8 @@
   --card-foreground: oklch(0.984 0.003 247.858);
   --popover: oklch(0.208 0.042 265.755);
   --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
+  --primary: oklch(0.7 0.18 255);
+  --primary-foreground: oklch(0.15 0.03 255);
   --secondary: oklch(0.279 0.041 260.031);
   --secondary-foreground: oklch(0.984 0.003 247.858);
   --muted: oklch(0.279 0.041 260.031);
@@ -159,437 +144,160 @@
   }
 }
 
-/* TipTap Editor Styles */
-.ProseMirror {
-  outline: none !important;
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  min-height: 440px;
-  padding: 24px 40px;
+/* Custom Tiptap Editor Prose Styling */
+.prose {
+  h1 { font-size: 1.875rem; font-weight: 800; margin-top: 1.5rem; margin-bottom: 1rem; color: var(--color-foreground); }
+  h2 { font-size: 1.5rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.75rem; color: var(--color-foreground); }
+  h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: var(--color-foreground); }
+  ul { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+  ol { list-style-type: decimal; padding-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+  p { margin-top: 0.75rem; margin-bottom: 0.75rem; }
+  a { color: var(--color-primary); text-decoration: underline; font-weight: 500; }
+  
+  /* Table Styles */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th {
+    background-color: oklch(0.98 0 0);
+    color: var(--color-foreground);
+    font-weight: 600;
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+    color: var(--color-muted-foreground);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) { background-color: oklch(0.99 0 0); }
 }
 
-.ProseMirror h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  color: var(--color-foreground);
-}
+.dark .prose th { background-color: oklch(0.2 0 0); }
+.dark .prose tr:nth-child(even) { background-color: oklch(0.18 0 0); }
 
-.ProseMirror h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  color: var(--color-foreground);
-}
-
-.ProseMirror h3 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-top: 0.75rem;
-  margin-bottom: 0.35rem;
-  color: var(--color-foreground);
-}
-
-.ProseMirror p {
-  margin-bottom: 0.75rem;
-  line-height: 1.6;
-}
-
-.ProseMirror ul {
-  list-style-type: disc;
-  padding-left: 1.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.ProseMirror ol {
-  list-style-type: decimal;
-  padding-left: 1.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.ProseMirror code {
-  background: rgba(148, 163, 184, 0.15);
-  padding: 0.15rem 0.35rem;
-  border-radius: 0.25rem;
-  font-size: 0.85em;
-  font-family: monospace;
-}
-
-/* Explicit formatting styles to override Tailwind Preflight resets in editor */
-.ProseMirror strong, 
-.ProseMirror b {
-  font-weight: 700 !important;
-}
-
-.ProseMirror em, 
-.ProseMirror i {
-  font-style: italic !important;
-}
-
-.ProseMirror u {
-  text-decoration: underline !important;
-}
-
-.ProseMirror s, 
-.ProseMirror strike, 
-.ProseMirror del {
-  text-decoration: line-through !important;
-}
-
-.ProseMirror a {
-  color: #2563eb !important;
-  text-decoration: underline !important;
-  cursor: pointer !important;
-}
-
-.ProseMirror a[style*="display: inline-block"],
-.ProseMirror a[style*="border-radius"] {
-  text-decoration: none !important;
-}
-
-.ProseMirror .text-align-left {
-  text-align: left !important;
-}
-
-.ProseMirror .text-align-center {
-  text-align: center !important;
-}
-
-.ProseMirror .text-align-right {
-  text-align: right !important;
-}
-
-.ProseMirror .text-align-justify {
-  text-align: justify !important;
-}
-
-/* Standar Dokumentasi Garis Pemisah (Break / Horizontal Rule) */
-.ProseMirror hr,
-hr.docs-break {
-  border: none;
-  border-top: 1.5px solid #cbd5e1;
-  margin: 12px 0;
-  height: 0;
-}
-
-.dark .ProseMirror hr,
-.dark hr.docs-break {
-  border-top-color: rgba(148, 163, 184, 0.28);
-}
-
-/* Standar Dokumentasi Tabel Spesifikasi API & Parameter (Sesuai Lampiran) */
-.ProseMirror table,
-.docs-spec-table {
-  border-collapse: collapse;
-  margin: 20px 0;
-  width: 100%;
-  font-size: 13.5px;
-  line-height: 1.5;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #f1f5f9;
-}
-
-.ProseMirror table th,
-.docs-spec-table th {
-  background-color: #ffffff;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 14px;
-  text-align: left;
-  padding: 14px 18px;
-  border: 1px solid #f1f5f9;
-}
-
-.ProseMirror table td,
-.docs-spec-table td {
-  padding: 14px 18px;
-  border: 1px solid #f1f5f9;
-  vertical-align: middle;
-  color: #334155;
-  background-color: inherit;
-}
-
-/* Zebra Striping */
-.ProseMirror table tbody tr:nth-child(odd),
-.docs-spec-table tbody tr:nth-child(odd) {
-  background-color: #ffffff;
-}
-
-.ProseMirror table tbody tr:nth-child(even),
-.docs-spec-table tbody tr:nth-child(even) {
-  background-color: #f8fafc;
-}
-
-/* Monospace styling for code inside table cells */
-.ProseMirror table td code,
-.docs-spec-table td code {
-  font-family: "Fira Code", Consolas, monospace;
-  font-size: 13px;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-}
-
-/* Wajib column styling helpers */
-.wajib-ya,
-.badge-wajib-ya {
-  color: #ef4444;
-  font-weight: 500;
-}
-
-.wajib-tidak,
-.badge-wajib-tidak {
-  color: #64748b;
-}
-
-.dark .ProseMirror table th,
-.dark .docs-spec-table th {
-  background-color: #0f172a;
-  color: #f8fafc;
-  border-color: #1e293b;
-}
-
-.dark .ProseMirror table td,
-.dark .docs-spec-table td {
-  border-color: #1e293b;
-  color: #cbd5e1;
-}
-
-.dark .ProseMirror table tbody tr:nth-child(odd),
-.dark .docs-spec-table tbody tr:nth-child(odd) {
-  background-color: #0f172a;
-}
-
-.dark .ProseMirror table tbody tr:nth-child(even),
-.dark .docs-spec-table tbody tr:nth-child(even) {
-  background-color: #1e293b;
-}
-
-/* Standar Dokumentasi Code Snippet Box (Light Mode) */
-.ProseMirror .code-snippet-box {
-  border-radius: 10px;
-  margin: 18px 0;
-  border: 1px solid #e2e8f0;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.ProseMirror .code-snippet-box pre {
-  margin: 0;
-  padding: 16px;
-  overflow-x: auto;
-  line-height: 1.6;
-  font-family: "Fira Code", Consolas, monospace;
-  font-size: 13px;
-  background: #ffffff;
-  color: #0f172a;
-}
-
-.ProseMirror .code-snippet-box pre code {
-  font-family: inherit;
-  color: inherit;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-}
-
-.ProseMirror-selectednode {
-  outline: 3px solid #3b82f6 !important;
-  outline-offset: 2px;
-  border-radius: 6px;
-  transition: outline 0.1s ease-in-out;
-}
-
-/* Standar Dokumentasi Admonition Cards (Sesuai Lampiran Peringatan, Tips, Info) */
-.ProseMirror .admonition-card,
+/* Admonition Cards Styles */
 .admonition-card {
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin: 18px 0;
+  margin: 1.5rem 0;
+  padding: 16px;
+  border-radius: 8px;
   border: 1px solid transparent;
-  font-size: 13.5px;
-  line-height: 1.6;
-  position: relative;
 }
-
-/* 1. Peringatan / Warning / Caution Card (Red/Pink) */
-.ProseMirror .admonition-card.warning,
-.ProseMirror .admonition-card.caution,
-.admonition-card.warning,
-.admonition-card.caution {
-  background-color: #fef2f2 !important;
-  border-color: #fecaca !important;
-}
-
-.dark .ProseMirror .admonition-card.warning,
-.dark .ProseMirror .admonition-card.caution,
-.dark .admonition-card.warning,
-.dark .admonition-card.caution {
-  background-color: rgba(239, 68, 68, 0.08) !important;
-  border-color: rgba(239, 68, 68, 0.28) !important;
-}
-
-/* 2. Tips / Tip Card (Amber/Yellow) */
-.ProseMirror .admonition-card.tip,
-.admonition-card.tip {
-  background-color: #fffbeb !important;
-  border-color: #fde68a !important;
-}
-
-.dark .ProseMirror .admonition-card.tip,
-.dark .admonition-card.tip {
-  background-color: rgba(245, 158, 11, 0.08) !important;
-  border-color: rgba(245, 158, 11, 0.28) !important;
-}
-
-/* 3. Info / Note Card (Blue) */
-.ProseMirror .admonition-card.info,
-.ProseMirror .admonition-card.note,
-.admonition-card.info,
-.admonition-card.note {
-  background-color: #eff6ff !important;
-  border-color: #bfdbfe !important;
-}
-
-.dark .ProseMirror .admonition-card.info,
-.dark .ProseMirror .admonition-card.note,
-.dark .admonition-card.info,
-.dark .admonition-card.note {
-  background-color: rgba(59, 130, 246, 0.08) !important;
-  border-color: rgba(59, 130, 246, 0.28) !important;
-}
-
-/* Admonition Header Row (Icon + Title) */
 .admonition-card .adm-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
   font-weight: 600;
   font-size: 14.5px;
-  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
-
-.dark .admonition-card .adm-header {
-  color: #f8fafc;
-}
-
-.admonition-card.warning .adm-header svg,
-.admonition-card.caution .adm-header svg {
-  color: #ef4444;
-  flex-shrink: 0;
-}
-
-.admonition-card.tip .adm-header svg {
-  color: #f59e0b;
-  flex-shrink: 0;
-}
-
-.admonition-card.info .adm-header svg,
-.admonition-card.note .adm-header svg {
-  color: #3b82f6;
-  flex-shrink: 0;
-}
-
-/* Admonition Content Text */
 .admonition-card .adm-content {
-  color: #64748b;
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 0.875rem;
+  color: oklch(0.3 0 0);
+  margin-top: 4px;
+}
+.admonition-card .adm-content p { margin: 0; }
+
+.admonition-card.info, .admonition-card.note {
+  background-color: oklch(0.97 0.05 250);
+  border-color: oklch(0.85 0.1 250);
+}
+.admonition-card.info .adm-header, .admonition-card.note .adm-header {
+  color: oklch(0.4 0.15 250);
+}
+.admonition-card.info .adm-content, .admonition-card.note .adm-content {
+  color: oklch(0.45 0.1 250);
 }
 
-.dark .admonition-card .adm-content {
-  color: #cbd5e1;
+.admonition-card.tip {
+  background-color: oklch(0.98 0.05 70);
+  border-color: oklch(0.85 0.1 70);
+}
+.admonition-card.tip .adm-header {
+  color: oklch(0.4 0.15 70);
+}
+.admonition-card.tip .adm-content {
+  color: oklch(0.45 0.1 70);
 }
 
-.admonition-card .adm-content p {
-  margin: 0;
+.admonition-card.warning, .admonition-card.caution {
+  background-color: oklch(0.97 0.05 20);
+  border-color: oklch(0.85 0.1 20);
+}
+.admonition-card.warning .adm-header, .admonition-card.caution .adm-header {
+  color: oklch(0.4 0.15 20);
+}
+.admonition-card.warning .adm-content, .admonition-card.caution .adm-content {
+  color: oklch(0.45 0.1 20);
 }
 
-/* Copy Code Icon Button hover state */
-.copy-code-icon-btn:hover {
-  background-color: rgba(148, 163, 184, 0.2) !important;
-  color: #0f172a !important;
-  border-color: rgba(148, 163, 184, 0.35) !important;
+.dark .admonition-card.info, .dark .admonition-card.note { background-color: oklch(0.2 0.05 250); border-color: oklch(0.3 0.1 250); }
+.dark .admonition-card.info .adm-content, .dark .admonition-card.note .adm-content { color: oklch(0.85 0.1 250); }
+
+.dark .admonition-card.tip { background-color: oklch(0.2 0.05 70); border-color: oklch(0.3 0.1 70); }
+.dark .admonition-card.tip .adm-content { color: oklch(0.85 0.1 70); }
+
+.dark .admonition-card.warning, .dark .admonition-card.caution { background-color: oklch(0.2 0.05 20); border-color: oklch(0.3 0.1 20); }
+.dark .admonition-card.warning .adm-content, .dark .admonition-card.caution .adm-content { color: oklch(0.85 0.1 20); }
+
+/* Custom Colored Admonition Cards using CSS variables */
+.admonition-card.custom-colored {
+  background-color: var(--adm-bg-light) !important;
+  border-color: var(--adm-border-light) !important;
+  --adm-icon-color: var(--adm-icon-light, var(--adm-text-light, currentColor));
+}
+.admonition-card.custom-colored .adm-header {
+  color: var(--adm-text-light) !important;
+}
+.admonition-card.custom-colored .adm-icon {
+  color: var(--adm-icon-color) !important;
+}
+.admonition-card.custom-colored .adm-content {
+  color: var(--adm-text-light) !important;
 }
 
-/* Custom Docs Buttons (CTA Buttons) */
-a.docs-btn {
-  display: inline-block;
-  padding: 11px 24px;
-  border-radius: 8px;
+.dark .admonition-card.custom-colored {
+  background-color: var(--adm-bg-dark) !important;
+  border-color: var(--adm-border-dark) !important;
+  --adm-icon-color: var(--adm-icon-dark, var(--adm-text-dark, currentColor));
+}
+.dark .admonition-card.custom-colored .adm-header {
+  color: var(--adm-text-dark) !important;
+}
+.dark .admonition-card.custom-colored .adm-icon {
+  color: var(--adm-icon-color) !important;
+}
+.dark .admonition-card.custom-colored .adm-content {
+  color: var(--adm-text-dark) !important;
+}
+
+/* CTA Buttons Styling (overriding inline styles where needed) */
+.docs-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 24px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
   text-decoration: none !important;
-  font-weight: 600;
-  font-size: 14px;
-  border: 1px solid transparent;
-  transition: all 0.2s;
+  transition: all 0.2s ease-in-out;
 }
-
-/* Previews color styles */
-a.docs-btn-blue {
-  background-color: #2563eb;
-  color: #ffffff !important;
-  border-color: #1d4ed8;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+.docs-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
-a.docs-btn-yellow {
-  background-color: #eab308;
-  color: #ffffff !important;
-  border-color: #ca8a04;
-  box-shadow: 0 4px 12px rgba(234, 179, 8, 0.28);
-}
-a.docs-btn-red {
-  background-color: #ef4444;
-  color: #ffffff !important;
-  border-color: #dc2626;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.28);
-}
-a.docs-btn-green {
-  background-color: #22c55e;
-  color: #ffffff !important;
-  border-color: #16a34a;
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.28);
-}
-a.docs-btn-grey {
-  background-color: #e2e8f0;
-  color: #0f172a !important;
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px rgba(148, 163, 184, 0.12);
-}
-
-/* ProseMirror Editor Overrides (to override default blue link color !important) */
-.ProseMirror a.docs-btn {
-  text-decoration: none !important;
-  display: inline-block !important;
-}
-.ProseMirror a.docs-btn-blue {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
-  border-color: #1d4ed8 !important;
-}
-.ProseMirror a.docs-btn-yellow {
-  background-color: #eab308 !important;
-  color: #ffffff !important;
-  border-color: #ca8a04 !important;
-}
-.ProseMirror a.docs-btn-red {
-  background-color: #ef4444 !important;
-  color: #ffffff !important;
-  border-color: #dc2626 !important;
-}
-.ProseMirror a.docs-btn-green {
-  background-color: #22c55e !important;
-  color: #ffffff !important;
-  border-color: #16a34a !important;
-}
-.ProseMirror a.docs-btn-grey {
-  background-color: #e2e8f0 !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important;
-}
-
-
-
+.docs-btn-blue { background-color: #2563eb !important; border-color: #1d4ed8 !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28) !important; }
+.docs-btn-yellow { background-color: #eab308 !important; border-color: #ca8a04 !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(234, 179, 8, 0.28) !important; }
+.docs-btn-red { background-color: #ef4444 !important; border-color: #dc2626 !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.28) !important; }
+.docs-btn-green { background-color: #22c55e !important; border-color: #16a34a !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.28) !important; }
+.docs-btn-grey { background-color: #e2e8f0 !important; border-color: #cbd5e1 !important; color: #0f172a !important; box-shadow: 0 4px 12px rgba(148, 163, 184, 0.12) !important; }

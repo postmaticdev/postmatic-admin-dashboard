@@ -11,7 +11,9 @@ import {
   Sparkles,
   Plus,
   Minus,
+  HelpCircle,
 } from "lucide-react";
+import { LucideIconPickerModal, renderLucideIcon } from "./LucideIconPickerModal";
 
 interface DocsEditorSidebarToolsProps {
   editor: Editor | null;
@@ -40,11 +42,15 @@ export function DocsEditorSidebarTools({ editor }: DocsEditorSidebarToolsProps) 
 
   // 4. Admonitions modal state
   const [admonitionModalOpen, setAdmonitionModalOpen] = useState(false);
-  const [admType, setAdmType] = useState<"caution" | "warning" | "note" | "tip">("caution");
-  const [admTitle, setAdmTitle] = useState("🚨 Caution — Bahaya / Peringatan Kritis");
+  const [admType, setAdmType] = useState<"caution" | "warning" | "note" | "tip">("warning");
+  const [admTitle, setAdmTitle] = useState("Peringatan");
   const [admContent, setAdmContent] = useState(
     "Perubahan pada parameter ini dapat mempengaruhi pengiriman pesan di lingkungan produksi. Harap verifikasi API Key sebelum mengeksekusi request."
   );
+  const [admIcon, setAdmIcon] = useState("AlertTriangle");
+  const [admColor, setAdmColor] = useState<"red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray">("red");
+  const [admIconColor, setAdmIconColor] = useState<"red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray">("red");
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
   if (!editor) {
     return null;
@@ -137,7 +143,8 @@ export function DocsEditorSidebarTools({ editor }: DocsEditorSidebarToolsProps) 
   };
 
   const handleInsertCustomAdmonition = () => {
-    const html = `<div class="admonition-card ${admType}" data-type="${admType}"><div class="adm-content"><p>${admContent}</p></div></div>`;
+    const isCustom = Boolean(admColor) || Boolean(admIconColor);
+    const html = `<div class="admonition-card ${admType} ${isCustom ? 'custom-colored' : ''}" data-type="${admType}" data-title="${admTitle}" data-icon="${admIcon}" data-color="${admColor}" data-icon-color="${admIconColor}"><div class="adm-content"><p>${admContent}</p></div></div>`;
     editor.commands.insertContent(html);
     setAdmonitionModalOpen(false);
   };
@@ -591,39 +598,110 @@ export function DocsEditorSidebarTools({ editor }: DocsEditorSidebarToolsProps) 
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Tipe Kartu Peringatan
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(["caution", "warning", "note", "tip"] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setAdmType(t)}
-                      className={`py-2 px-3 rounded-lg text-xs font-semibold capitalize border transition-all ${
-                        admType === t
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border hover:bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
+            <div className="space-y-4">
+              {/* Title & Icon Row */}
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">
+                    Judul Kartu (Title)
+                  </label>
+                  <input
+                    type="text"
+                    value={admTitle}
+                    onChange={(e) => setAdmTitle(e.target.value)}
+                    placeholder="Peringatan"
+                    className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">
+                    Ikon Card
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIconPickerOpen(true)}
+                    className="w-full h-[34px] px-3 py-1 bg-background border border-border rounded-lg text-xs font-medium text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    {renderLucideIcon(admIcon, "h-4 w-4")}
+                    <span className="truncate max-w-[50px]">{admIcon}</span>
+                  </button>
                 </div>
               </div>
 
+              {/* Card Color Preset Selector */}
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Judul Kartu (Title)
+                <label className="text-xs font-semibold text-foreground block mb-1.5">
+                  Warna Kartu (Card Color)
                 </label>
-                <input
-                  type="text"
-                  value={admTitle}
-                  onChange={(e) => setAdmTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div className="flex items-center gap-2">
+                  {(["red", "orange", "yellow", "green", "blue", "purple", "gray"] as const).map((color) => {
+                    const colorClasses: Record<string, string> = {
+                      red: "bg-red-500 border-red-600",
+                      orange: "bg-orange-500 border-orange-600",
+                      yellow: "bg-yellow-500 border-yellow-600",
+                      green: "bg-green-500 border-green-600",
+                      blue: "bg-blue-500 border-blue-600",
+                      purple: "bg-purple-500 border-purple-600",
+                      gray: "bg-slate-400 border-slate-500",
+                    };
+                    const isSelected = admColor === color;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setAdmColor(color)}
+                        className={`w-7 h-7 rounded-full border-2 transition-all flex items-center justify-center capitalize ${
+                          colorClasses[color]
+                        } ${
+                          isSelected ? "ring-2 ring-primary ring-offset-2 scale-110" : "opacity-80 hover:opacity-100"
+                        }`}
+                        title={color}
+                      >
+                        {isSelected && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Icon Color Preset Selector */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">
+                  Warna Ikon (Icon Color)
+                </label>
+                <div className="flex items-center gap-2">
+                  {(["red", "orange", "yellow", "green", "blue", "purple", "gray"] as const).map((color) => {
+                    const colorClasses: Record<string, string> = {
+                      red: "bg-red-500 border-red-600",
+                      orange: "bg-orange-500 border-orange-600",
+                      yellow: "bg-yellow-500 border-yellow-600",
+                      green: "bg-green-500 border-green-600",
+                      blue: "bg-blue-500 border-blue-600",
+                      purple: "bg-purple-500 border-purple-600",
+                      gray: "bg-slate-400 border-slate-500",
+                    };
+                    const isSelected = admIconColor === color;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setAdmIconColor(color)}
+                        className={`w-7 h-7 rounded-full border-2 transition-all flex items-center justify-center capitalize ${
+                          colorClasses[color]
+                        } ${
+                          isSelected ? "ring-2 ring-primary ring-offset-2 scale-110" : "opacity-80 hover:opacity-100"
+                        }`}
+                        title={color}
+                      >
+                        {isSelected && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
@@ -658,6 +736,14 @@ export function DocsEditorSidebarTools({ editor }: DocsEditorSidebarToolsProps) 
           </div>
         </div>
       )}
+
+      {/* Lucide Icon Picker for Admonition Card */}
+      <LucideIconPickerModal
+        open={iconPickerOpen}
+        selectedIcon={admIcon}
+        onSelect={(iconName) => setAdmIcon(iconName)}
+        onClose={() => setIconPickerOpen(false)}
+      />
     </div>
   );
 }

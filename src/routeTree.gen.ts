@@ -9,23 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AdminRouteImport } from './routes/_admin'
+import { Route as DashboardRouteImport } from './routes/_dashboard'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminWorkspaceRouteImport } from './routes/_admin.workspace'
-import { Route as AdminUsersRouteImport } from './routes/_admin.users'
-import { Route as AdminSettingsRouteImport } from './routes/_admin.settings'
-import { Route as AdminRolesRouteImport } from './routes/_admin.roles'
-import { Route as AdminLogsRouteImport } from './routes/_admin.logs'
-import { Route as AdminFinancingRouteImport } from './routes/_admin.financing'
-import { Route as AdminFeedbackRouteImport } from './routes/_admin.feedback'
-import { Route as AdminDocsManagementRouteImport } from './routes/_admin.docs-management'
-import { Route as AdminDashboardRouteImport } from './routes/_admin.dashboard'
-import { Route as AdminComposeRouteImport } from './routes/_admin.compose'
-import { Route as AdminBlastRouteImport } from './routes/_admin.blast'
-import { Route as AdminNotificationsIdRouteImport } from './routes/_admin.notifications.$id'
+import { Route as DashboardFinancingRouteImport } from './routes/_dashboard.financing'
+import { Route as DashboardDocsRouteImport } from './routes/_dashboard.docs'
+import { Route as DashboardCustomerServiceRouteImport } from './routes/_dashboard.customer-service'
+import { Route as DashboardCrmBlastRouteImport } from './routes/_dashboard.crm-blast'
+import { Route as DashboardWorkspaceCreatorRouteImport } from './routes/_dashboard.workspace.creator'
+import { Route as DashboardWorkspaceBusinessRouteImport } from './routes/_dashboard.workspace.business'
+import { Route as DashboardWorkspaceAccountRouteImport } from './routes/_dashboard.workspace.account'
+import { Route as DashboardCustomerServiceWhatsappRouteImport } from './routes/_dashboard.customer-service.whatsapp'
+import { Route as DashboardCustomerServiceWebsiteRouteImport } from './routes/_dashboard.customer-service.website'
+import { Route as DashboardCustomerServiceGmailRouteImport } from './routes/_dashboard.customer-service.gmail'
+import { Route as DashboardCustomerServiceAllRouteImport } from './routes/_dashboard.customer-service.all'
 
-const AdminRoute = AdminRouteImport.update({
-  id: '/_admin',
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/_dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -33,175 +32,172 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminWorkspaceRoute = AdminWorkspaceRouteImport.update({
-  id: '/workspace',
-  path: '/workspace',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminSettingsRoute = AdminSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminRolesRoute = AdminRolesRouteImport.update({
-  id: '/roles',
-  path: '/roles',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminLogsRoute = AdminLogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminFinancingRoute = AdminFinancingRouteImport.update({
+const DashboardFinancingRoute = DashboardFinancingRouteImport.update({
   id: '/financing',
   path: '/financing',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => DashboardRoute,
 } as any)
-const AdminFeedbackRoute = AdminFeedbackRouteImport.update({
-  id: '/feedback',
-  path: '/feedback',
-  getParentRoute: () => AdminRoute,
+const DashboardDocsRoute = DashboardDocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => DashboardRoute,
 } as any)
-const AdminDocsManagementRoute = AdminDocsManagementRouteImport.update({
-  id: '/docs-management',
-  path: '/docs-management',
-  getParentRoute: () => AdminRoute,
+const DashboardCustomerServiceRoute =
+  DashboardCustomerServiceRouteImport.update({
+    id: '/customer-service',
+    path: '/customer-service',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardCrmBlastRoute = DashboardCrmBlastRouteImport.update({
+  id: '/crm-blast',
+  path: '/crm-blast',
+  getParentRoute: () => DashboardRoute,
 } as any)
-const AdminDashboardRoute = AdminDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminComposeRoute = AdminComposeRouteImport.update({
-  id: '/compose',
-  path: '/compose',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminBlastRoute = AdminBlastRouteImport.update({
-  id: '/blast',
-  path: '/blast',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminNotificationsIdRoute = AdminNotificationsIdRouteImport.update({
-  id: '/notifications/$id',
-  path: '/notifications/$id',
-  getParentRoute: () => AdminRoute,
-} as any)
+const DashboardWorkspaceCreatorRoute =
+  DashboardWorkspaceCreatorRouteImport.update({
+    id: '/workspace/creator',
+    path: '/workspace/creator',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceBusinessRoute =
+  DashboardWorkspaceBusinessRouteImport.update({
+    id: '/workspace/business',
+    path: '/workspace/business',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceAccountRoute =
+  DashboardWorkspaceAccountRouteImport.update({
+    id: '/workspace/account',
+    path: '/workspace/account',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardCustomerServiceWhatsappRoute =
+  DashboardCustomerServiceWhatsappRouteImport.update({
+    id: '/whatsapp',
+    path: '/whatsapp',
+    getParentRoute: () => DashboardCustomerServiceRoute,
+  } as any)
+const DashboardCustomerServiceWebsiteRoute =
+  DashboardCustomerServiceWebsiteRouteImport.update({
+    id: '/website',
+    path: '/website',
+    getParentRoute: () => DashboardCustomerServiceRoute,
+  } as any)
+const DashboardCustomerServiceGmailRoute =
+  DashboardCustomerServiceGmailRouteImport.update({
+    id: '/gmail',
+    path: '/gmail',
+    getParentRoute: () => DashboardCustomerServiceRoute,
+  } as any)
+const DashboardCustomerServiceAllRoute =
+  DashboardCustomerServiceAllRouteImport.update({
+    id: '/all',
+    path: '/all',
+    getParentRoute: () => DashboardCustomerServiceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/blast': typeof AdminBlastRoute
-  '/compose': typeof AdminComposeRoute
-  '/dashboard': typeof AdminDashboardRoute
-  '/docs-management': typeof AdminDocsManagementRoute
-  '/feedback': typeof AdminFeedbackRoute
-  '/financing': typeof AdminFinancingRoute
-  '/logs': typeof AdminLogsRoute
-  '/roles': typeof AdminRolesRoute
-  '/settings': typeof AdminSettingsRoute
-  '/users': typeof AdminUsersRoute
-  '/workspace': typeof AdminWorkspaceRoute
-  '/notifications/$id': typeof AdminNotificationsIdRoute
+  '/crm-blast': typeof DashboardCrmBlastRoute
+  '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
+  '/docs': typeof DashboardDocsRoute
+  '/financing': typeof DashboardFinancingRoute
+  '/customer-service/all': typeof DashboardCustomerServiceAllRoute
+  '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
+  '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
+  '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
+  '/workspace/account': typeof DashboardWorkspaceAccountRoute
+  '/workspace/business': typeof DashboardWorkspaceBusinessRoute
+  '/workspace/creator': typeof DashboardWorkspaceCreatorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/blast': typeof AdminBlastRoute
-  '/compose': typeof AdminComposeRoute
-  '/dashboard': typeof AdminDashboardRoute
-  '/docs-management': typeof AdminDocsManagementRoute
-  '/feedback': typeof AdminFeedbackRoute
-  '/financing': typeof AdminFinancingRoute
-  '/logs': typeof AdminLogsRoute
-  '/roles': typeof AdminRolesRoute
-  '/settings': typeof AdminSettingsRoute
-  '/users': typeof AdminUsersRoute
-  '/workspace': typeof AdminWorkspaceRoute
-  '/notifications/$id': typeof AdminNotificationsIdRoute
+  '/crm-blast': typeof DashboardCrmBlastRoute
+  '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
+  '/docs': typeof DashboardDocsRoute
+  '/financing': typeof DashboardFinancingRoute
+  '/customer-service/all': typeof DashboardCustomerServiceAllRoute
+  '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
+  '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
+  '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
+  '/workspace/account': typeof DashboardWorkspaceAccountRoute
+  '/workspace/business': typeof DashboardWorkspaceBusinessRoute
+  '/workspace/creator': typeof DashboardWorkspaceCreatorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_admin': typeof AdminRouteWithChildren
-  '/_admin/blast': typeof AdminBlastRoute
-  '/_admin/compose': typeof AdminComposeRoute
-  '/_admin/dashboard': typeof AdminDashboardRoute
-  '/_admin/docs-management': typeof AdminDocsManagementRoute
-  '/_admin/feedback': typeof AdminFeedbackRoute
-  '/_admin/financing': typeof AdminFinancingRoute
-  '/_admin/logs': typeof AdminLogsRoute
-  '/_admin/roles': typeof AdminRolesRoute
-  '/_admin/settings': typeof AdminSettingsRoute
-  '/_admin/users': typeof AdminUsersRoute
-  '/_admin/workspace': typeof AdminWorkspaceRoute
-  '/_admin/notifications/$id': typeof AdminNotificationsIdRoute
+  '/_dashboard': typeof DashboardRouteWithChildren
+  '/_dashboard/crm-blast': typeof DashboardCrmBlastRoute
+  '/_dashboard/customer-service': typeof DashboardCustomerServiceRouteWithChildren
+  '/_dashboard/docs': typeof DashboardDocsRoute
+  '/_dashboard/financing': typeof DashboardFinancingRoute
+  '/_dashboard/customer-service/all': typeof DashboardCustomerServiceAllRoute
+  '/_dashboard/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
+  '/_dashboard/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
+  '/_dashboard/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
+  '/_dashboard/workspace/account': typeof DashboardWorkspaceAccountRoute
+  '/_dashboard/workspace/business': typeof DashboardWorkspaceBusinessRoute
+  '/_dashboard/workspace/creator': typeof DashboardWorkspaceCreatorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/blast'
-    | '/compose'
-    | '/dashboard'
-    | '/docs-management'
-    | '/feedback'
+    | '/crm-blast'
+    | '/customer-service'
+    | '/docs'
     | '/financing'
-    | '/logs'
-    | '/roles'
-    | '/settings'
-    | '/users'
-    | '/workspace'
-    | '/notifications/$id'
+    | '/customer-service/all'
+    | '/customer-service/gmail'
+    | '/customer-service/website'
+    | '/customer-service/whatsapp'
+    | '/workspace/account'
+    | '/workspace/business'
+    | '/workspace/creator'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/blast'
-    | '/compose'
-    | '/dashboard'
-    | '/docs-management'
-    | '/feedback'
+    | '/crm-blast'
+    | '/customer-service'
+    | '/docs'
     | '/financing'
-    | '/logs'
-    | '/roles'
-    | '/settings'
-    | '/users'
-    | '/workspace'
-    | '/notifications/$id'
+    | '/customer-service/all'
+    | '/customer-service/gmail'
+    | '/customer-service/website'
+    | '/customer-service/whatsapp'
+    | '/workspace/account'
+    | '/workspace/business'
+    | '/workspace/creator'
   id:
     | '__root__'
     | '/'
-    | '/_admin'
-    | '/_admin/blast'
-    | '/_admin/compose'
-    | '/_admin/dashboard'
-    | '/_admin/docs-management'
-    | '/_admin/feedback'
-    | '/_admin/financing'
-    | '/_admin/logs'
-    | '/_admin/roles'
-    | '/_admin/settings'
-    | '/_admin/users'
-    | '/_admin/workspace'
-    | '/_admin/notifications/$id'
+    | '/_dashboard'
+    | '/_dashboard/crm-blast'
+    | '/_dashboard/customer-service'
+    | '/_dashboard/docs'
+    | '/_dashboard/financing'
+    | '/_dashboard/customer-service/all'
+    | '/_dashboard/customer-service/gmail'
+    | '/_dashboard/customer-service/website'
+    | '/_dashboard/customer-service/whatsapp'
+    | '/_dashboard/workspace/account'
+    | '/_dashboard/workspace/business'
+    | '/_dashboard/workspace/creator'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRouteWithChildren
+  DashboardRoute: typeof DashboardRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_admin': {
-      id: '/_admin'
+    '/_dashboard': {
+      id: '/_dashboard'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AdminRouteImport
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -211,128 +207,134 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_admin/workspace': {
-      id: '/_admin/workspace'
-      path: '/workspace'
-      fullPath: '/workspace'
-      preLoaderRoute: typeof AdminWorkspaceRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/users': {
-      id: '/_admin/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/settings': {
-      id: '/_admin/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AdminSettingsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/roles': {
-      id: '/_admin/roles'
-      path: '/roles'
-      fullPath: '/roles'
-      preLoaderRoute: typeof AdminRolesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/logs': {
-      id: '/_admin/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof AdminLogsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/financing': {
-      id: '/_admin/financing'
+    '/_dashboard/financing': {
+      id: '/_dashboard/financing'
       path: '/financing'
       fullPath: '/financing'
-      preLoaderRoute: typeof AdminFinancingRouteImport
-      parentRoute: typeof AdminRoute
+      preLoaderRoute: typeof DashboardFinancingRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/feedback': {
-      id: '/_admin/feedback'
-      path: '/feedback'
-      fullPath: '/feedback'
-      preLoaderRoute: typeof AdminFeedbackRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/docs': {
+      id: '/_dashboard/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DashboardDocsRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/docs-management': {
-      id: '/_admin/docs-management'
-      path: '/docs-management'
-      fullPath: '/docs-management'
-      preLoaderRoute: typeof AdminDocsManagementRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/customer-service': {
+      id: '/_dashboard/customer-service'
+      path: '/customer-service'
+      fullPath: '/customer-service'
+      preLoaderRoute: typeof DashboardCustomerServiceRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/dashboard': {
-      id: '/_admin/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AdminDashboardRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/crm-blast': {
+      id: '/_dashboard/crm-blast'
+      path: '/crm-blast'
+      fullPath: '/crm-blast'
+      preLoaderRoute: typeof DashboardCrmBlastRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/compose': {
-      id: '/_admin/compose'
-      path: '/compose'
-      fullPath: '/compose'
-      preLoaderRoute: typeof AdminComposeRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/workspace/creator': {
+      id: '/_dashboard/workspace/creator'
+      path: '/workspace/creator'
+      fullPath: '/workspace/creator'
+      preLoaderRoute: typeof DashboardWorkspaceCreatorRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/blast': {
-      id: '/_admin/blast'
-      path: '/blast'
-      fullPath: '/blast'
-      preLoaderRoute: typeof AdminBlastRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/workspace/business': {
+      id: '/_dashboard/workspace/business'
+      path: '/workspace/business'
+      fullPath: '/workspace/business'
+      preLoaderRoute: typeof DashboardWorkspaceBusinessRouteImport
+      parentRoute: typeof DashboardRoute
     }
-    '/_admin/notifications/$id': {
-      id: '/_admin/notifications/$id'
-      path: '/notifications/$id'
-      fullPath: '/notifications/$id'
-      preLoaderRoute: typeof AdminNotificationsIdRouteImport
-      parentRoute: typeof AdminRoute
+    '/_dashboard/workspace/account': {
+      id: '/_dashboard/workspace/account'
+      path: '/workspace/account'
+      fullPath: '/workspace/account'
+      preLoaderRoute: typeof DashboardWorkspaceAccountRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/customer-service/whatsapp': {
+      id: '/_dashboard/customer-service/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/customer-service/whatsapp'
+      preLoaderRoute: typeof DashboardCustomerServiceWhatsappRouteImport
+      parentRoute: typeof DashboardCustomerServiceRoute
+    }
+    '/_dashboard/customer-service/website': {
+      id: '/_dashboard/customer-service/website'
+      path: '/website'
+      fullPath: '/customer-service/website'
+      preLoaderRoute: typeof DashboardCustomerServiceWebsiteRouteImport
+      parentRoute: typeof DashboardCustomerServiceRoute
+    }
+    '/_dashboard/customer-service/gmail': {
+      id: '/_dashboard/customer-service/gmail'
+      path: '/gmail'
+      fullPath: '/customer-service/gmail'
+      preLoaderRoute: typeof DashboardCustomerServiceGmailRouteImport
+      parentRoute: typeof DashboardCustomerServiceRoute
+    }
+    '/_dashboard/customer-service/all': {
+      id: '/_dashboard/customer-service/all'
+      path: '/all'
+      fullPath: '/customer-service/all'
+      preLoaderRoute: typeof DashboardCustomerServiceAllRouteImport
+      parentRoute: typeof DashboardCustomerServiceRoute
     }
   }
 }
 
-interface AdminRouteChildren {
-  AdminBlastRoute: typeof AdminBlastRoute
-  AdminComposeRoute: typeof AdminComposeRoute
-  AdminDashboardRoute: typeof AdminDashboardRoute
-  AdminDocsManagementRoute: typeof AdminDocsManagementRoute
-  AdminFeedbackRoute: typeof AdminFeedbackRoute
-  AdminFinancingRoute: typeof AdminFinancingRoute
-  AdminLogsRoute: typeof AdminLogsRoute
-  AdminRolesRoute: typeof AdminRolesRoute
-  AdminSettingsRoute: typeof AdminSettingsRoute
-  AdminUsersRoute: typeof AdminUsersRoute
-  AdminWorkspaceRoute: typeof AdminWorkspaceRoute
-  AdminNotificationsIdRoute: typeof AdminNotificationsIdRoute
+interface DashboardCustomerServiceRouteChildren {
+  DashboardCustomerServiceAllRoute: typeof DashboardCustomerServiceAllRoute
+  DashboardCustomerServiceGmailRoute: typeof DashboardCustomerServiceGmailRoute
+  DashboardCustomerServiceWebsiteRoute: typeof DashboardCustomerServiceWebsiteRoute
+  DashboardCustomerServiceWhatsappRoute: typeof DashboardCustomerServiceWhatsappRoute
 }
 
-const AdminRouteChildren: AdminRouteChildren = {
-  AdminBlastRoute: AdminBlastRoute,
-  AdminComposeRoute: AdminComposeRoute,
-  AdminDashboardRoute: AdminDashboardRoute,
-  AdminDocsManagementRoute: AdminDocsManagementRoute,
-  AdminFeedbackRoute: AdminFeedbackRoute,
-  AdminFinancingRoute: AdminFinancingRoute,
-  AdminLogsRoute: AdminLogsRoute,
-  AdminRolesRoute: AdminRolesRoute,
-  AdminSettingsRoute: AdminSettingsRoute,
-  AdminUsersRoute: AdminUsersRoute,
-  AdminWorkspaceRoute: AdminWorkspaceRoute,
-  AdminNotificationsIdRoute: AdminNotificationsIdRoute,
+const DashboardCustomerServiceRouteChildren: DashboardCustomerServiceRouteChildren =
+  {
+    DashboardCustomerServiceAllRoute: DashboardCustomerServiceAllRoute,
+    DashboardCustomerServiceGmailRoute: DashboardCustomerServiceGmailRoute,
+    DashboardCustomerServiceWebsiteRoute: DashboardCustomerServiceWebsiteRoute,
+    DashboardCustomerServiceWhatsappRoute:
+      DashboardCustomerServiceWhatsappRoute,
+  }
+
+const DashboardCustomerServiceRouteWithChildren =
+  DashboardCustomerServiceRoute._addFileChildren(
+    DashboardCustomerServiceRouteChildren,
+  )
+
+interface DashboardRouteChildren {
+  DashboardCrmBlastRoute: typeof DashboardCrmBlastRoute
+  DashboardCustomerServiceRoute: typeof DashboardCustomerServiceRouteWithChildren
+  DashboardDocsRoute: typeof DashboardDocsRoute
+  DashboardFinancingRoute: typeof DashboardFinancingRoute
+  DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRoute
+  DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRoute
+  DashboardWorkspaceCreatorRoute: typeof DashboardWorkspaceCreatorRoute
 }
 
-const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardCrmBlastRoute: DashboardCrmBlastRoute,
+  DashboardCustomerServiceRoute: DashboardCustomerServiceRouteWithChildren,
+  DashboardDocsRoute: DashboardDocsRoute,
+  DashboardFinancingRoute: DashboardFinancingRoute,
+  DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRoute,
+  DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRoute,
+  DashboardWorkspaceCreatorRoute: DashboardWorkspaceCreatorRoute,
+}
+
+const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
+  DashboardRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRouteWithChildren,
+  DashboardRoute: DashboardRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

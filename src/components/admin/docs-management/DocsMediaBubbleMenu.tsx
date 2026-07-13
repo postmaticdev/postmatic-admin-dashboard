@@ -58,7 +58,6 @@ export function DocsMediaBubbleMenu({ editor }: DocsMediaBubbleMenuProps) {
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{ duration: 100, placement: "bottom" }}
       shouldShow={({ editor }) =>
         editor.isActive("image") || editor.isActive("customVideo") || editor.isActive("youtube")
       }
