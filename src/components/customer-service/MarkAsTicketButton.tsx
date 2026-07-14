@@ -38,7 +38,8 @@ export function MarkAsTicketButton({ ticket }: { ticket: Ticket }) {
             <DialogHeader>
               <DialogTitle>Batal Tandai sebagai Tiket?</DialogTitle>
               <DialogDescription>
-                Apakah Anda yakin ingin membatalkan status tiket untuk percakapan ini? Percakapan ini akan dihapus dari daftar All Ticket.
+                Apakah Anda yakin ingin membatalkan status tiket untuk percakapan ini? Percakapan
+                ini akan dihapus dari daftar All Ticket.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:gap-0">

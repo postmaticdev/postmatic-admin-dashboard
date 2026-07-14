@@ -15,15 +15,35 @@ interface Props {
   open: boolean;
   defaultSubject: string;
   onOpenChange: (o: boolean) => void;
-  onConfirm: (subject: string) => void;
+  onConfirm: (subject: string) => void | Promise<void>;
 }
 
 export function TicketConfirmationDialog({ open, defaultSubject, onOpenChange, onConfirm }: Props) {
   const [subject, setSubject] = useState(defaultSubject);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) setSubject(defaultSubject);
+    if (open) {
+      setSubject(defaultSubject);
+      setError(null);
+      setIsSubmitting(false);
+    }
   }, [open, defaultSubject]);
+
+  const handleConfirm = async () => {
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await onConfirm(subject.trim());
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menandai percakapan sebagai tiket.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -31,7 +51,8 @@ export function TicketConfirmationDialog({ open, defaultSubject, onOpenChange, o
         <DialogHeader>
           <DialogTitle>Tandai sebagai Tiket</DialogTitle>
           <DialogDescription>
-            Konfirmasi pemindahan percakapan ini ke status tiket. Anda dapat menyesuaikan subjek tiket terlebih dahulu.
+            Konfirmasi pemindahan percakapan ini ke status tiket. Anda dapat menyesuaikan subjek
+            tiket terlebih dahulu.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -45,20 +66,23 @@ export function TicketConfirmationDialog({ open, defaultSubject, onOpenChange, o
               autoFocus
             />
           </div>
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
           <Button
             type="button"
-            disabled={!subject.trim()}
-            onClick={() => {
-              onConfirm(subject.trim());
-              onOpenChange(false);
-            }}
+            variant="outline"
+            disabled={isSubmitting}
+            onClick={() => onOpenChange(false)}
           >
-            Pindah
+            Cancel
+          </Button>
+          <Button type="button" disabled={!subject.trim() || isSubmitting} onClick={handleConfirm}>
+            {isSubmitting ? "Memindahkan..." : "Pindah"}
           </Button>
         </DialogFooter>
       </DialogContent>

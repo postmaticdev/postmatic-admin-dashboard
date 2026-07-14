@@ -1,9 +1,17 @@
-import { useState, useRef, useEffect } from "react";
+import { Fragment, useState, useRef, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Paperclip, Send, X, FileText, CornerUpLeft, Image as ImageIcon, Video as VideoIcon } from "lucide-react";
+import {
+  Paperclip,
+  Send,
+  X,
+  FileText,
+  CornerUpLeft,
+  Image as ImageIcon,
+  Video as VideoIcon,
+} from "lucide-react";
 import { MarkAsTicketButton } from "../MarkAsTicketButton";
 import { StatusBadge } from "../StatusBadge";
 import { TicketStatusSelector } from "../TicketStatusSelector";
@@ -16,6 +24,53 @@ interface AttachedFile {
   name: string;
   url: string;
   type: string;
+}
+
+interface WhatsappDraft {
+  text?: string;
+  attachments?: AttachedFile[];
+}
+
+function getMessageDateKey(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10);
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function formatMessageDateSeparator(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfMessageDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfMessageDay) / 86_400_000);
+
+  if (diffDays === 0) return "Hari ini";
+  if (diffDays === 1) return "Kemarin";
+
+  return date.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function getDeliveryLabel(message: TicketMessage) {
+  const status = message.sentStatus?.toLowerCase();
+
+  if (message.readAt || status === "read") return "Dibaca";
+  if (message.deliveredAt || status === "delivered") return "Tersampaikan";
+  if (message.sentAt || status === "sent") return "Terkirim";
+  if (message.pendingAt || status === "pending") return "Pending";
+  if (status === "failed" || status === "error") return "Gagal";
+
+  return status || "";
 }
 
 export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
@@ -31,7 +86,7 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
 
   // Load draft when ticket changes
   useEffect(() => {
-    const saved = getDraft(draftKey);
+    const saved = getDraft<WhatsappDraft>(draftKey);
     if (saved) {
       setInputText(saved.text || "");
       setAttachments(saved.attachments || []);
@@ -59,7 +114,9 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
   // Auto scroll to bottom when message list changes
   useEffect(() => {
     if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector("[data-radix-scroll-area-viewport]");
+      const scrollContainer = scrollAreaRef.current.querySelector(
+        "[data-radix-scroll-area-viewport]",
+      );
       if (scrollContainer) {
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       }
@@ -111,9 +168,12 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
       quotedMessage: replyingTo
         ? {
             authorName: replyingTo.authorName,
-            content: replyingTo.content || (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media"),
+            content:
+              replyingTo.content ||
+              (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media"),
           }
         : undefined,
+      quotedExternalId: replyingTo?.externalId,
     });
 
     setInputText("");
@@ -141,6 +201,17 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
     return /\.(mp4|webm|ogg)$/i.test(name);
   };
 
+  const messagesWithDateSeparators = ticket.messages.map((message, index) => {
+    const previousMessage = ticket.messages[index - 1];
+
+    return {
+      message,
+      showDateSeparator:
+        !previousMessage ||
+        getMessageDateKey(previousMessage.createdAt) !== getMessageDateKey(message.createdAt),
+    };
+  });
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3 shrink-0">
@@ -163,127 +234,156 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
 
       <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="flex flex-col gap-3 px-6 py-6">
-          {ticket.messages.map((m) => {
+          {messagesWithDateSeparators.map(({ message: m, showDateSeparator }) => {
             if (m.authorId === "system") {
               return (
-                <div key={m.id} className="flex justify-center my-1 w-full">
-                  <div className="rounded-full bg-muted/80 border border-border/50 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
-                    {m.content} ({formatTime(m.createdAt)})
+                <Fragment key={m.id}>
+                  {showDateSeparator && (
+                    <div className="flex w-full justify-center my-1">
+                      <div className="rounded-full bg-card/90 border border-border/60 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                        {formatMessageDateSeparator(m.createdAt)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-center my-1 w-full">
+                    <div className="rounded-full bg-muted/80 border border-border/50 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                      {m.content} ({formatTime(m.createdAt)})
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               );
             }
             const out = m.direction === "out";
+            const deliveryLabel = out ? getDeliveryLabel(m) : "";
             return (
-              <div
-                key={m.id}
-                className={cn("flex group items-center gap-2", out ? "justify-end" : "justify-start")}
-              >
-                {out && (
-                  <button
-                    type="button"
-                    onClick={() => setReplyingTo(m)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
-                    title="Balas pesan ini"
-                  >
-                    <CornerUpLeft className="h-3.5 w-3.5" />
-                  </button>
+              <Fragment key={m.id}>
+                {showDateSeparator && (
+                  <div className="flex w-full justify-center my-1">
+                    <div className="rounded-full bg-card/90 border border-border/60 px-3 py-1 text-[11px] text-muted-foreground font-medium shadow-sm">
+                      {formatMessageDateSeparator(m.createdAt)}
+                    </div>
+                  </div>
                 )}
-
                 <div
                   className={cn(
-                    "max-w-[70%] rounded-2xl px-3.5 py-2 shadow-sm flex flex-col gap-1.5 relative",
-                    out
-                      ? "rounded-br-sm bg-primary text-primary-foreground"
-                      : "rounded-bl-sm bg-card text-card-foreground border border-border",
+                    "flex group items-center gap-2",
+                    out ? "justify-end" : "justify-start",
                   )}
                 >
-                  {/* Quoted Message display */}
-                  {m.quotedMessage && (
-                    <div
-                      className={cn(
-                        "border-l-4 p-1.5 rounded text-xs mb-0.5 max-w-sm overflow-hidden",
-                        out
-                          ? "bg-primary-foreground/10 border-primary-foreground/50 text-primary-foreground/90"
-                          : "bg-muted border-primary/50 text-muted-foreground"
-                      )}
+                  {out && (
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(m)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+                      title="Balas pesan ini"
                     >
-                      <p className="font-bold text-[10px] mb-0.5">{m.quotedMessage.authorName}</p>
-                      <p className="truncate text-[11px]">{m.quotedMessage.content}</p>
-                    </div>
+                      <CornerUpLeft className="h-3.5 w-3.5" />
+                    </button>
                   )}
 
-                  {/* Render Attachments inside bubble */}
-                  {m.attachments && m.attachments.length > 0 && (
-                    <div className="flex flex-col gap-1.5 mb-1 max-w-sm">
-                      {m.attachments.map((att, idx) => {
-                        if (isImage(att.name)) {
-                          return (
-                            <img
-                              key={idx}
-                              src={att.url}
-                              alt={att.name}
-                              className="max-h-60 rounded object-cover cursor-pointer hover:opacity-90"
-                            />
-                          );
-                        } else if (isVideo(att.name)) {
-                          return (
-                            <video
-                              key={idx}
-                              src={att.url}
-                              controls
-                              className="max-h-60 rounded"
-                            />
-                          );
-                        } else {
-                          return (
-                            <div
-                              key={idx}
-                              className={cn(
-                                "flex items-center gap-2 rounded p-2 text-xs",
-                                out ? "bg-primary-foreground/10 text-primary-foreground" : "bg-muted text-foreground"
-                              )}
-                            >
-                              <FileText className="h-4 w-4 shrink-0" />
-                              <a
-                                href={att.url}
-                                download={att.name}
-                                className="underline hover:no-underline truncate font-medium max-w-[200px]"
-                                title={att.name}
-                              >
-                                {att.name}
-                              </a>
-                            </div>
-                          );
-                        }
-                      })}
-                    </div>
-                  )}
-
-                  {m.content && (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</p>
-                  )}
-                  <p
+                  <div
                     className={cn(
-                      "text-[9px] mt-0.5",
-                      out ? "text-primary-foreground/75 text-right" : "text-muted-foreground",
+                      "max-w-[70%] rounded-2xl px-3.5 py-2 shadow-sm flex flex-col gap-1.5 relative",
+                      out
+                        ? "rounded-br-sm bg-primary text-primary-foreground"
+                        : "rounded-bl-sm bg-card text-card-foreground border border-border",
                     )}
                   >
-                    {formatTime(m.createdAt)}
-                  </p>
-                </div>
+                    {/* Quoted Message display */}
+                    {m.quotedMessage && (
+                      <div
+                        className={cn(
+                          "border-l-4 p-1.5 rounded text-xs mb-0.5 max-w-sm overflow-hidden",
+                          out
+                            ? "bg-primary-foreground/10 border-primary-foreground/50 text-primary-foreground/90"
+                            : "bg-muted border-primary/50 text-muted-foreground",
+                        )}
+                      >
+                        <p className="font-bold text-[10px] mb-0.5">{m.quotedMessage.authorName}</p>
+                        <p className="truncate text-[11px]">{m.quotedMessage.content}</p>
+                      </div>
+                    )}
 
-                {!out && (
-                  <button
-                    type="button"
-                    onClick={() => setReplyingTo(m)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
-                    title="Balas pesan ini"
-                  >
-                    <CornerUpLeft className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+                    {/* Render Attachments inside bubble */}
+                    {m.attachments && m.attachments.length > 0 && (
+                      <div className="flex flex-col gap-1.5 mb-1 max-w-sm">
+                        {m.attachments.map((att, idx) => {
+                          if (isImage(att.name)) {
+                            return (
+                              <img
+                                key={idx}
+                                src={att.url}
+                                alt={att.name}
+                                className="max-h-60 rounded object-cover cursor-pointer hover:opacity-90"
+                              />
+                            );
+                          } else if (isVideo(att.name)) {
+                            return (
+                              <video
+                                key={idx}
+                                src={att.url}
+                                controls
+                                className="max-h-60 rounded"
+                              />
+                            );
+                          } else {
+                            return (
+                              <div
+                                key={idx}
+                                className={cn(
+                                  "flex items-center gap-2 rounded p-2 text-xs",
+                                  out
+                                    ? "bg-primary-foreground/10 text-primary-foreground"
+                                    : "bg-muted text-foreground",
+                                )}
+                              >
+                                <FileText className="h-4 w-4 shrink-0" />
+                                <a
+                                  href={att.url}
+                                  download={att.name}
+                                  className="underline hover:no-underline truncate font-medium max-w-[200px]"
+                                  title={att.name}
+                                >
+                                  {att.name}
+                                </a>
+                              </div>
+                            );
+                          }
+                        })}
+                      </div>
+                    )}
+
+                    {m.content && (
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</p>
+                    )}
+                    <div
+                      className={cn(
+                        "flex items-center gap-1 text-[9px] mt-0.5",
+                        out ? "justify-end text-primary-foreground/75" : "text-muted-foreground",
+                      )}
+                    >
+                      <span>{formatTime(m.createdAt)}</span>
+                      {deliveryLabel && (
+                        <>
+                          <span aria-hidden="true">-</span>
+                          <span>{deliveryLabel}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {!out && (
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(m)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+                      title="Balas pesan ini"
+                    >
+                      <CornerUpLeft className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </Fragment>
             );
           })}
         </div>
@@ -298,7 +398,8 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
               <div className="border-l-4 border-primary pl-2 overflow-hidden flex-1">
                 <p className="text-xs font-bold text-foreground">{replyingTo.authorName}</p>
                 <p className="text-xs text-muted-foreground truncate max-w-[500px]">
-                  {replyingTo.content || (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media")}
+                  {replyingTo.content ||
+                    (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media")}
                 </p>
               </div>
               <Button

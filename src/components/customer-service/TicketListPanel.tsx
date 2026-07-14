@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, ChevronDown } from "lucide-react";
+import { Plus, Search, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,9 @@ interface Props {
   onSelect: (id: string) => void;
   scopeKey: string;
   onStartCompose?: () => void;
+  isLoading?: boolean;
+  error?: string | null;
+  onRefresh?: () => void;
 }
 
 const COUNTRIES = [
@@ -57,6 +60,9 @@ export function TicketListPanel({
   onSelect,
   scopeKey,
   onStartCompose,
+  isLoading,
+  error,
+  onRefresh,
 }: Props) {
   const { createTicket } = useTickets();
   const [searchQuery, setSearchQuery] = useState("");
@@ -90,7 +96,8 @@ export function TicketListPanel({
           id: `m-${Date.now()}`,
           authorId: "system",
           authorName: "System",
-          content: "Room chat baru telah berhasil dibuat. Anda dapat mulai mengirim pesan ke customer.",
+          content:
+            "Room chat baru telah berhasil dibuat. Anda dapat mulai mengirim pesan ke customer.",
           createdAt: new Date().toISOString(),
           direction: "in",
         },
@@ -197,11 +204,21 @@ export function TicketListPanel({
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-xs">Semua Status</SelectItem>
-              <SelectItem value="none" className="text-xs">Tanpa Status</SelectItem>
-              <SelectItem value="review" className="text-xs">Review</SelectItem>
-              <SelectItem value="progress" className="text-xs">Progress</SelectItem>
-              <SelectItem value="done" className="text-xs">Done</SelectItem>
+              <SelectItem value="all" className="text-xs">
+                Semua Status
+              </SelectItem>
+              <SelectItem value="none" className="text-xs">
+                Tanpa Status
+              </SelectItem>
+              <SelectItem value="review" className="text-xs">
+                Review
+              </SelectItem>
+              <SelectItem value="progress" className="text-xs">
+                Progress
+              </SelectItem>
+              <SelectItem value="done" className="text-xs">
+                Done
+              </SelectItem>
             </SelectContent>
           </Select>
 
@@ -212,10 +229,18 @@ export function TicketListPanel({
                 <SelectValue placeholder="Platform" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-xs">Semua Platform</SelectItem>
-                <SelectItem value="whatsapp" className="text-xs">WhatsApp</SelectItem>
-                <SelectItem value="gmail" className="text-xs">Gmail</SelectItem>
-                <SelectItem value="website" className="text-xs">Website</SelectItem>
+                <SelectItem value="all" className="text-xs">
+                  Semua Platform
+                </SelectItem>
+                <SelectItem value="whatsapp" className="text-xs">
+                  WhatsApp
+                </SelectItem>
+                <SelectItem value="gmail" className="text-xs">
+                  Gmail
+                </SelectItem>
+                <SelectItem value="website" className="text-xs">
+                  Website
+                </SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -223,7 +248,20 @@ export function TicketListPanel({
       </div>
 
       <ScrollArea className="flex-1">
-        {sortedTickets.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Memuat percakapan...
+          </div>
+        ) : error ? (
+          <div className="space-y-3 p-8 text-center text-sm text-muted-foreground">
+            <p>Gagal memuat data customer service.</p>
+            <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Coba Lagi
+            </Button>
+          </div>
+        ) : sortedTickets.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             {searchQuery || statusFilter !== "all" || platformFilter !== "all"
               ? "Tidak ada percakapan yang cocok."

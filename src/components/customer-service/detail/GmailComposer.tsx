@@ -24,6 +24,12 @@ interface Props {
   replyToData?: { to: string; subject: string; ticketId: string } | null;
 }
 
+interface GmailDraft {
+  to?: string;
+  subject?: string;
+  body?: string;
+}
+
 export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
   const { createTicket, addMessage, getDraft, setDraft } = useTickets();
   const draftKey = `gmail-compose-${replyToData?.ticketId || "new"}`;
@@ -128,7 +134,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
 
   // Load draft when replyToData or component mounts
   useEffect(() => {
-    const saved = getDraft(draftKey);
+    const saved = getDraft<GmailDraft>(draftKey);
     if (saved) {
       setTo(saved.to || replyToData?.to || "");
       setSubject(saved.subject || replyToData?.subject || "");
@@ -169,8 +175,6 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
     saveDraft(to, subject, html);
   };
 
-
-
   const handleSend = () => {
     if (!to.trim() || !subject.trim() || !bodyHtml.trim() || bodyHtml === "<br>") return;
 
@@ -199,7 +203,10 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
         senderName,
         senderHandle: to.trim(),
         subject: subject.trim(),
-        snippet: bodyHtml.replace(/<[^>]*>/g, " ").trim().substring(0, 100),
+        snippet: bodyHtml
+          .replace(/<[^>]*>/g, " ")
+          .trim()
+          .substring(0, 100),
         messages: [
           {
             id: `m-${Date.now()}`,
@@ -368,7 +375,6 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
           <Underline className="h-4 w-4" />
         </Button>
 
-
         <span className="w-px h-4 bg-border mx-1 shrink-0" />
 
         <Button
@@ -468,8 +474,6 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
         >
           <Paperclip className="h-4 w-4" />
         </Button>
-
-
       </div>
     </div>
   );

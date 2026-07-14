@@ -12,10 +12,14 @@ interface Props {
 }
 
 export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
-  const { markAsRead } = useTickets();
+  const { error, ensureTicketDetails, isLoading, markAsRead, refreshTickets } = useTickets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isComposingEmail, setIsComposingEmail] = useState(false);
-  const [replyToData, setReplyToData] = useState<{ to: string; subject: string; ticketId: string } | null>(null);
+  const [replyToData, setReplyToData] = useState<{
+    to: string;
+    subject: string;
+    ticketId: string;
+  } | null>(null);
 
   useEffect(() => {
     setSelectedId(null);
@@ -26,8 +30,9 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
   useEffect(() => {
     if (selectedId) {
       markAsRead(selectedId);
+      ensureTicketDetails(selectedId).catch(() => undefined);
     }
-  }, [selectedId, markAsRead]);
+  }, [selectedId, ensureTicketDetails, markAsRead]);
 
   const handleSelect = (id: string) => {
     setSelectedId(id);
@@ -65,6 +70,9 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
           selectedId={selectedId}
           onSelect={handleSelect}
           onStartCompose={handleStartCompose}
+          isLoading={isLoading}
+          error={error}
+          onRefresh={refreshTickets}
         />
       </div>
       <div className="col-span-7 min-h-0">

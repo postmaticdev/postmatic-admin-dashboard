@@ -49,6 +49,34 @@ const CustomOrderedList = OrderedList.extend({
   },
 });
 
+interface WebsiteDraft {
+  subject?: string;
+  html?: string;
+}
+
+function htmlToPreviewText(value?: string | null) {
+  return (value ?? "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isImageAttachment(name: string, url: string) {
+  return /\.(apng|avif|gif|jpe?g|png|svg|webp)(\?|#|$)/i.test(`${name} ${url}`);
+}
+
+function isVideoAttachment(name: string, url: string) {
+  return /\.(mp4|ogg|ogv|webm|mov)(\?|#|$)/i.test(`${name} ${url}`);
+}
+
 export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   const { addMessage, getDraft, setDraft } = useTickets();
   const draftKey = `web-reply-${ticket.id}`;
@@ -87,7 +115,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
 
   // Load draft when ticket.id changes
   useEffect(() => {
-    const saved = getDraft(draftKey);
+    const saved = getDraft<WebsiteDraft>(draftKey);
     if (saved) {
       setSubject(saved.subject || "");
       setEditorHtml(saved.html || "");
@@ -132,7 +160,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
   // Auto scroll to bottom when message list changes
   useEffect(() => {
     if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector("[data-radix-scroll-area-viewport]");
+      const scrollContainer = scrollAreaRef.current.querySelector(
+        "[data-radix-scroll-area-viewport]",
+      );
       if (scrollContainer) {
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       }
@@ -162,7 +192,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
           } else if (file.type.startsWith("video/")) {
             htmlToInsert = `<video src="${dataUrl}" controls style="max-width: 100%; max-height: 240px; display: block; border-radius: 6px; margin: 8px 0; border: 1px solid var(--border);"></video>`;
           } else {
-            htmlToInsert = `<a href="${dataUrl}" download="${file.name}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; text-decoration: underline; font-weight: 500; font-size: 12px; margin: 4px 0; color: inherit;">📎 ${file.name}</a>`;
+            htmlToInsert = `<a href="${dataUrl}" download="${file.name}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; text-decoration: underline; font-weight: 500; font-size: 12px; margin: 4px 0; color: inherit;">Lampiran ${file.name}</a>`;
           }
 
           editor.chain().focus().insertContent(htmlToInsert).run();
@@ -188,7 +218,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
       quotedMessage: replyingTo
         ? {
             authorName: replyingTo.authorName,
-            content: replyingTo.content ? replyingTo.content.replace(/<[^>]*>/g, " ").substring(0, 100) : "Pesan media",
+            content: htmlToPreviewText(replyingTo.content).substring(0, 100) || "Pesan media",
           }
         : undefined,
     });
@@ -231,42 +261,47 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               );
             }
             return (
-              <article key={m.id} className="rounded-lg border border-border bg-card p-4 shadow-sm relative group flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="mb-3 flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={m.authorAvatar} alt={m.authorName} />
-                    <AvatarFallback className="text-xs">{m.authorName.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground">{m.authorName}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {m.direction === "out" ? "CS Agent" : "Pelapor"}
-                    </p>
+              <article
+                key={m.id}
+                className="rounded-lg border border-border bg-card p-4 shadow-sm relative group flex items-start justify-between gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="mb-3 flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={m.authorAvatar} alt={m.authorName} />
+                      <AvatarFallback className="text-xs">{m.authorName.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground">{m.authorName}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {m.direction === "out" ? "CS Agent" : "Pelapor"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatRelative(m.createdAt)}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelative(m.createdAt)}
-                  </span>
-                </div>
 
-                {/* Render Quoted message inside Website Report card */}
-                {m.quotedMessage && (
-                  <div className="bg-muted border-l-4 border-primary/50 p-2 rounded text-xs text-muted-foreground mb-2 max-w-full overflow-hidden">
-                    <p className="font-bold text-[10px] text-foreground mb-0.5">{m.quotedMessage.authorName}</p>
-                    <p className="truncate text-[11px]">{m.quotedMessage.content}</p>
-                  </div>
-                )}
+                  {/* Render Quoted message inside Website Report card */}
+                  {m.quotedMessage && (
+                    <div className="bg-muted border-l-4 border-primary/50 p-2 rounded text-xs text-muted-foreground mb-2 max-w-full overflow-hidden">
+                      <p className="font-bold text-[10px] text-foreground mb-0.5">
+                        {m.quotedMessage.authorName}
+                      </p>
+                      <p className="truncate text-[11px]">{m.quotedMessage.content}</p>
+                    </div>
+                  )}
 
-                {/* Render Message Subject if exists */}
-                {m.subject && (
-                  <h3 className="text-sm font-bold text-foreground mb-1.5 border-b pb-1">
-                    {m.subject}
-                  </h3>
-                )}
+                  {/* Render Message Subject if exists */}
+                  {m.subject && (
+                    <h3 className="text-sm font-bold text-foreground mb-1.5 border-b pb-1">
+                      {m.subject}
+                    </h3>
+                  )}
 
-                {/* Render Rich Content message body */}
-                <div
-                  className="text-sm leading-relaxed text-foreground/90 prose max-w-none 
+                  {/* Render Rich Content message body */}
+                  <div
+                    className="text-sm leading-relaxed text-foreground/90 prose max-w-none
                     [&_img]:max-h-64 [&_img]:rounded [&_img]:my-2 [&_img]:inline-block
                     [&_video]:max-h-64 [&_video]:rounded [&_video]:my-2 [&_video]:inline-block
                     [&_a]:text-blue-600 [&_a]:underline [&_a]:font-medium
@@ -274,21 +309,70 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
                     [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-2 [&_h2]:mb-1
                     [&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-1 [&_h3]:mb-1
                     [&_p]:mb-1"
-                  dangerouslySetInnerHTML={{ __html: m.content }}
-                />
-              </div>
+                    dangerouslySetInnerHTML={{ __html: m.content }}
+                  />
 
-              {/* Reply Button (Hover) */}
-              <button
-                type="button"
-                onClick={() => setReplyingTo(m)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 mt-1"
-                title="Balas pesan ini"
-              >
-                <CornerUpLeft className="h-3.5 w-3.5" />
-              </button>
-            </article>
-          )})}
+                  {m.attachments && m.attachments.length > 0 && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {m.attachments.map((attachment) => {
+                        if (isImageAttachment(attachment.name, attachment.url)) {
+                          return (
+                            <a
+                              key={attachment.url}
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="group overflow-hidden rounded-md border border-border bg-muted/30"
+                            >
+                              <img
+                                src={attachment.url}
+                                alt={attachment.name}
+                                className="h-44 w-full object-cover transition-opacity group-hover:opacity-90"
+                                loading="lazy"
+                              />
+                            </a>
+                          );
+                        }
+
+                        if (isVideoAttachment(attachment.name, attachment.url)) {
+                          return (
+                            <video
+                              key={attachment.url}
+                              src={attachment.url}
+                              controls
+                              className="h-44 w-full rounded-md border border-border bg-muted/30 object-cover"
+                            />
+                          );
+                        }
+
+                        return (
+                          <a
+                            key={attachment.url}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-full items-center rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                          >
+                            <span className="truncate">{attachment.name}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Reply Button (Hover) */}
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(m)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 mt-1"
+                  title="Balas pesan ini"
+                >
+                  <CornerUpLeft className="h-3.5 w-3.5" />
+                </button>
+              </article>
+            );
+          })}
         </div>
       </ScrollArea>
 
@@ -301,7 +385,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               <div className="border-l-4 border-primary pl-2 overflow-hidden flex-1">
                 <p className="text-xs font-bold text-foreground">{replyingTo.authorName}</p>
                 <p className="text-xs text-muted-foreground truncate max-w-[500px]">
-                  {replyingTo.content ? replyingTo.content.replace(/<[^>]*>/g, " ").substring(0, 100) : "Pesan media"}
+                  {htmlToPreviewText(replyingTo.content).substring(0, 100) || "Pesan media"}
                 </p>
               </div>
               <Button
@@ -389,7 +473,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("bold") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("bold")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -402,7 +488,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("italic") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("italic")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().toggleItalic().run()}
@@ -415,7 +503,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("underline") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("underline")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().toggleUnderline().run()}
@@ -428,7 +518,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("link") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("link")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleLink}
@@ -444,7 +536,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive({ textAlign: "left" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive({ textAlign: "left" })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().setTextAlign("left").run()}
@@ -457,7 +551,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive({ textAlign: "center" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive({ textAlign: "center" })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().setTextAlign("center").run()}
@@ -470,7 +566,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive({ textAlign: "right" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive({ textAlign: "right" })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().setTextAlign("right").run()}
@@ -486,7 +584,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("bulletList") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("bulletList")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().toggleBulletList().run()}
@@ -500,7 +600,9 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               size="icon"
               className={cn(
                 "h-7 w-7 shrink-0",
-                editor?.isActive("orderedList") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                editor?.isActive("orderedList")
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => editor?.chain().focus().toggleOrderedList().run()}
@@ -512,14 +614,21 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="button"
               className={cn(
                 "h-7 px-1 text-[10px] font-bold border border-border rounded transition-colors shrink-0 flex items-center justify-center gap-0.5",
-                editor?.isActive("orderedList", { type: "a" }) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                editor?.isActive("orderedList", { type: "a" })
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 if (editor?.isActive("orderedList", { type: "a" })) {
                   editor.chain().focus().toggleOrderedList().run();
                 } else {
-                  editor?.chain().focus().toggleOrderedList().updateAttributes("orderedList", { type: "a" }).run();
+                  editor
+                    ?.chain()
+                    .focus()
+                    .toggleOrderedList()
+                    .updateAttributes("orderedList", { type: "a" })
+                    .run();
                 }
               }}
               title="ABC list"
