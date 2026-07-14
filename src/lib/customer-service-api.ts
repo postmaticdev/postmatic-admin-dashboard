@@ -97,10 +97,67 @@ export interface RemoteWhatsappMessage {
   updatedAt?: string | null;
 }
 
+export interface RemoteManagedProfile {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  imageUrl?: string | null;
+  image?: string | null;
+  countryCode?: string | null;
+  phone?: string | null;
+  role?: "user" | "admin" | string | null;
+  isBanned?: boolean | null;
+}
+
+export interface RemoteManagedUserDetail {
+  profile?: RemoteManagedProfile | null;
+}
+
+export interface RemoteBusinessSummary {
+  id?: number | null;
+  name?: string | null;
+  primaryLogoUrl?: string | null;
+  category?: string | null;
+  description?: string | null;
+  websiteUrl?: string | null;
+  businessPhone?: string | null;
+  countryCode?: string | null;
+}
+
+export interface RemoteBusinessKnowledge {
+  primaryLogoUrl?: string | null;
+  rootBusinessId?: number | null;
+  name?: string | null;
+  category?: string | null;
+  description?: string | null;
+  websiteUrl?: string | null;
+  businessPhone?: string | null;
+  countryCode?: string | null;
+}
+
+export interface RemoteBusinessManageDetail {
+  businessRoot?: RemoteBusinessSummary | null;
+  knowledge?: RemoteBusinessKnowledge | null;
+}
+
 export interface CreateWhatsappTicketPayload {
   subject: string;
   priority: "low" | "medium" | "high";
   whatsappMessageChatId: number;
+}
+
+export interface CreateWhatsappRoomPayload {
+  number: string;
+  body?: string;
+}
+
+export interface RemoteWhatsappRoomCreateResult {
+  room?: RemoteWhatsappRoom | null;
+  message?: RemoteWhatsappMessage | null;
+}
+
+export interface WhatsappRoomCreateResult extends RemoteWhatsappRoomCreateResult {
+  responseMessage?: string;
 }
 
 export interface ReplyWhatsappPayload {
@@ -113,6 +170,41 @@ export interface ReplyWebsitePayload {
   body: string;
   quotedWebMessageId?: number;
   attachments?: string[];
+}
+
+export interface WhatsappBlastContact {
+  id: string;
+  name: string;
+  handle: string;
+  phone: string;
+  avatarUrl?: string;
+  countryCode?: string;
+  email?: string;
+  role: "user" | "admin" | "business";
+  sourceId: string | number;
+}
+
+export interface WhatsappBlastPayload {
+  targets: string[];
+  body: string;
+}
+
+export interface RemoteWhatsappBlastResultItem {
+  target?: string | null;
+  status?: string | null;
+  whatsappRoomChatId?: number | null;
+  whatsappMessageChatId?: number | null;
+  scheduledDelaySeconds?: number | null;
+  scheduledCumulativeSeconds?: number | null;
+}
+
+export interface RemoteWhatsappBlastResult {
+  totalTargets?: number | null;
+  enqueued?: number | null;
+  skipped?: number | null;
+  minDelaySeconds?: number | null;
+  maxDelaySeconds?: number | null;
+  items?: RemoteWhatsappBlastResultItem[] | null;
 }
 
 export type RemoteTicketStatus = "open" | "pending" | "in_progress" | "resolved";
@@ -198,8 +290,7 @@ const updateWebsiteTicketStatusServer = createServerFn({ method: "POST" })
   });
 
 const getWhatsappTicketsServer = createServerFn({ method: "GET" }).handler(async () => {
-  const response = await apiRequest<RemoteTicket[]>("/api/ticket/whatsapp");
-  return response.data ?? [];
+  return apiRequestAllPages<RemoteTicket>("/api/ticket/whatsapp");
 });
 
 const updateWhatsappTicketStatusServer = createServerFn({ method: "POST" })
@@ -216,8 +307,7 @@ const updateWhatsappTicketStatusServer = createServerFn({ method: "POST" })
   });
 
 const getWhatsappRoomsServer = createServerFn({ method: "GET" }).handler(async () => {
-  const response = await apiRequest<RemoteWhatsappRoom[]>("/api/chat/whatsapp");
-  return response.data ?? [];
+  return apiRequestAllPages<RemoteWhatsappRoom>("/api/chat/whatsapp");
 });
 
 const getWhatsappMessagesServer = createServerFn({ method: "GET" })
@@ -228,6 +318,20 @@ const getWhatsappMessagesServer = createServerFn({ method: "GET" })
       `/api/chat/whatsapp/${data.roomChatId}?${params.toString()}`,
     );
     return response.data ?? [];
+  });
+
+const createWhatsappRoomServer = createServerFn({ method: "POST" })
+  .validator((data: CreateWhatsappRoomPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteWhatsappRoomCreateResult>("/api/chat/whatsapp", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return {
+      ...(response.data ?? {}),
+      responseMessage: response.responseMessage,
+    } satisfies WhatsappRoomCreateResult;
   });
 
 const replyWhatsappRoomServer = createServerFn({ method: "POST" })
@@ -250,6 +354,285 @@ const createWhatsappTicketServer = createServerFn({ method: "POST" })
       method: "POST",
       body: JSON.stringify(data),
     });
+    return response.data;
+  });
+
+const CONTACT_PAGE_LIMIT = 100;
+const CONTACT_PAGE_CAP = 10;
+
+function appendQuery(path: string, query: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  });
+
+  const queryString = params.toString();
+  return queryString ? `${path}?${queryString}` : path;
+}
+
+function getPaginationTotalPages(pagination: unknown) {
+  if (!pagination || typeof pagination !== "object") return 1;
+
+  const totalPages = (pagination as { totalPages?: unknown }).totalPages;
+  return typeof totalPages === "number" && Number.isFinite(totalPages) && totalPages > 0
+    ? totalPages
+    : 1;
+}
+
+async function apiRequestAllPages<T>(
+  path: string,
+  query: Record<string, string | number | undefined> = {},
+) {
+  let page = 1;
+  let totalPages = 1;
+  const items: T[] = [];
+
+  do {
+    const response = await apiRequest<T[]>(
+      appendQuery(path, {
+        ...query,
+        limit: query.limit ?? CONTACT_PAGE_LIMIT,
+        page,
+      }),
+    );
+
+    items.push(...(response.data ?? []));
+    totalPages = getPaginationTotalPages(response.pagination);
+    page += 1;
+  } while (page <= totalPages && page <= CONTACT_PAGE_CAP);
+
+  return items;
+}
+
+function normalizeWhatsappPhone(phone?: string | null, countryCode?: string | null) {
+  const phoneDigits = phone?.replace(/\D/g, "") ?? "";
+  if (!phoneDigits) return null;
+
+  const resolvedCountryCode = countryCode?.replace(/\D/g, "") || "62";
+
+  if (phoneDigits.startsWith(resolvedCountryCode)) {
+    if (phoneDigits.startsWith(`${resolvedCountryCode}0`)) {
+      return `${resolvedCountryCode}${phoneDigits.slice(resolvedCountryCode.length + 1)}`;
+    }
+
+    return phoneDigits;
+  }
+
+  if (phoneDigits.startsWith("0")) {
+    return `${resolvedCountryCode}${phoneDigits.slice(1)}`;
+  }
+
+  if (resolvedCountryCode === "62" && phoneDigits.startsWith("8")) {
+    return `62${phoneDigits}`;
+  }
+
+  return `${resolvedCountryCode}${phoneDigits}`;
+}
+
+function toWhatsappHandle(phone: string) {
+  if (phone.startsWith("62") && phone.length > 2) {
+    return `+62 ${phone.slice(2)}`;
+  }
+
+  return `+${phone}`;
+}
+
+function profileToWhatsappContact(
+  profile: RemoteManagedProfile,
+  role: "user" | "admin",
+): WhatsappBlastContact | null {
+  const normalizedPhone = normalizeWhatsappPhone(profile.phone, profile.countryCode);
+  if (!normalizedPhone) return null;
+
+  const resolvedRole = profile.role === "admin" ? "admin" : "user";
+  if (resolvedRole !== role) return null;
+
+  const sourceId = profile.id ?? normalizedPhone;
+  const name = profile.name?.trim() || profile.email?.trim() || toWhatsappHandle(normalizedPhone);
+
+  return {
+    id: `${role}-${sourceId}`,
+    name,
+    handle: toWhatsappHandle(normalizedPhone),
+    phone: normalizedPhone,
+    avatarUrl: profile.imageUrl ?? profile.image ?? undefined,
+    countryCode: profile.countryCode ?? undefined,
+    email: profile.email ?? undefined,
+    role,
+    sourceId,
+  };
+}
+
+async function getManagedProfileDetail(profile: RemoteManagedProfile) {
+  if (!profile.id) return profile;
+
+  const response = await apiRequest<RemoteManagedUserDetail | RemoteManagedProfile>(
+    `/api/user/manage/${profile.id}`,
+  );
+  const data = response.data;
+
+  if (data && typeof data === "object" && "profile" in data && data.profile) {
+    return data.profile;
+  }
+
+  return (data as RemoteManagedProfile | null) ?? profile;
+}
+
+async function getManagedWhatsappContacts(role: "user" | "admin") {
+  const listedProfiles = await apiRequestAllPages<RemoteManagedProfile>("/api/user/manage", {
+    role,
+  });
+  const uniqueProfiles = Array.from(
+    new Map(
+      listedProfiles
+        .filter((profile) => profile.id || profile.email || profile.phone)
+        .map((profile) => [profile.id ?? profile.email ?? profile.phone, profile]),
+    ).values(),
+  );
+
+  const detailResults = await Promise.allSettled(
+    uniqueProfiles.map(async (profile) => getManagedProfileDetail(profile)),
+  );
+
+  return detailResults
+    .map((result, index) => (result.status === "fulfilled" ? result.value : uniqueProfiles[index]))
+    .map((profile) => profileToWhatsappContact(profile, role))
+    .filter((contact): contact is WhatsappBlastContact => Boolean(contact));
+}
+
+function businessToWhatsappContact(
+  business: RemoteBusinessSummary,
+  knowledge?: RemoteBusinessKnowledge | null,
+): WhatsappBlastContact | null {
+  const phone = normalizeWhatsappPhone(
+    knowledge?.businessPhone ?? business.businessPhone,
+    knowledge?.countryCode ?? business.countryCode,
+  );
+  if (!phone) return null;
+
+  const sourceId = knowledge?.rootBusinessId ?? business.id ?? phone;
+  const name = knowledge?.name?.trim() || business.name?.trim() || `Business #${sourceId}`;
+
+  return {
+    id: `business-${sourceId}`,
+    name,
+    handle: toWhatsappHandle(phone),
+    phone,
+    avatarUrl: knowledge?.primaryLogoUrl ?? business.primaryLogoUrl ?? undefined,
+    countryCode: knowledge?.countryCode ?? business.countryCode ?? undefined,
+    role: "business",
+    sourceId,
+  };
+}
+
+async function getBusinessListForWhatsappContacts() {
+  try {
+    return await apiRequestAllPages<RemoteBusinessSummary>("/api/business/manage");
+  } catch {
+    return apiRequestAllPages<RemoteBusinessSummary>("/api/business/information");
+  }
+}
+
+async function getBusinessWhatsappContact(business: RemoteBusinessSummary) {
+  if (!business.id) return businessToWhatsappContact(business);
+
+  try {
+    const response = await apiRequest<RemoteBusinessManageDetail>(
+      `/api/business/manage/${business.id}`,
+    );
+    return businessToWhatsappContact(
+      response.data?.businessRoot ?? business,
+      response.data?.knowledge,
+    );
+  } catch {
+    const knowledge = await apiRequest<RemoteBusinessKnowledge>(
+      `/api/business/knowledge/${business.id}`,
+    )
+      .then((response) => response.data)
+      .catch(() => null);
+
+    return businessToWhatsappContact(business, knowledge);
+  }
+}
+
+async function getBusinessWhatsappContacts() {
+  const businesses = await getBusinessListForWhatsappContacts();
+  const uniqueBusinesses = Array.from(
+    new Map(
+      businesses
+        .filter((business) => business.id || business.name || business.businessPhone)
+        .map((business) => [business.id ?? business.name ?? business.businessPhone, business]),
+    ).values(),
+  );
+
+  const detailResults = await Promise.allSettled(
+    uniqueBusinesses.map(async (business) => getBusinessWhatsappContact(business)),
+  );
+
+  return detailResults
+    .map((result) => (result.status === "fulfilled" ? result.value : null))
+    .filter((contact): contact is WhatsappBlastContact => Boolean(contact));
+}
+
+function uniqueWhatsappBlastContacts(contacts: WhatsappBlastContact[]) {
+  return Array.from(
+    new Map(contacts.map((contact) => [`${contact.role}:${contact.phone}`, contact])).values(),
+  );
+}
+
+const getWhatsappBlastContactsServer = createServerFn({ method: "GET" }).handler(async () => {
+  const contactResults = await Promise.allSettled([
+    getManagedWhatsappContacts("user"),
+    getManagedWhatsappContacts("admin"),
+    getBusinessWhatsappContacts(),
+  ]);
+
+  const contacts = uniqueWhatsappBlastContacts(
+    contactResults.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+  );
+
+  if (!contacts.length) {
+    const firstError = contactResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (firstError) {
+      throw firstError.reason instanceof Error
+        ? firstError.reason
+        : new Error("Gagal memuat kontak WhatsApp blast.");
+    }
+  }
+
+  return contacts;
+});
+
+const sendWhatsappBlastServer = createServerFn({ method: "POST" })
+  .validator((data: WhatsappBlastPayload) => data)
+  .handler(async ({ data }) => {
+    const targets = Array.from(
+      new Set(
+        data.targets
+          .map((target) => normalizeWhatsappPhone(target))
+          .filter((target): target is string => Boolean(target)),
+      ),
+    );
+    const body = data.body.trim();
+
+    if (!targets.length) {
+      throw new Error("Tambahkan minimal satu nomor WhatsApp yang valid.");
+    }
+
+    if (!body) {
+      throw new Error("Isi pesan WhatsApp blast belum diisi.");
+    }
+
+    const response = await apiRequest<RemoteWhatsappBlastResult>("/api/chat/whatsapp/blast", {
+      method: "POST",
+      body: JSON.stringify({ targets, body }),
+    });
+
     return response.data;
   });
 
@@ -285,12 +668,24 @@ export function getWhatsappMessages(roomChatId: number, limit = 50) {
   return getWhatsappMessagesServer({ data: { roomChatId, limit } });
 }
 
+export function createWhatsappRoom(payload: CreateWhatsappRoomPayload) {
+  return createWhatsappRoomServer({ data: payload });
+}
+
 export function replyWhatsappRoom(roomChatId: number, payload: ReplyWhatsappPayload) {
   return replyWhatsappRoomServer({ data: { roomChatId, payload } });
 }
 
 export function createWhatsappTicket(payload: CreateWhatsappTicketPayload) {
   return createWhatsappTicketServer({ data: payload });
+}
+
+export function getWhatsappBlastContacts() {
+  return getWhatsappBlastContactsServer();
+}
+
+export function sendWhatsappBlast(payload: WhatsappBlastPayload) {
+  return sendWhatsappBlastServer({ data: payload });
 }
 
 export function getRealtimeWebsocketUrl(accessToken?: string | null) {

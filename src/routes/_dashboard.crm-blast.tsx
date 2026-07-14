@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   Megaphone,
@@ -25,12 +26,26 @@ import {
   Send,
   Upload,
   Paperclip,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTickets } from "@/contexts/TicketsContext";
+import {
+  getWhatsappBlastContacts,
+  sendWhatsappBlast,
+  type WhatsappBlastContact,
+  type RemoteWhatsappBlastResultItem,
+} from "@/lib/customer-service-api";
+import type { Ticket, TicketMessage } from "@/lib/types/ticket";
+import {
+  rememberWhatsappRoomAlias,
+  whatsappPhonesMatch,
+} from "@/lib/whatsapp-room-aliases";
 
 export const Route = createFileRoute("/_dashboard/crm-blast")({
   component: CrmBlastPage,
@@ -52,6 +67,9 @@ interface ContactUser {
   id: string;
   name: string;
   handle: string;
+  phone?: string;
+  email?: string;
+  avatarUrl?: string;
   role: "user" | "admin" | "business";
 }
 
@@ -110,8 +128,76 @@ const INITIAL_BLASTS: BlastCampaign[] = [
   },
 ];
 
+function normalizeWhatsappTarget(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (digits.startsWith("0")) {
+    return `62${digits.slice(1)}`;
+  }
+
+  if (digits.startsWith("620")) {
+    return `62${digits.slice(3)}`;
+  }
+
+  if (digits.startsWith("8")) {
+    return `62${digits}`;
+  }
+
+  return digits;
+}
+
+function formatWhatsappHandle(value: string) {
+  const normalized = normalizeWhatsappTarget(value);
+  if (!normalized) return value.trim();
+
+  if (normalized.startsWith("62") && normalized.length > 2) {
+    return `+62 ${normalized.slice(2)}`;
+  }
+
+  return `+${normalized}`;
+}
+
+function parseTargetList(targetGroup: string, manualInput: string) {
+  return `${targetGroup},${manualInput}`
+    .split(/[,;\n]+/)
+    .map((target) => target.trim())
+    .filter(Boolean);
+}
+
+function toBlastDeliveryStatus(status?: string | null) {
+  const normalized = status?.toLowerCase();
+
+  if (
+    !normalized ||
+    normalized === "enqueued" ||
+    normalized === "queued" ||
+    normalized === "scheduled"
+  ) {
+    return "pending";
+  }
+  if (normalized === "success") return "sent";
+  if (normalized === "skipped") return "failed";
+
+  return normalized;
+}
+
+function findExistingWhatsappTicket(target: string, tickets: Ticket[]) {
+  const normalizedTarget = normalizeWhatsappTarget(target);
+  if (!normalizedTarget) return undefined;
+
+  return tickets.find(
+    (ticket) =>
+      ticket.source === "whatsapp" &&
+      ticket.externalIds?.whatsappRoomChatId != null &&
+      [ticket.senderHandle, ticket.senderName, ticket.subject].some((candidate) =>
+        whatsappPhonesMatch(candidate, normalizedTarget),
+      ),
+  );
+}
+
 function CrmBlastPage() {
-  const { createTicket } = useTickets();
+  const { addMessage, createTicket, getBySource, refreshTickets } = useTickets();
   const [blasts, setBlasts] = useState<BlastCampaign[]>(INITIAL_BLASTS);
   const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +225,8 @@ function CrmBlastPage() {
   const [scheduleTime, setScheduleTime] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeMessage, setComposeMessage] = useState("");
+  const [isSendingBlast, setIsSendingBlast] = useState(false);
+  const [sendBlastError, setSendBlastError] = useState("");
 
   // Schedule modal state
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -148,6 +236,13 @@ function CrmBlastPage() {
   const [importSearch, setImportSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"user" | "admin" | "business">("user");
+
+  const whatsappContactsQuery = useQuery({
+    queryKey: ["crm-blast", "whatsapp-contacts"],
+    queryFn: getWhatsappBlastContacts,
+    enabled: isImportOpen && activePlatform === "whatsapp",
+    staleTime: 60_000,
+  });
 
   const filteredBlasts = blasts.filter((b) =>
     b.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -168,70 +263,196 @@ function CrmBlastPage() {
     setScheduleTime("");
     setComposeSubject("");
     setComposeMessage("");
+    setSendBlastError("");
+    setSelectedUserIds([]);
+    setImportSearch("");
+    setActiveTab("user");
     setDropdownOpen(false);
     setActionDropdownOpen(false);
     setIsScheduleModalOpen(false);
     setViewMode("create");
   };
 
-  const handleSaveBlast = (e: React.FormEvent) => {
+  const handleSaveBlast = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Add manualInput remaining if exists
-    let finalTargets = targetGroup.trim();
-    if (manualInput.trim()) {
-      finalTargets = finalTargets ? `${finalTargets}, ${manualInput.trim()}` : manualInput.trim();
-    }
 
-    if (!campaignName.trim() || !composeMessage.trim() || !finalTargets) return;
+    const targetList = parseTargetList(targetGroup, manualInput);
+    const finalTargets = targetList.join(", ");
+
+    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
 
-    const targetList = finalTargets.split(",").map((s) => s.trim()).filter(Boolean);
     const assignCount = targetList.length;
 
-    const newBlast: BlastCampaign = {
-      id: `b-${Date.now()}`,
-      campaignName: campaignName.trim(),
-      platform: activePlatform,
-      status: "success",
-      assign: assignCount || 1,
-      dateTime: new Date().toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-      message: composeMessage,
-      subject: activePlatform !== "whatsapp" ? composeSubject : undefined,
-      targets: finalTargets,
-    };
+    setSendBlastError("");
+    setIsSendingBlast(true);
 
-    setBlasts([newBlast, ...blasts]);
+    try {
+      const whatsappBlastItems = new Map<string, RemoteWhatsappBlastResultItem>();
+      const contactPool =
+        activePlatform === "whatsapp" ? (whatsappContactsQuery.data ?? []) : MOCK_USERS;
+      const whatsappTickets = activePlatform === "whatsapp" ? getBySource("whatsapp") : [];
+      const recipientPlans = targetList.map((handle) => {
+        const normalizedTarget = normalizeWhatsappTarget(handle);
+        const matchedUser = contactPool.find((u) => {
+          if (activePlatform !== "whatsapp") {
+            return u.handle.toLowerCase() === handle.toLowerCase();
+          }
 
-    // Create room chats in Customer Service for each target recipient
-    targetList.forEach((handle, idx) => {
-      const matchedUser = MOCK_USERS.find((u) => u.handle.toLowerCase() === handle.toLowerCase());
-      const contactName = matchedUser ? matchedUser.name : handle;
-      const cleanSnippet = composeMessage.replace(/<[^>]*>?/gm, "").substring(0, 100);
+          return u.phone === normalizedTarget || normalizeWhatsappTarget(u.handle) === normalizedTarget;
+        });
+        const existingTicket =
+          activePlatform === "whatsapp"
+            ? findExistingWhatsappTicket(normalizedTarget || handle, whatsappTickets)
+            : undefined;
 
-      createTicket({
-        source: activePlatform,
-        subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : campaignName.trim(),
-        snippet: cleanSnippet,
-        senderName: contactName,
-        senderHandle: handle,
-        senderAvatar: `https://i.pravatar.cc/80?u=${encodeURIComponent(handle)}`,
-        isSavedAsTicket: true,
-        messages: [
-          {
-            id: `msg-blast-${Date.now()}-${idx}`,
+        return {
+          handle,
+          normalizedTarget,
+          matchedUser,
+          existingTicket,
+        };
+      });
+
+      if (activePlatform === "whatsapp") {
+        const normalizedTargets = Array.from(
+          new Set(
+            recipientPlans
+              .filter((plan) => !plan.existingTicket)
+              .map((plan) => plan.normalizedTarget)
+              .filter(Boolean),
+          ),
+        );
+
+        if (normalizedTargets.length > 0) {
+          const blastResult = await sendWhatsappBlast({
+            targets: normalizedTargets,
+            body: composeMessage,
+          });
+
+          (blastResult?.items ?? []).forEach((item) => {
+            const normalizedTarget = normalizeWhatsappTarget(item.target ?? "");
+            if (normalizedTarget) {
+              whatsappBlastItems.set(normalizedTarget, item);
+            }
+          });
+        }
+      }
+
+      const newBlast: BlastCampaign = {
+        id: `b-${Date.now()}`,
+        campaignName: campaignName.trim(),
+        platform: activePlatform,
+        status: "success",
+        assign: assignCount || 1,
+        dateTime: new Date().toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+        message: composeMessage,
+        subject: activePlatform !== "whatsapp" ? composeSubject : undefined,
+        targets: finalTargets,
+      };
+
+      setBlasts([newBlast, ...blasts]);
+
+      // Create room chats in Customer Service for each target recipient
+      recipientPlans.forEach((plan, idx) => {
+        const { existingTicket, handle, matchedUser, normalizedTarget } = plan;
+        const blastItem =
+          activePlatform === "whatsapp" ? whatsappBlastItems.get(normalizedTarget) : undefined;
+        const messageExternalId = blastItem?.whatsappMessageChatId;
+        const roomChatId = existingTicket?.externalIds?.whatsappRoomChatId ?? blastItem?.whatsappRoomChatId;
+        const sentStatus =
+          activePlatform === "whatsapp" && existingTicket
+            ? "pending"
+            : activePlatform === "whatsapp" ? toBlastDeliveryStatus(blastItem?.status) : undefined;
+        const createdAt = new Date().toISOString();
+        const contactName = matchedUser ? matchedUser.name : handle;
+        const senderHandle =
+          activePlatform === "whatsapp"
+            ? (matchedUser?.handle ?? formatWhatsappHandle(normalizedTarget || handle))
+            : handle;
+        const cleanSnippet = composeMessage.replace(/<[^>]*>?/gm, "").substring(0, 100);
+        const blastMessage: TicketMessage = {
+          id:
+            activePlatform === "whatsapp" && messageExternalId != null
+              ? `whatsapp-message-${messageExternalId}`
+              : `msg-blast-${Date.now()}-${idx}`,
+          externalId: messageExternalId,
+          authorId: "cs",
+          authorName: "CS Postmatic",
+          subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : undefined,
+          content: composeMessage,
+          createdAt,
+          direction: "out",
+          sentStatus,
+          pendingAt: sentStatus === "pending" ? createdAt : undefined,
+        };
+
+        if (activePlatform === "whatsapp" && roomChatId != null && normalizedTarget) {
+          rememberWhatsappRoomAlias({
+            roomChatId,
+            phone: normalizedTarget,
+            senderName: contactName,
+            senderHandle,
+            senderAvatar: matchedUser?.avatarUrl,
+            subject: campaignName.trim(),
+            snippet: cleanSnippet,
+            updatedAt: createdAt,
+            lastMessage: blastMessage,
+          });
+        }
+
+        if (activePlatform === "whatsapp" && existingTicket) {
+          addMessage(existingTicket.id, {
             authorId: "cs",
             authorName: "CS Postmatic",
-            subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : undefined,
             content: composeMessage,
-            createdAt: new Date().toISOString(),
             direction: "out",
-          },
-        ],
-      });
-    });
+          });
+          return;
+        }
 
-    setViewMode("list");
+        createTicket({
+          id:
+            activePlatform === "whatsapp" && roomChatId != null
+              ? `whatsapp:${roomChatId}`
+              : undefined,
+          externalIds:
+            activePlatform === "whatsapp"
+              ? {
+                  whatsappRoomChatId: roomChatId ?? undefined,
+                  whatsappMessageChatId: messageExternalId ?? undefined,
+                }
+              : undefined,
+          source: activePlatform,
+          subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : campaignName.trim(),
+          snippet: cleanSnippet,
+          senderName: contactName,
+          senderHandle,
+          senderAvatar: matchedUser?.avatarUrl,
+          isSavedAsTicket: true,
+          isSynced: activePlatform === "whatsapp" ? roomChatId != null : undefined,
+          isDetailsLoaded: activePlatform === "whatsapp" ? true : undefined,
+          messages: [blastMessage],
+        });
+      });
+
+      setViewMode("list");
+
+      if (activePlatform === "whatsapp") {
+        refreshTickets();
+
+        if (typeof window !== "undefined") {
+          window.setTimeout(refreshTickets, 1_500);
+          window.setTimeout(refreshTickets, 5_000);
+        }
+      }
+    } catch (error) {
+      setSendBlastError(
+        error instanceof Error ? error.message : "Gagal mengirim WhatsApp blast.",
+      );
+    } finally {
+      setIsSendingBlast(false);
+    }
   };
 
   const insertHtmlAtCursor = (html: string) => {
@@ -299,15 +520,13 @@ function CrmBlastPage() {
   };
 
   const handleConfirmSchedule = () => {
-    let finalTargets = targetGroup.trim();
-    if (manualInput.trim()) {
-      finalTargets = finalTargets ? `${finalTargets}, ${manualInput.trim()}` : manualInput.trim();
-    }
+    const targetList = parseTargetList(targetGroup, manualInput);
+    const finalTargets = targetList.join(", ");
 
-    if (!campaignName.trim() || !composeMessage.trim() || !finalTargets || !scheduleTime) return;
+    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length || !scheduleTime) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
 
-    const assignCount = finalTargets.split(",").map((s) => s.trim()).filter(Boolean).length;
+    const assignCount = targetList.length;
 
     const newBlast: BlastCampaign = {
       id: `b-${Date.now()}`,
@@ -336,9 +555,25 @@ function CrmBlastPage() {
   };
 
   // Import Modal Handlers
-  const filteredUsers = MOCK_USERS.filter((u) => {
+  const importableContacts = useMemo<ContactUser[]>(() => {
     if (activePlatform === "whatsapp") {
-      if (!u.handle.startsWith("+")) return false;
+      return (whatsappContactsQuery.data ?? []).map((contact: WhatsappBlastContact) => ({
+        id: contact.id,
+        name: contact.name,
+        handle: contact.handle,
+        phone: contact.phone,
+        email: contact.email,
+        avatarUrl: contact.avatarUrl,
+        role: contact.role,
+      }));
+    }
+
+    return MOCK_USERS;
+  }, [activePlatform, whatsappContactsQuery.data]);
+
+  const filteredUsers = importableContacts.filter((u) => {
+    if (activePlatform === "whatsapp") {
+      if (!u.phone && !u.handle.startsWith("+")) return false;
     } else if (activePlatform === "gmail") {
       if (!u.handle.includes("@")) return false;
     }
@@ -349,6 +584,8 @@ function CrmBlastPage() {
     const term = importSearch.toLowerCase();
     return u.name.toLowerCase().includes(term) || u.handle.toLowerCase().includes(term);
   });
+  const isImportLoading = activePlatform === "whatsapp" && whatsappContactsQuery.isLoading;
+  const importContactsError = activePlatform === "whatsapp" ? whatsappContactsQuery.error : null;
 
   const handleToggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
@@ -367,7 +604,7 @@ function CrmBlastPage() {
   };
 
   const handleImportConfirm = () => {
-    const selectedHandles = MOCK_USERS.filter((u) => selectedUserIds.includes(u.id)).map((u) => u.handle);
+    const selectedHandles = importableContacts.filter((u) => selectedUserIds.includes(u.id)).map((u) => u.handle);
     if (selectedHandles.length > 0) {
       const handlesString = selectedHandles.join(", ");
       setTargetGroup((prev) => (prev.trim() ? `${prev.trim()}, ${handlesString}` : handlesString));
@@ -380,8 +617,8 @@ function CrmBlastPage() {
     const clean = handle.trim();
     if (!clean) return true;
     if (activePlatform === "whatsapp") {
-      // Must be a valid phone number (digits, hyphens, spaces, optional plus)
-      return /^\+?[0-9\s\-()]{8,20}$/.test(clean);
+      const normalized = normalizeWhatsappTarget(clean);
+      return normalized.length >= 9 && normalized.length <= 16;
     } else if (activePlatform === "gmail") {
       // Must be a valid email format
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
@@ -389,11 +626,11 @@ function CrmBlastPage() {
     return true; // generic website tags
   };
 
-  const parsedTargets = targetGroup.split(",").map((s) => s.trim()).filter(Boolean);
+  const parsedTargets = parseTargetList(targetGroup, manualInput);
   const hasInvalidTargets = parsedTargets.some((t) => !isValidHandle(t));
 
-  const hasTargets = targetGroup.trim() || manualInput.trim();
-  const isFormValid = campaignName.trim() && composeMessage.trim() && hasTargets && !hasInvalidTargets && (activePlatform === "whatsapp" || composeSubject.trim());
+  const hasTargets = parsedTargets.length > 0;
+  const isFormValid = campaignName.trim() && composeMessage.trim() && hasTargets && !hasInvalidTargets && !isSendingBlast && (activePlatform === "whatsapp" || composeSubject.trim());
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground relative">
@@ -853,52 +1090,71 @@ function CrmBlastPage() {
             </div>
 
             {/* Form Footer with Kirim split dropdown button */}
-            <div className="flex justify-end gap-3 shrink-0 items-center">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setViewMode("list")}
-                className="h-9 px-4 text-xs font-semibold"
-              >
-                Batal
-              </Button>
+            <div className="flex flex-col gap-3 shrink-0">
+              {sendBlastError && (
+                <div className="flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{sendBlastError}</span>
+                </div>
+              )}
 
-              {/* Split Dropdown Button */}
-              <div className="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white shadow-sm shrink-0 relative rounded-full">
-                <button
-                  type="submit"
-                  disabled={!isFormValid}
-                  className="h-9 pl-5 pr-4 text-xs font-semibold hover:bg-blue-700/80 transition-colors disabled:opacity-50 flex items-center justify-center border-r border-blue-500/30 rounded-l-full"
-                >
-                  Kirim
-                </button>
-                <button
+              <div className="flex justify-end gap-3 items-center">
+                <Button
                   type="button"
-                  disabled={!isFormValid}
-                  onClick={() => setActionDropdownOpen(!actionDropdownOpen)}
-                  className="h-9 px-3 hover:bg-blue-700/80 transition-colors flex items-center justify-center disabled:opacity-50 rounded-r-full"
+                  variant="outline"
+                  onClick={() => setViewMode("list")}
+                  className="h-9 px-4 text-xs font-semibold"
                 >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
+                  Batal
+                </Button>
 
-                {actionDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setActionDropdownOpen(false)} />
-                    <div className="absolute right-0 bottom-full mb-1.5 w-36 rounded-lg border border-border bg-popover p-1.5 shadow-xl z-40 text-foreground">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActionDropdownOpen(false);
-                          setIsScheduleModalOpen(true);
-                        }}
-                        className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground text-left"
-                      >
-                        <Calendar className="h-3.5 w-3.5 text-blue-500" />
-                        Schedule
-                      </button>
-                    </div>
-                  </>
-                )}
+                {/* Split Dropdown Button */}
+                <div className="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white shadow-sm shrink-0 relative rounded-full">
+                  <button
+                    type="submit"
+                    disabled={!isFormValid}
+                    className="h-9 pl-5 pr-4 text-xs font-semibold hover:bg-blue-700/80 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 border-r border-blue-500/30 rounded-l-full"
+                  >
+                    {isSendingBlast ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Mengirim
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-3.5 w-3.5" />
+                        Kirim
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isFormValid}
+                    onClick={() => setActionDropdownOpen(!actionDropdownOpen)}
+                    className="h-9 px-3 hover:bg-blue-700/80 transition-colors flex items-center justify-center disabled:opacity-50 rounded-r-full"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+
+                  {actionDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setActionDropdownOpen(false)} />
+                      <div className="absolute right-0 bottom-full mb-1.5 w-36 rounded-lg border border-border bg-popover p-1.5 shadow-xl z-40 text-foreground">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActionDropdownOpen(false);
+                            setIsScheduleModalOpen(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground text-left"
+                        >
+                          <Calendar className="h-3.5 w-3.5 text-blue-500" />
+                          Schedule
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </form>
@@ -1218,6 +1474,7 @@ function CrmBlastPage() {
                   type="checkbox"
                   checked={filteredUsers.length > 0 && filteredUsers.every((u) => selectedUserIds.includes(u.id))}
                   onChange={handleToggleSelectAll}
+                  disabled={isImportLoading || Boolean(importContactsError)}
                   className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 bg-muted/10 cursor-pointer"
                 />
                 <span>Pilih Semua ({filteredUsers.length} Terfilter)</span>
@@ -1228,7 +1485,34 @@ function CrmBlastPage() {
             {/* Contacts list */}
             <ScrollArea className="flex-1">
               <div className="divide-y divide-border/60 px-6">
-                {filteredUsers.length === 0 ? (
+                {isImportLoading ? (
+                  <div className="flex items-center justify-center gap-2 p-8 text-xs font-medium text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memuat kontak WhatsApp...
+                  </div>
+                ) : importContactsError ? (
+                  <div className="flex flex-col items-center gap-3 p-8 text-center">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-red-600 dark:text-red-400">
+                      <AlertCircle className="h-4 w-4" />
+                      Gagal memuat kontak WhatsApp.
+                    </div>
+                    <p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">
+                      {importContactsError instanceof Error
+                        ? importContactsError.message
+                        : "Endpoint kontak belum mengembalikan data."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => whatsappContactsQuery.refetch()}
+                      className="h-8 gap-1.5 text-xs font-semibold"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Coba Lagi
+                    </Button>
+                  </div>
+                ) : filteredUsers.length === 0 ? (
                   <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada kontak yang cocok.</p>
                 ) : (
                   filteredUsers.map((u) => {
@@ -1268,7 +1552,7 @@ function CrmBlastPage() {
               </Button>
               <Button
                 onClick={handleImportConfirm}
-                disabled={selectedUserIds.length === 0}
+                disabled={selectedUserIds.length === 0 || isImportLoading || Boolean(importContactsError)}
                 className="h-8.5 text-xs font-semibold px-4"
               >
                 Import Terpilih ({selectedUserIds.length})

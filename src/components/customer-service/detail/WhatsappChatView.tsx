@@ -66,8 +66,16 @@ function getDeliveryLabel(message: TicketMessage) {
 
   if (message.readAt || status === "read") return "Dibaca";
   if (message.deliveredAt || status === "delivered") return "Tersampaikan";
-  if (message.sentAt || status === "sent") return "Terkirim";
-  if (message.pendingAt || status === "pending") return "Pending";
+  if (message.sentAt || status === "sent" || status === "success") return "Terkirim";
+  if (
+    message.pendingAt ||
+    status === "pending" ||
+    status === "enqueued" ||
+    status === "queued" ||
+    status === "scheduled"
+  ) {
+    return "Pending";
+  }
   if (status === "failed" || status === "error") return "Gagal";
 
   return status || "";
@@ -370,6 +378,11 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
                         </>
                       )}
                     </div>
+                    {out && m.errorMessage && (
+                      <p className="max-w-xs text-right text-[10px] leading-snug text-red-100/90">
+                        {m.errorMessage}
+                      </p>
+                    )}
                   </div>
 
                   {!out && (

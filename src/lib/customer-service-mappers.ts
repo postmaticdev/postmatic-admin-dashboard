@@ -6,6 +6,7 @@ import type {
   RemoteWhatsappRoom,
 } from "@/lib/customer-service-api";
 import type { Ticket, TicketMessage, TicketStatus } from "@/lib/types/ticket";
+import { normalizeWhatsappDigits } from "@/lib/whatsapp-room-aliases";
 
 export function remoteStatusToTicketStatus(status?: string | null): TicketStatus | undefined {
   if (status === "resolved") return "done";
@@ -116,6 +117,39 @@ function getReporterHandle(ticket: RemoteTicket) {
   return ticket.channel;
 }
 
+function isLidHandle(value?: string | null) {
+  return /@lid$/i.test(compactText(value));
+}
+
+function getWhatsappRoomPhoneHandle(room: RemoteWhatsappRoom) {
+  const phone = compactText(room.phone);
+  if (!phone) return "";
+
+  const countryCode = compactText(room.countryCode, "62").replace(/\D/g, "") || "62";
+  const phoneDigits = phone.replace(/\D/g, "");
+  const normalizedPhone = phoneDigits.startsWith(countryCode)
+    ? phoneDigits
+    : normalizeWhatsappDigits(`${countryCode}${phoneDigits}`);
+
+  if (normalizedPhone.startsWith("62") && normalizedPhone.length > 2) {
+    return `+62 ${normalizedPhone.slice(2)}`;
+  }
+
+  return normalizedPhone ? `+${normalizedPhone}` : "";
+}
+
+function getWhatsappRoomDisplayName(room: RemoteWhatsappRoom, phoneHandle: string, roomId: number) {
+  const roomName = compactText(room.roomName);
+  if (roomName && !isLidHandle(roomName)) return roomName;
+
+  if (phoneHandle) return phoneHandle;
+
+  const chatId = compactText(room.chatId);
+  if (chatId && !isLidHandle(chatId)) return chatId;
+
+  return `WhatsApp Room ${roomId}`;
+}
+
 export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteMessage[]): Ticket {
   const createdAt = timestamp(ticket.createdAt);
   const updatedAt = timestamp(ticket.updatedAt ?? ticket.createdAt);
@@ -174,11 +208,8 @@ export function mapWebsiteMessage(message: RemoteWebsiteMessage): TicketMessage 
 
 export function mapWhatsappRoom(room: RemoteWhatsappRoom, linkedTicket?: RemoteTicket): Ticket {
   const roomId = Number(room.id);
-  const phoneHandle = `+${compactText(room.countryCode)} ${compactText(room.phone)}`.trim();
-  const displayName = compactText(
-    room.roomName,
-    phoneHandle || compactText(room.chatId, `Room ${roomId}`),
-  );
+  const phoneHandle = getWhatsappRoomPhoneHandle(room);
+  const displayName = getWhatsappRoomDisplayName(room, phoneHandle, roomId);
   const linkedTicketId = linkedTicket?.id != null ? Number(linkedTicket.id) : undefined;
 
   return {
@@ -191,7 +222,8 @@ export function mapWhatsappRoom(room: RemoteWhatsappRoom, linkedTicket?: RemoteT
     subject: compactText(linkedTicket?.subject, `Chat WhatsApp - ${displayName}`),
     snippet: compactText(linkedTicket?.body, "Room chat WhatsApp"),
     senderName: displayName,
-    senderHandle: phoneHandle || compactText(room.chatId, "WhatsApp"),
+    senderHandle:
+      phoneHandle || (isLidHandle(room.chatId) ? "WhatsApp" : compactText(room.chatId, "WhatsApp")),
     updatedAt: timestamp(linkedTicket?.updatedAt ?? room.updatedAt ?? room.createdAt),
     status: remoteStatusToTicketStatus(linkedTicket?.slaStatus),
     isSavedAsTicket: Boolean(linkedTicket),

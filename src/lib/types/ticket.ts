@@ -12,6 +12,7 @@ export interface TicketMessage {
   createdAt: string;
   direction?: "in" | "out";
   sentStatus?: string | null;
+  errorMessage?: string | null;
   pendingAt?: string | null;
   sentAt?: string | null;
   deliveredAt?: string | null;

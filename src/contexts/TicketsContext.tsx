@@ -9,8 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
+  createWhatsappRoom,
   createWhatsappTicket,
   getRealtimeWebsocketUrl,
   getWebsiteTicketDetail,
@@ -26,6 +28,7 @@ import {
   type RemoteWebsiteMessage,
   type RemoteWhatsappMessage,
   type RemoteWhatsappRoom,
+  type WhatsappRoomCreateResult,
 } from "@/lib/customer-service-api";
 import {
   applyWhatsappMessages,
@@ -39,6 +42,12 @@ import {
 } from "@/lib/customer-service-mappers";
 import { MOCK_TICKETS } from "@/lib/mock/tickets";
 import type { Ticket, TicketMessage, TicketSource, TicketStatus } from "@/lib/types/ticket";
+import {
+  findWhatsappRoomAlias,
+  normalizeWhatsappDigits,
+  rememberWhatsappRoomAlias,
+  whatsappPhonesMatch,
+} from "@/lib/whatsapp-room-aliases";
 import { useAuth } from "@/hooks/useAuth";
 
 const CUSTOMER_SERVICE_QUERY_KEY = ["customer-service", "overview"] as const;
@@ -101,6 +110,7 @@ interface TicketsContextValue {
   togglePinTicket: (id: string) => void;
   createTicket: (
     ticket: Omit<Ticket, "id" | "updatedAt" | "isSavedAsTicket" | "status"> & {
+      id?: string;
       status?: TicketStatus;
       isSavedAsTicket?: boolean;
     },
@@ -114,24 +124,127 @@ interface TicketsContextValue {
 
 const TicketsContext = createContext<TicketsContextValue | null>(null);
 
+function hasPendingOutgoingWhatsappMessage(ticket: Ticket) {
+  return (
+    ticket.source === "whatsapp" &&
+    ticket.messages.some((message) => {
+      const status = message.sentStatus?.toLowerCase();
+
+      return (
+        message.direction === "out" &&
+        (Boolean(message.pendingAt) ||
+          status === "pending" ||
+          status === "enqueued" ||
+          status === "queued" ||
+          status === "scheduled")
+      );
+    })
+  );
+}
+
+function isUnhelpfulWhatsappIdentity(value?: string | null) {
+  const text = value?.trim() ?? "";
+
+  return !text || /@lid$/i.test(text) || /^WhatsApp Room \d+$/i.test(text) || text === "WhatsApp";
+}
+
+function applyWhatsappRoomAliases(tickets: Ticket[]) {
+  return tickets.map((ticket) => {
+    if (ticket.source !== "whatsapp") return ticket;
+
+    const alias = findWhatsappRoomAlias({
+      roomChatId: ticket.externalIds?.whatsappRoomChatId,
+      phones: [ticket.senderHandle],
+    });
+    if (!alias) return ticket;
+
+    const shouldUseAliasIdentity =
+      alias.roomChatId === ticket.externalIds?.whatsappRoomChatId ||
+      isUnhelpfulWhatsappIdentity(ticket.senderName) ||
+      isUnhelpfulWhatsappIdentity(ticket.senderHandle);
+    const aliasMessageAlreadyExists =
+      alias.lastMessage &&
+      ticket.messages.some(
+        (message) =>
+          message.id === alias.lastMessage?.id ||
+          (message.externalId != null &&
+            alias.lastMessage?.externalId != null &&
+            String(message.externalId) === String(alias.lastMessage.externalId)),
+      );
+    const messages =
+      alias.lastMessage && !aliasMessageAlreadyExists && ticket.messages.length === 0
+        ? [alias.lastMessage]
+        : ticket.messages;
+    const shouldUseAliasSnippet =
+      !ticket.snippet || ticket.snippet === "Room chat WhatsApp" || shouldUseAliasIdentity;
+
+    return {
+      ...ticket,
+      senderName: shouldUseAliasIdentity ? alias.senderName : ticket.senderName,
+      senderHandle: shouldUseAliasIdentity ? alias.senderHandle : ticket.senderHandle,
+      senderAvatar: alias.senderAvatar ?? ticket.senderAvatar,
+      subject: shouldUseAliasIdentity ? (alias.subject ?? ticket.subject) : ticket.subject,
+      snippet: shouldUseAliasSnippet ? (alias.snippet ?? ticket.snippet) : ticket.snippet,
+      updatedAt: getNewerTimestamp(ticket.updatedAt, alias.updatedAt),
+      messages,
+    };
+  });
+}
+
+function ticketsShareRemoteIdentity(left: Ticket, right: Ticket) {
+  const leftIds = left.externalIds;
+  const rightIds = right.externalIds;
+
+  if (left.source !== right.source) return false;
+
+  if (
+    left.source === "website" &&
+    leftIds?.websiteTicketId != null &&
+    leftIds.websiteTicketId === rightIds?.websiteTicketId
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    left.source === "whatsapp" &&
+    ((leftIds?.whatsappRoomChatId != null &&
+      leftIds.whatsappRoomChatId === rightIds?.whatsappRoomChatId) ||
+      (leftIds?.whatsappTicketId != null &&
+        leftIds.whatsappTicketId === rightIds?.whatsappTicketId)),
+  );
+}
+
+function findMatchingLocalTicket(remoteTicket: Ticket, previousTickets: Ticket[]) {
+  return previousTickets.find(
+    (ticket) => ticket.id === remoteTicket.id || ticketsShareRemoteIdentity(ticket, remoteTicket),
+  );
+}
+
 function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) {
   const localOnlyTickets = previousTickets.filter(
-    (ticket) => !ticket.isSynced || ticket.source === "gmail",
+    (ticket) =>
+      !ticket.isSynced || ticket.source === "gmail" || hasPendingOutgoingWhatsappMessage(ticket),
   );
 
   const mergedRemote = remoteTickets.map((remoteTicket) => {
-    const localTicket = previousTickets.find((ticket) => ticket.id === remoteTicket.id);
+    const localTicket = findMatchingLocalTicket(remoteTicket, previousTickets);
     if (!localTicket) return remoteTicket;
 
     const keepLocalDetails =
       localTicket.isDetailsLoaded && localTicket.messages.length > remoteTicket.messages.length;
+    const keepLocalIdentity =
+      localTicket.id !== remoteTicket.id && hasPendingOutgoingWhatsappMessage(localTicket);
     const localLastMessage = keepLocalDetails ? localTicket.messages.at(-1) : undefined;
 
     return {
       ...remoteTicket,
+      id: keepLocalIdentity ? localTicket.id : remoteTicket.id,
       isPinned: localTicket.isPinned,
       unread: localTicket.unread,
       isDetailsLoaded: keepLocalDetails || remoteTicket.isDetailsLoaded,
+      senderName: keepLocalDetails ? localTicket.senderName : remoteTicket.senderName,
+      senderHandle: keepLocalDetails ? localTicket.senderHandle : remoteTicket.senderHandle,
+      senderAvatar: localTicket.senderAvatar ?? remoteTicket.senderAvatar,
       snippet: localLastMessage
         ? getMessageSnippet(localLastMessage, localTicket.snippet)
         : remoteTicket.snippet,
@@ -147,7 +260,12 @@ function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) 
   });
 
   const localOnlyWithoutRemoteDuplicates = localOnlyTickets.filter(
-    (localTicket) => !mergedRemote.some((remoteTicket) => remoteTicket.id === localTicket.id),
+    (localTicket) =>
+      !mergedRemote.some(
+        (remoteTicket) =>
+          remoteTicket.id === localTicket.id ||
+          ticketsShareRemoteIdentity(localTicket, remoteTicket),
+      ),
   );
 
   return [...mergedRemote, ...localOnlyWithoutRemoteDuplicates];
@@ -177,6 +295,43 @@ function toExternalAttachmentUrls(message: Omit<TicketMessage, "id" | "createdAt
     .filter((url) => url && !url.startsWith("data:"));
 }
 
+function formatWhatsappHandle(value: string) {
+  const normalized = normalizeWhatsappDigits(value);
+  if (!normalized) return value.trim();
+
+  if (normalized.startsWith("62") && normalized.length > 2) {
+    return `+62 ${normalized.slice(2)}`;
+  }
+
+  return `+${normalized}`;
+}
+
+function getWhatsappBlastFailureMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Gagal membuat room WhatsApp di server.";
+}
+
+function getWhatsappRoomPhoneCandidates(room: RemoteWhatsappRoom) {
+  const countryCode = String(room.countryCode ?? "").replace(/\D/g, "");
+  const phone = String(room.phone ?? "").replace(/\D/g, "");
+
+  return [
+    room.phone,
+    countryCode && phone ? `${countryCode}${phone}` : undefined,
+    room.chatId,
+    room.roomName,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function findWhatsappRoomByTarget(rooms: RemoteWhatsappRoom[], target: string) {
+  return rooms.find((room) =>
+    getWhatsappRoomPhoneCandidates(room).some((candidate) => whatsappPhonesMatch(candidate, target)),
+  );
+}
+
 async function getCustomerServiceOverview() {
   const [websiteTickets, whatsappTickets, whatsappRooms] = await Promise.all([
     getWebsiteTickets(),
@@ -202,7 +357,11 @@ async function getCustomerServiceOverview() {
     )
     .map((ticket) => mapWhatsappTicketWithoutRoom(ticket));
 
-  return [...websiteMapped, ...whatsappRoomMapped, ...orphanWhatsappTickets];
+  return applyWhatsappRoomAliases([
+    ...websiteMapped,
+    ...whatsappRoomMapped,
+    ...orphanWhatsappTickets,
+  ]);
 }
 
 interface RealtimePayload {
@@ -940,13 +1099,14 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   const createTicket = useCallback(
     (
       newTicketData: Omit<Ticket, "id" | "updatedAt" | "isSavedAsTicket" | "status"> & {
+        id?: string;
         status?: TicketStatus;
         isSavedAsTicket?: boolean;
       },
     ) => {
-      const newId = `t-${newTicketData.source}-${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(2, 6)}`;
+      const newId =
+        newTicketData.id ??
+        `t-${newTicketData.source}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const newTicket: Ticket = {
         status: newTicketData.status,
         ...newTicketData,
@@ -954,7 +1114,20 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
         isSavedAsTicket: newTicketData.isSavedAsTicket ?? false,
       };
-      setTickets((previous) => [newTicket, ...previous]);
+      setTickets((previous) =>
+        previous.some((ticket) => ticket.id === newId)
+          ? previous.map((ticket) =>
+              ticket.id === newId
+                ? {
+                    ...ticket,
+                    ...newTicket,
+                    isPinned: ticket.isPinned,
+                    unread: ticket.unread,
+                  }
+                : ticket,
+            )
+          : [newTicket, ...previous],
+      );
       return newTicket;
     },
     [],
@@ -1100,6 +1273,206 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
             : item,
         ),
       );
+
+      if (ticket?.source === "whatsapp" && !ticket.externalIds?.whatsappRoomChatId) {
+        const target = normalizeWhatsappDigits(ticket.senderHandle || ticket.senderName);
+        const body = messageData.content.trim();
+        const markOptimisticMessageFailed = (reason: string) => {
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === ticketId
+                ? {
+                    ...item,
+                    messages: item.messages.map((message) =>
+                      message.id === optimisticMessage.id
+                        ? {
+                            ...message,
+                            sentStatus: "failed",
+                            errorMessage: reason,
+                            pendingAt: undefined,
+                          }
+                        : message,
+                    ),
+                  }
+                : item,
+            ),
+          );
+          toast.error("Pesan WhatsApp gagal dikirim", {
+            description: reason,
+          });
+        };
+
+        if (!target) {
+          markOptimisticMessageFailed("Nomor WhatsApp belum valid.");
+          return;
+        }
+
+        if (!body) {
+          markOptimisticMessageFailed(
+            "Pesan pertama untuk chat baru harus berisi teks agar room bisa dibuat.",
+          );
+          return;
+        }
+
+        const syncWhatsappRoomMessage = ({
+          roomChatId,
+          remoteMessage,
+          duplicateTicket,
+          responseMessage,
+          toastTitle,
+        }: {
+          roomChatId: number;
+          remoteMessage: RemoteWhatsappMessage;
+          duplicateTicket?: Ticket;
+          responseMessage?: string;
+          toastTitle: string;
+        }) => {
+          const mappedMessage = mapWhatsappMessage(remoteMessage, ticket.senderName);
+          const messageExternalId = Number(remoteMessage.id);
+          const senderHandle = formatWhatsappHandle(target);
+
+          rememberWhatsappRoomAlias({
+            roomChatId,
+            phone: target,
+            senderName: ticket.senderName || senderHandle,
+            senderHandle,
+            senderAvatar: ticket.senderAvatar,
+            subject: ticket.subject,
+            snippet: getMessageSnippet(mappedMessage, ticket.snippet),
+            updatedAt: mappedMessage.createdAt,
+            lastMessage: mappedMessage,
+          });
+
+          setTickets((previous) => {
+            const duplicateFromState = duplicateTicket
+              ? previous.find((item) => item.id === duplicateTicket.id)
+              : undefined;
+
+            return previous
+              .filter((item) => item.id !== duplicateTicket?.id)
+              .map((item) => {
+                if (item.id !== ticketId) return item;
+
+                const localMessages = item.messages.map((message) =>
+                  message.id === optimisticMessage.id ? mappedMessage : message,
+                );
+                const messages = localMessages.reduce(
+                  (mergedMessages, message) => upsertTicketMessage(mergedMessages, message),
+                  duplicateFromState?.messages ?? [],
+                );
+                const lastMessage = messages.at(-1) ?? mappedMessage;
+
+                return {
+                  ...item,
+                  externalIds: {
+                    ...duplicateFromState?.externalIds,
+                    ...item.externalIds,
+                    whatsappRoomChatId: roomChatId,
+                    whatsappMessageChatId: Number.isFinite(messageExternalId)
+                      ? messageExternalId
+                      : item.externalIds?.whatsappMessageChatId,
+                  },
+                  senderName: duplicateFromState?.senderName ?? item.senderName,
+                  senderHandle: duplicateFromState?.senderHandle ?? senderHandle,
+                  senderAvatar: duplicateFromState?.senderAvatar ?? item.senderAvatar,
+                  subject: duplicateFromState?.subject ?? item.subject,
+                  snippet: getMessageSnippet(lastMessage, item.snippet),
+                  updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+                  isSynced: true,
+                  isDetailsLoaded: true,
+                  messages,
+                };
+              });
+          });
+
+          queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+          scheduleWhatsappMessagesRefresh(ticketId, roomChatId);
+          toast.success(toastTitle, {
+            description: responseMessage,
+          });
+        };
+
+        const existingWhatsappTicket = ticketsRef.current.find((item) => {
+          if (item.id === ticketId || item.source !== "whatsapp") return false;
+          if (!item.externalIds?.whatsappRoomChatId) return false;
+
+          return [item.senderHandle, item.senderName, item.subject].some((value) =>
+            whatsappPhonesMatch(value, target),
+          );
+        });
+
+        if (existingWhatsappTicket?.externalIds?.whatsappRoomChatId) {
+          const roomChatId = existingWhatsappTicket.externalIds.whatsappRoomChatId;
+          replyWhatsappRoom(roomChatId, { body })
+            .then((remoteMessage) => {
+              syncWhatsappRoomMessage({
+                roomChatId,
+                remoteMessage,
+                duplicateTicket: existingWhatsappTicket,
+                toastTitle: "Pesan WhatsApp dikirim ke room yang sudah ada",
+              });
+            })
+            .catch((error) => {
+              markOptimisticMessageFailed(getWhatsappBlastFailureMessage(error));
+              queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+            });
+          return;
+        }
+
+        createWhatsappRoom({
+          number: target,
+          body,
+        })
+          .then(async (createResult: WhatsappRoomCreateResult) => {
+            const roomChatId = createResult.room?.id != null ? Number(createResult.room.id) : undefined;
+
+            if (!roomChatId) {
+              throw new Error("Endpoint create room WhatsApp belum mengembalikan room chat.");
+            }
+
+            const remoteMessage =
+              createResult.message ?? (await replyWhatsappRoom(roomChatId, { body }));
+            syncWhatsappRoomMessage({
+              roomChatId,
+              remoteMessage,
+              responseMessage: createResult.responseMessage,
+              toastTitle: "Room chat WhatsApp berhasil dibuat",
+            });
+          })
+          .catch(async (error) => {
+            try {
+              const rooms = await getWhatsappRooms();
+              const matchedRoom = findWhatsappRoomByTarget(rooms, target);
+              const fallbackRoomChatId =
+                matchedRoom?.id != null ? Number(matchedRoom.id) : undefined;
+
+              if (fallbackRoomChatId) {
+                const remoteMessage = await replyWhatsappRoom(fallbackRoomChatId, { body });
+                const duplicateTicket = ticketsRef.current.find(
+                  (item) =>
+                    item.id !== ticketId &&
+                    item.source === "whatsapp" &&
+                    item.externalIds?.whatsappRoomChatId === fallbackRoomChatId,
+                );
+
+                syncWhatsappRoomMessage({
+                  roomChatId: fallbackRoomChatId,
+                  remoteMessage,
+                  duplicateTicket,
+                  responseMessage: "Room sudah ada, pesan dikirim lewat endpoint reply.",
+                  toastTitle: "Pesan WhatsApp dikirim",
+                });
+                return;
+              }
+            } catch {
+              // Keep the original create-room error for the UI bubble.
+            }
+
+            markOptimisticMessageFailed(getWhatsappBlastFailureMessage(error));
+            queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+          });
+        return;
+      }
 
       if (!ticket?.isSynced) return;
 

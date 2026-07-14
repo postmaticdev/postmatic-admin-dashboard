@@ -23,6 +23,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { TicketCard } from "./TicketCard";
 import { useTickets } from "@/contexts/TicketsContext";
 import type { Ticket, TicketSource } from "@/lib/types/ticket";
+import { normalizeWhatsappDigits, whatsappPhonesMatch } from "@/lib/whatsapp-room-aliases";
 
 interface Props {
   title: string;
@@ -82,7 +83,28 @@ export function TicketListPanel({
     e.preventDefault();
     if (!waPhone.trim()) return;
 
-    const formattedHandle = `${selectedCountry.dialCode} ${waPhone.trim()}`;
+    const normalizedPhone = normalizeWhatsappDigits(`${selectedCountry.dialCode}${waPhone.trim()}`);
+    const formattedHandle =
+      normalizedPhone.startsWith("62") && normalizedPhone.length > 2
+        ? `+62 ${normalizedPhone.slice(2)}`
+        : `${selectedCountry.dialCode} ${waPhone.trim()}`;
+    const existingTicket = tickets.find(
+      (ticket) =>
+        ticket.source === "whatsapp" &&
+        [ticket.senderHandle, ticket.senderName, ticket.subject].some((value) =>
+          whatsappPhonesMatch(value, normalizedPhone || formattedHandle),
+        ),
+    );
+
+    if (existingTicket) {
+      setWaPhone("");
+      setWaName("");
+      setSelectedCountry(COUNTRIES[0]);
+      setIsWhatsappDialogOpen(false);
+      onSelect(existingTicket.id);
+      return;
+    }
+
     const displayName = waName.trim() || formattedHandle;
 
     const newTicket = createTicket({
@@ -90,14 +112,14 @@ export function TicketListPanel({
       senderName: displayName,
       senderHandle: formattedHandle,
       subject: `Chat WhatsApp - ${displayName}`,
-      snippet: "Room chat baru dibuat",
+      snippet: "Chat baru disiapkan",
       messages: [
         {
           id: `m-${Date.now()}`,
           authorId: "system",
           authorName: "System",
           content:
-            "Room chat baru telah berhasil dibuat. Anda dapat mulai mengirim pesan ke customer.",
+            "Chat baru disiapkan. Room WhatsApp akan dibuat setelah pesan pertama berhasil dikirim.",
           createdAt: new Date().toISOString(),
           direction: "in",
         },
