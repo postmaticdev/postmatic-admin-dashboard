@@ -9,7 +9,7 @@ export function Logo({ collapsed = false }: { collapsed?: boolean }) {
       <img
         src={logoSrc}
         alt="Postmatic Logo"
-        className="h-8 w-auto object-contain"
+        className="h-5 w-auto object-contain"
       />
       {!collapsed && (
         <span className="text-lg font-semibold tracking-tight text-foreground">

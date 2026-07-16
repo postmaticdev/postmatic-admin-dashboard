@@ -16,13 +16,29 @@ import { Route as DashboardFinancingRouteImport } from './routes/_dashboard.fina
 import { Route as DashboardDocsRouteImport } from './routes/_dashboard.docs'
 import { Route as DashboardCustomerServiceRouteImport } from './routes/_dashboard.customer-service'
 import { Route as DashboardCrmBlastRouteImport } from './routes/_dashboard.crm-blast'
+import { Route as DashboardWorkspaceRssRouteImport } from './routes/_dashboard.workspace.rss'
+import { Route as DashboardWorkspacePaymentRouteImport } from './routes/_dashboard.workspace.payment'
 import { Route as DashboardWorkspaceCreatorRouteImport } from './routes/_dashboard.workspace.creator'
 import { Route as DashboardWorkspaceBusinessRouteImport } from './routes/_dashboard.workspace.business'
 import { Route as DashboardWorkspaceAccountRouteImport } from './routes/_dashboard.workspace.account'
+import { Route as DashboardDocsManagementRouteImport } from './routes/_dashboard.docs.management'
+import { Route as DashboardDocsLegalityRouteImport } from './routes/_dashboard.docs.legality'
 import { Route as DashboardCustomerServiceWhatsappRouteImport } from './routes/_dashboard.customer-service.whatsapp'
 import { Route as DashboardCustomerServiceWebsiteRouteImport } from './routes/_dashboard.customer-service.website'
 import { Route as DashboardCustomerServiceGmailRouteImport } from './routes/_dashboard.customer-service.gmail'
 import { Route as DashboardCustomerServiceAllRouteImport } from './routes/_dashboard.customer-service.all'
+import { Route as DashboardWorkspaceCreatorIndexRouteImport } from './routes/_dashboard.workspace.creator.index'
+import { Route as DashboardWorkspaceBusinessIndexRouteImport } from './routes/_dashboard.workspace.business.index'
+import { Route as DashboardWorkspaceDiscountVoucherRouteImport } from './routes/_dashboard.workspace.discount.voucher'
+import { Route as DashboardWorkspaceDiscountReferralRouteImport } from './routes/_dashboard.workspace.discount.referral'
+import { Route as DashboardWorkspaceCreatorGalleryRouteImport } from './routes/_dashboard.workspace.creator.gallery'
+import { Route as DashboardWorkspaceBusinessTokenInjectRouteImport } from './routes/_dashboard.workspace.business.token-inject'
+import { Route as DashboardWorkspaceAiModelTextRouteImport } from './routes/_dashboard.workspace.ai-model.text'
+import { Route as DashboardWorkspaceAiModelImageRouteImport } from './routes/_dashboard.workspace.ai-model.image'
+import { Route as DashboardWorkspaceAccountUserRouteImport } from './routes/_dashboard.workspace.account.user'
+import { Route as DashboardWorkspaceAccountRoleRouteImport } from './routes/_dashboard.workspace.account.role'
+import { Route as DashboardWorkspaceAccountCreatorRouteImport } from './routes/_dashboard.workspace.account.creator'
+import { Route as DashboardWorkspaceAccountAdminRouteImport } from './routes/_dashboard.workspace.account.admin'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/_dashboard',
@@ -59,6 +75,17 @@ const DashboardCrmBlastRoute = DashboardCrmBlastRouteImport.update({
   path: '/crm-blast',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardWorkspaceRssRoute = DashboardWorkspaceRssRouteImport.update({
+  id: '/workspace/rss',
+  path: '/workspace/rss',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardWorkspacePaymentRoute =
+  DashboardWorkspacePaymentRouteImport.update({
+    id: '/workspace/payment',
+    path: '/workspace/payment',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardWorkspaceCreatorRoute =
   DashboardWorkspaceCreatorRouteImport.update({
     id: '/workspace/creator',
@@ -77,6 +104,16 @@ const DashboardWorkspaceAccountRoute =
     path: '/workspace/account',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardDocsManagementRoute = DashboardDocsManagementRouteImport.update({
+  id: '/management',
+  path: '/management',
+  getParentRoute: () => DashboardDocsRoute,
+} as any)
+const DashboardDocsLegalityRoute = DashboardDocsLegalityRouteImport.update({
+  id: '/legality',
+  path: '/legality',
+  getParentRoute: () => DashboardDocsRoute,
+} as any)
 const DashboardCustomerServiceWhatsappRoute =
   DashboardCustomerServiceWhatsappRouteImport.update({
     id: '/whatsapp',
@@ -101,36 +138,138 @@ const DashboardCustomerServiceAllRoute =
     path: '/all',
     getParentRoute: () => DashboardCustomerServiceRoute,
   } as any)
+const DashboardWorkspaceCreatorIndexRoute =
+  DashboardWorkspaceCreatorIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardWorkspaceCreatorRoute,
+  } as any)
+const DashboardWorkspaceBusinessIndexRoute =
+  DashboardWorkspaceBusinessIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardWorkspaceBusinessRoute,
+  } as any)
+const DashboardWorkspaceDiscountVoucherRoute =
+  DashboardWorkspaceDiscountVoucherRouteImport.update({
+    id: '/workspace/discount/voucher',
+    path: '/workspace/discount/voucher',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceDiscountReferralRoute =
+  DashboardWorkspaceDiscountReferralRouteImport.update({
+    id: '/workspace/discount/referral',
+    path: '/workspace/discount/referral',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceCreatorGalleryRoute =
+  DashboardWorkspaceCreatorGalleryRouteImport.update({
+    id: '/gallery',
+    path: '/gallery',
+    getParentRoute: () => DashboardWorkspaceCreatorRoute,
+  } as any)
+const DashboardWorkspaceBusinessTokenInjectRoute =
+  DashboardWorkspaceBusinessTokenInjectRouteImport.update({
+    id: '/token-inject',
+    path: '/token-inject',
+    getParentRoute: () => DashboardWorkspaceBusinessRoute,
+  } as any)
+const DashboardWorkspaceAiModelTextRoute =
+  DashboardWorkspaceAiModelTextRouteImport.update({
+    id: '/workspace/ai-model/text',
+    path: '/workspace/ai-model/text',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceAiModelImageRoute =
+  DashboardWorkspaceAiModelImageRouteImport.update({
+    id: '/workspace/ai-model/image',
+    path: '/workspace/ai-model/image',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceAccountUserRoute =
+  DashboardWorkspaceAccountUserRouteImport.update({
+    id: '/user',
+    path: '/user',
+    getParentRoute: () => DashboardWorkspaceAccountRoute,
+  } as any)
+const DashboardWorkspaceAccountRoleRoute =
+  DashboardWorkspaceAccountRoleRouteImport.update({
+    id: '/role',
+    path: '/role',
+    getParentRoute: () => DashboardWorkspaceAccountRoute,
+  } as any)
+const DashboardWorkspaceAccountCreatorRoute =
+  DashboardWorkspaceAccountCreatorRouteImport.update({
+    id: '/creator',
+    path: '/creator',
+    getParentRoute: () => DashboardWorkspaceAccountRoute,
+  } as any)
+const DashboardWorkspaceAccountAdminRoute =
+  DashboardWorkspaceAccountAdminRouteImport.update({
+    id: '/admin',
+    path: '/admin',
+    getParentRoute: () => DashboardWorkspaceAccountRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/crm-blast': typeof DashboardCrmBlastRoute
   '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
-  '/docs': typeof DashboardDocsRoute
+  '/docs': typeof DashboardDocsRouteWithChildren
   '/financing': typeof DashboardFinancingRoute
   '/settings': typeof DashboardSettingsRoute
   '/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
   '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
-  '/workspace/account': typeof DashboardWorkspaceAccountRoute
-  '/workspace/business': typeof DashboardWorkspaceBusinessRoute
-  '/workspace/creator': typeof DashboardWorkspaceCreatorRoute
+  '/docs/legality': typeof DashboardDocsLegalityRoute
+  '/docs/management': typeof DashboardDocsManagementRoute
+  '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
+  '/workspace/creator': typeof DashboardWorkspaceCreatorRouteWithChildren
+  '/workspace/payment': typeof DashboardWorkspacePaymentRoute
+  '/workspace/rss': typeof DashboardWorkspaceRssRoute
+  '/workspace/account/admin': typeof DashboardWorkspaceAccountAdminRoute
+  '/workspace/account/creator': typeof DashboardWorkspaceAccountCreatorRoute
+  '/workspace/account/role': typeof DashboardWorkspaceAccountRoleRoute
+  '/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
+  '/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
+  '/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
+  '/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
+  '/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
+  '/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
+  '/workspace/business/': typeof DashboardWorkspaceBusinessIndexRoute
+  '/workspace/creator/': typeof DashboardWorkspaceCreatorIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/crm-blast': typeof DashboardCrmBlastRoute
   '/customer-service': typeof DashboardCustomerServiceRouteWithChildren
-  '/docs': typeof DashboardDocsRoute
+  '/docs': typeof DashboardDocsRouteWithChildren
   '/financing': typeof DashboardFinancingRoute
   '/settings': typeof DashboardSettingsRoute
   '/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
   '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
-  '/workspace/account': typeof DashboardWorkspaceAccountRoute
-  '/workspace/business': typeof DashboardWorkspaceBusinessRoute
-  '/workspace/creator': typeof DashboardWorkspaceCreatorRoute
+  '/docs/legality': typeof DashboardDocsLegalityRoute
+  '/docs/management': typeof DashboardDocsManagementRoute
+  '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/workspace/payment': typeof DashboardWorkspacePaymentRoute
+  '/workspace/rss': typeof DashboardWorkspaceRssRoute
+  '/workspace/account/admin': typeof DashboardWorkspaceAccountAdminRoute
+  '/workspace/account/creator': typeof DashboardWorkspaceAccountCreatorRoute
+  '/workspace/account/role': typeof DashboardWorkspaceAccountRoleRoute
+  '/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
+  '/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
+  '/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
+  '/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
+  '/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
+  '/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
+  '/workspace/business': typeof DashboardWorkspaceBusinessIndexRoute
+  '/workspace/creator': typeof DashboardWorkspaceCreatorIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -138,16 +277,32 @@ export interface FileRoutesById {
   '/_dashboard': typeof DashboardRouteWithChildren
   '/_dashboard/crm-blast': typeof DashboardCrmBlastRoute
   '/_dashboard/customer-service': typeof DashboardCustomerServiceRouteWithChildren
-  '/_dashboard/docs': typeof DashboardDocsRoute
+  '/_dashboard/docs': typeof DashboardDocsRouteWithChildren
   '/_dashboard/financing': typeof DashboardFinancingRoute
   '/_dashboard/settings': typeof DashboardSettingsRoute
   '/_dashboard/customer-service/all': typeof DashboardCustomerServiceAllRoute
   '/_dashboard/customer-service/gmail': typeof DashboardCustomerServiceGmailRoute
   '/_dashboard/customer-service/website': typeof DashboardCustomerServiceWebsiteRoute
   '/_dashboard/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
-  '/_dashboard/workspace/account': typeof DashboardWorkspaceAccountRoute
-  '/_dashboard/workspace/business': typeof DashboardWorkspaceBusinessRoute
-  '/_dashboard/workspace/creator': typeof DashboardWorkspaceCreatorRoute
+  '/_dashboard/docs/legality': typeof DashboardDocsLegalityRoute
+  '/_dashboard/docs/management': typeof DashboardDocsManagementRoute
+  '/_dashboard/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/_dashboard/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
+  '/_dashboard/workspace/creator': typeof DashboardWorkspaceCreatorRouteWithChildren
+  '/_dashboard/workspace/payment': typeof DashboardWorkspacePaymentRoute
+  '/_dashboard/workspace/rss': typeof DashboardWorkspaceRssRoute
+  '/_dashboard/workspace/account/admin': typeof DashboardWorkspaceAccountAdminRoute
+  '/_dashboard/workspace/account/creator': typeof DashboardWorkspaceAccountCreatorRoute
+  '/_dashboard/workspace/account/role': typeof DashboardWorkspaceAccountRoleRoute
+  '/_dashboard/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
+  '/_dashboard/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
+  '/_dashboard/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/_dashboard/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
+  '/_dashboard/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
+  '/_dashboard/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
+  '/_dashboard/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
+  '/_dashboard/workspace/business/': typeof DashboardWorkspaceBusinessIndexRoute
+  '/_dashboard/workspace/creator/': typeof DashboardWorkspaceCreatorIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -162,9 +317,25 @@ export interface FileRouteTypes {
     | '/customer-service/gmail'
     | '/customer-service/website'
     | '/customer-service/whatsapp'
+    | '/docs/legality'
+    | '/docs/management'
     | '/workspace/account'
     | '/workspace/business'
     | '/workspace/creator'
+    | '/workspace/payment'
+    | '/workspace/rss'
+    | '/workspace/account/admin'
+    | '/workspace/account/creator'
+    | '/workspace/account/role'
+    | '/workspace/account/user'
+    | '/workspace/ai-model/image'
+    | '/workspace/ai-model/text'
+    | '/workspace/business/token-inject'
+    | '/workspace/creator/gallery'
+    | '/workspace/discount/referral'
+    | '/workspace/discount/voucher'
+    | '/workspace/business/'
+    | '/workspace/creator/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -177,7 +348,21 @@ export interface FileRouteTypes {
     | '/customer-service/gmail'
     | '/customer-service/website'
     | '/customer-service/whatsapp'
+    | '/docs/legality'
+    | '/docs/management'
     | '/workspace/account'
+    | '/workspace/payment'
+    | '/workspace/rss'
+    | '/workspace/account/admin'
+    | '/workspace/account/creator'
+    | '/workspace/account/role'
+    | '/workspace/account/user'
+    | '/workspace/ai-model/image'
+    | '/workspace/ai-model/text'
+    | '/workspace/business/token-inject'
+    | '/workspace/creator/gallery'
+    | '/workspace/discount/referral'
+    | '/workspace/discount/voucher'
     | '/workspace/business'
     | '/workspace/creator'
   id:
@@ -193,9 +378,25 @@ export interface FileRouteTypes {
     | '/_dashboard/customer-service/gmail'
     | '/_dashboard/customer-service/website'
     | '/_dashboard/customer-service/whatsapp'
+    | '/_dashboard/docs/legality'
+    | '/_dashboard/docs/management'
     | '/_dashboard/workspace/account'
     | '/_dashboard/workspace/business'
     | '/_dashboard/workspace/creator'
+    | '/_dashboard/workspace/payment'
+    | '/_dashboard/workspace/rss'
+    | '/_dashboard/workspace/account/admin'
+    | '/_dashboard/workspace/account/creator'
+    | '/_dashboard/workspace/account/role'
+    | '/_dashboard/workspace/account/user'
+    | '/_dashboard/workspace/ai-model/image'
+    | '/_dashboard/workspace/ai-model/text'
+    | '/_dashboard/workspace/business/token-inject'
+    | '/_dashboard/workspace/creator/gallery'
+    | '/_dashboard/workspace/discount/referral'
+    | '/_dashboard/workspace/discount/voucher'
+    | '/_dashboard/workspace/business/'
+    | '/_dashboard/workspace/creator/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -254,6 +455,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardCrmBlastRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/_dashboard/workspace/rss': {
+      id: '/_dashboard/workspace/rss'
+      path: '/workspace/rss'
+      fullPath: '/workspace/rss'
+      preLoaderRoute: typeof DashboardWorkspaceRssRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/payment': {
+      id: '/_dashboard/workspace/payment'
+      path: '/workspace/payment'
+      fullPath: '/workspace/payment'
+      preLoaderRoute: typeof DashboardWorkspacePaymentRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/_dashboard/workspace/creator': {
       id: '/_dashboard/workspace/creator'
       path: '/workspace/creator'
@@ -274,6 +489,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/account'
       preLoaderRoute: typeof DashboardWorkspaceAccountRouteImport
       parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/docs/management': {
+      id: '/_dashboard/docs/management'
+      path: '/management'
+      fullPath: '/docs/management'
+      preLoaderRoute: typeof DashboardDocsManagementRouteImport
+      parentRoute: typeof DashboardDocsRoute
+    }
+    '/_dashboard/docs/legality': {
+      id: '/_dashboard/docs/legality'
+      path: '/legality'
+      fullPath: '/docs/legality'
+      preLoaderRoute: typeof DashboardDocsLegalityRouteImport
+      parentRoute: typeof DashboardDocsRoute
     }
     '/_dashboard/customer-service/whatsapp': {
       id: '/_dashboard/customer-service/whatsapp'
@@ -303,6 +532,90 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardCustomerServiceAllRouteImport
       parentRoute: typeof DashboardCustomerServiceRoute
     }
+    '/_dashboard/workspace/creator/': {
+      id: '/_dashboard/workspace/creator/'
+      path: '/'
+      fullPath: '/workspace/creator/'
+      preLoaderRoute: typeof DashboardWorkspaceCreatorIndexRouteImport
+      parentRoute: typeof DashboardWorkspaceCreatorRoute
+    }
+    '/_dashboard/workspace/business/': {
+      id: '/_dashboard/workspace/business/'
+      path: '/'
+      fullPath: '/workspace/business/'
+      preLoaderRoute: typeof DashboardWorkspaceBusinessIndexRouteImport
+      parentRoute: typeof DashboardWorkspaceBusinessRoute
+    }
+    '/_dashboard/workspace/discount/voucher': {
+      id: '/_dashboard/workspace/discount/voucher'
+      path: '/workspace/discount/voucher'
+      fullPath: '/workspace/discount/voucher'
+      preLoaderRoute: typeof DashboardWorkspaceDiscountVoucherRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/discount/referral': {
+      id: '/_dashboard/workspace/discount/referral'
+      path: '/workspace/discount/referral'
+      fullPath: '/workspace/discount/referral'
+      preLoaderRoute: typeof DashboardWorkspaceDiscountReferralRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/creator/gallery': {
+      id: '/_dashboard/workspace/creator/gallery'
+      path: '/gallery'
+      fullPath: '/workspace/creator/gallery'
+      preLoaderRoute: typeof DashboardWorkspaceCreatorGalleryRouteImport
+      parentRoute: typeof DashboardWorkspaceCreatorRoute
+    }
+    '/_dashboard/workspace/business/token-inject': {
+      id: '/_dashboard/workspace/business/token-inject'
+      path: '/token-inject'
+      fullPath: '/workspace/business/token-inject'
+      preLoaderRoute: typeof DashboardWorkspaceBusinessTokenInjectRouteImport
+      parentRoute: typeof DashboardWorkspaceBusinessRoute
+    }
+    '/_dashboard/workspace/ai-model/text': {
+      id: '/_dashboard/workspace/ai-model/text'
+      path: '/workspace/ai-model/text'
+      fullPath: '/workspace/ai-model/text'
+      preLoaderRoute: typeof DashboardWorkspaceAiModelTextRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/ai-model/image': {
+      id: '/_dashboard/workspace/ai-model/image'
+      path: '/workspace/ai-model/image'
+      fullPath: '/workspace/ai-model/image'
+      preLoaderRoute: typeof DashboardWorkspaceAiModelImageRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/account/user': {
+      id: '/_dashboard/workspace/account/user'
+      path: '/user'
+      fullPath: '/workspace/account/user'
+      preLoaderRoute: typeof DashboardWorkspaceAccountUserRouteImport
+      parentRoute: typeof DashboardWorkspaceAccountRoute
+    }
+    '/_dashboard/workspace/account/role': {
+      id: '/_dashboard/workspace/account/role'
+      path: '/role'
+      fullPath: '/workspace/account/role'
+      preLoaderRoute: typeof DashboardWorkspaceAccountRoleRouteImport
+      parentRoute: typeof DashboardWorkspaceAccountRoute
+    }
+    '/_dashboard/workspace/account/creator': {
+      id: '/_dashboard/workspace/account/creator'
+      path: '/creator'
+      fullPath: '/workspace/account/creator'
+      preLoaderRoute: typeof DashboardWorkspaceAccountCreatorRouteImport
+      parentRoute: typeof DashboardWorkspaceAccountRoute
+    }
+    '/_dashboard/workspace/account/admin': {
+      id: '/_dashboard/workspace/account/admin'
+      path: '/admin'
+      fullPath: '/workspace/account/admin'
+      preLoaderRoute: typeof DashboardWorkspaceAccountAdminRouteImport
+      parentRoute: typeof DashboardWorkspaceAccountRoute
+    }
   }
 }
 
@@ -327,26 +640,109 @@ const DashboardCustomerServiceRouteWithChildren =
     DashboardCustomerServiceRouteChildren,
   )
 
+interface DashboardDocsRouteChildren {
+  DashboardDocsLegalityRoute: typeof DashboardDocsLegalityRoute
+  DashboardDocsManagementRoute: typeof DashboardDocsManagementRoute
+}
+
+const DashboardDocsRouteChildren: DashboardDocsRouteChildren = {
+  DashboardDocsLegalityRoute: DashboardDocsLegalityRoute,
+  DashboardDocsManagementRoute: DashboardDocsManagementRoute,
+}
+
+const DashboardDocsRouteWithChildren = DashboardDocsRoute._addFileChildren(
+  DashboardDocsRouteChildren,
+)
+
+interface DashboardWorkspaceAccountRouteChildren {
+  DashboardWorkspaceAccountAdminRoute: typeof DashboardWorkspaceAccountAdminRoute
+  DashboardWorkspaceAccountCreatorRoute: typeof DashboardWorkspaceAccountCreatorRoute
+  DashboardWorkspaceAccountRoleRoute: typeof DashboardWorkspaceAccountRoleRoute
+  DashboardWorkspaceAccountUserRoute: typeof DashboardWorkspaceAccountUserRoute
+}
+
+const DashboardWorkspaceAccountRouteChildren: DashboardWorkspaceAccountRouteChildren =
+  {
+    DashboardWorkspaceAccountAdminRoute: DashboardWorkspaceAccountAdminRoute,
+    DashboardWorkspaceAccountCreatorRoute:
+      DashboardWorkspaceAccountCreatorRoute,
+    DashboardWorkspaceAccountRoleRoute: DashboardWorkspaceAccountRoleRoute,
+    DashboardWorkspaceAccountUserRoute: DashboardWorkspaceAccountUserRoute,
+  }
+
+const DashboardWorkspaceAccountRouteWithChildren =
+  DashboardWorkspaceAccountRoute._addFileChildren(
+    DashboardWorkspaceAccountRouteChildren,
+  )
+
+interface DashboardWorkspaceBusinessRouteChildren {
+  DashboardWorkspaceBusinessTokenInjectRoute: typeof DashboardWorkspaceBusinessTokenInjectRoute
+  DashboardWorkspaceBusinessIndexRoute: typeof DashboardWorkspaceBusinessIndexRoute
+}
+
+const DashboardWorkspaceBusinessRouteChildren: DashboardWorkspaceBusinessRouteChildren =
+  {
+    DashboardWorkspaceBusinessTokenInjectRoute:
+      DashboardWorkspaceBusinessTokenInjectRoute,
+    DashboardWorkspaceBusinessIndexRoute: DashboardWorkspaceBusinessIndexRoute,
+  }
+
+const DashboardWorkspaceBusinessRouteWithChildren =
+  DashboardWorkspaceBusinessRoute._addFileChildren(
+    DashboardWorkspaceBusinessRouteChildren,
+  )
+
+interface DashboardWorkspaceCreatorRouteChildren {
+  DashboardWorkspaceCreatorGalleryRoute: typeof DashboardWorkspaceCreatorGalleryRoute
+  DashboardWorkspaceCreatorIndexRoute: typeof DashboardWorkspaceCreatorIndexRoute
+}
+
+const DashboardWorkspaceCreatorRouteChildren: DashboardWorkspaceCreatorRouteChildren =
+  {
+    DashboardWorkspaceCreatorGalleryRoute:
+      DashboardWorkspaceCreatorGalleryRoute,
+    DashboardWorkspaceCreatorIndexRoute: DashboardWorkspaceCreatorIndexRoute,
+  }
+
+const DashboardWorkspaceCreatorRouteWithChildren =
+  DashboardWorkspaceCreatorRoute._addFileChildren(
+    DashboardWorkspaceCreatorRouteChildren,
+  )
+
 interface DashboardRouteChildren {
   DashboardCrmBlastRoute: typeof DashboardCrmBlastRoute
   DashboardCustomerServiceRoute: typeof DashboardCustomerServiceRouteWithChildren
-  DashboardDocsRoute: typeof DashboardDocsRoute
+  DashboardDocsRoute: typeof DashboardDocsRouteWithChildren
   DashboardFinancingRoute: typeof DashboardFinancingRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
-  DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRoute
-  DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRoute
-  DashboardWorkspaceCreatorRoute: typeof DashboardWorkspaceCreatorRoute
+  DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRouteWithChildren
+  DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRouteWithChildren
+  DashboardWorkspaceCreatorRoute: typeof DashboardWorkspaceCreatorRouteWithChildren
+  DashboardWorkspacePaymentRoute: typeof DashboardWorkspacePaymentRoute
+  DashboardWorkspaceRssRoute: typeof DashboardWorkspaceRssRoute
+  DashboardWorkspaceAiModelImageRoute: typeof DashboardWorkspaceAiModelImageRoute
+  DashboardWorkspaceAiModelTextRoute: typeof DashboardWorkspaceAiModelTextRoute
+  DashboardWorkspaceDiscountReferralRoute: typeof DashboardWorkspaceDiscountReferralRoute
+  DashboardWorkspaceDiscountVoucherRoute: typeof DashboardWorkspaceDiscountVoucherRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardCrmBlastRoute: DashboardCrmBlastRoute,
   DashboardCustomerServiceRoute: DashboardCustomerServiceRouteWithChildren,
-  DashboardDocsRoute: DashboardDocsRoute,
+  DashboardDocsRoute: DashboardDocsRouteWithChildren,
   DashboardFinancingRoute: DashboardFinancingRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
-  DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRoute,
-  DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRoute,
-  DashboardWorkspaceCreatorRoute: DashboardWorkspaceCreatorRoute,
+  DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRouteWithChildren,
+  DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRouteWithChildren,
+  DashboardWorkspaceCreatorRoute: DashboardWorkspaceCreatorRouteWithChildren,
+  DashboardWorkspacePaymentRoute: DashboardWorkspacePaymentRoute,
+  DashboardWorkspaceRssRoute: DashboardWorkspaceRssRoute,
+  DashboardWorkspaceAiModelImageRoute: DashboardWorkspaceAiModelImageRoute,
+  DashboardWorkspaceAiModelTextRoute: DashboardWorkspaceAiModelTextRoute,
+  DashboardWorkspaceDiscountReferralRoute:
+    DashboardWorkspaceDiscountReferralRoute,
+  DashboardWorkspaceDiscountVoucherRoute:
+    DashboardWorkspaceDiscountVoucherRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(

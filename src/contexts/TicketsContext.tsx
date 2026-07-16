@@ -1534,7 +1534,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                   : item,
               ),
             );
-            scheduleWhatsappMessagesRefresh(ticketId, ticket.externalIds.whatsappRoomChatId!);
+            scheduleWhatsappMessagesRefresh(ticketId, ticket.externalIds?.whatsappRoomChatId!);
           })
           .catch(() => queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }));
       }

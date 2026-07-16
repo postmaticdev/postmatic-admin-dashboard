@@ -18,6 +18,15 @@ import {
   Megaphone,
   Settings,
   LogOut,
+  Bot,
+  Image,
+  Type,
+  CreditCard,
+  Rss,
+  Tag,
+  GalleryHorizontal,
+  Shield,
+  Coins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,8 +36,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 interface NavChild {
   label: string;
-  to: string;
+  to?: string;
   icon: LucideIcon;
+  children?: { label: string; to: string; icon: LucideIcon }[];
 }
 
 interface NavItem {
@@ -40,16 +50,64 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   {
+    label: "Account Management",
+    icon: UserCircle,
+    children: [
+      { label: "User", to: "/workspace/account/user", icon: Users },
+      { label: "Admin", to: "/workspace/account/admin", icon: UserCircle },
+      { label: "Role Management", to: "/workspace/account/role", icon: Shield },
+      { label: "Creator", to: "/workspace/account/creator", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Creator Management",
+    icon: Sparkles,
+    children: [
+      { label: "Creator", to: "/workspace/creator", icon: Sparkles },
+      { label: "Gallery", to: "/workspace/creator/gallery", icon: GalleryHorizontal },
+    ],
+  },
+  {
+    label: "Business Management",
+    icon: Building2,
+    children: [
+      { label: "Business", to: "/workspace/business", icon: Building2 },
+      { label: "Token Inject", to: "/workspace/business/token-inject", icon: Coins },
+    ],
+  },
+  {
     label: "Workspace Management",
     icon: Users,
     children: [
-      { label: "Account", to: "/workspace/account", icon: UserCircle },
-      { label: "Creator", to: "/workspace/creator", icon: Sparkles },
-      { label: "Business", to: "/workspace/business", icon: Building2 },
+      {
+        label: "Discount",
+        icon: Tag,
+        children: [
+          { label: "Voucher", to: "/workspace/discount/voucher", icon: Wallet },
+          { label: "Referral", to: "/workspace/discount/referral", icon: Users },
+        ],
+      },
+      {
+        label: "AI Model",
+        icon: Bot,
+        children: [
+          { label: "Image", to: "/workspace/ai-model/image", icon: Image },
+          { label: "Text", to: "/workspace/ai-model/text", icon: Type },
+        ],
+      },
+      { label: "Payment", to: "/workspace/payment", icon: CreditCard },
+      { label: "RSS", to: "/workspace/rss", icon: Rss },
     ],
   },
   { label: "Financing", icon: Wallet, to: "/financing" },
-  { label: "Docs Management", icon: FileText, to: "/docs" },
+  {
+    label: "Documentation",
+    icon: FileText,
+    children: [
+      { label: "Docs Management", to: "/docs/management", icon: FileText },
+      { label: "Legality", to: "/docs/legality", icon: FileText },
+    ],
+  },
   { label: "CRM Blast", icon: Megaphone, to: "/crm-blast" },
   {
     label: "Customer Service",
@@ -202,7 +260,11 @@ function SidebarItem({
   pathname: string;
 }) {
   const hasChildren = !!item.children?.length;
-  const isChildActive = hasChildren && item.children!.some((c) => pathname.startsWith(c.to));
+  const isChildActive = hasChildren && item.children!.some((c) => {
+    if (c.to && pathname.startsWith(c.to)) return true;
+    if (c.children?.some((sc) => pathname.startsWith(sc.to))) return true;
+    return false;
+  });
   const [open, setOpen] = useState(isChildActive);
   const Icon = item.icon;
 
@@ -273,13 +335,74 @@ function SidebarItem({
       )}
       {!collapsed && open && (
         <ul className="mt-1 flex flex-col gap-0.5 pl-4">
-          {item.children!.map((child) => {
-            const ChildIcon = child.icon;
-            const active = pathname === child.to;
+          {item.children!.map((child) => (
+            <SidebarChildItem key={child.label} child={child} pathname={pathname} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function SidebarChildItem({
+  child,
+  pathname,
+}: {
+  child: NavChild;
+  pathname: string;
+}) {
+  const hasSubChildren = !!child.children?.length;
+  const isSubChildActive = hasSubChildren && child.children!.some((sc) => pathname.startsWith(sc.to));
+  const [open, setOpen] = useState(isSubChildActive);
+  const ChildIcon = child.icon;
+
+  if (!hasSubChildren && child.to) {
+    const active = pathname === child.to;
+    return (
+      <li>
+        <Link
+          to={child.to}
+          className={cn(
+            "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+            active
+              ? "bg-primary/10 font-medium text-primary"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          )}
+        >
+          <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{child.label}</span>
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm transition-colors",
+          isSubChildActive
+            ? "text-sidebar-accent-foreground"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        )}
+      >
+        <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1 truncate text-left">{child.label}</span>
+        <ChevronDown
+          className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <ul className="mt-1 flex flex-col gap-0.5 pl-4">
+          {child.children!.map((sc) => {
+            const ScIcon = sc.icon;
+            const active = pathname === sc.to;
             return (
-              <li key={child.to}>
+              <li key={sc.to}>
                 <Link
-                  to={child.to}
+                  to={sc.to}
                   className={cn(
                     "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
                     active
@@ -287,8 +410,8 @@ function SidebarItem({
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   )}
                 >
-                  <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{child.label}</span>
+                  <ScIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{sc.label}</span>
                 </Link>
               </li>
             );

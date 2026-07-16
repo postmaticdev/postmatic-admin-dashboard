@@ -376,7 +376,7 @@ function CrmBlastPage() {
             activePlatform === "whatsapp" && messageExternalId != null
               ? `whatsapp-message-${messageExternalId}`
               : `msg-blast-${Date.now()}-${idx}`,
-          externalId: messageExternalId,
+          externalId: messageExternalId ?? undefined,
           authorId: "cs",
           authorName: "CS Postmatic",
           subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : undefined,

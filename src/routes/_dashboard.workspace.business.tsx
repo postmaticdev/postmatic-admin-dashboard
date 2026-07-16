@@ -1,5 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_dashboard/workspace/business")({
-  component: () => null,
+  component: () => (
+    <div className="h-full min-h-0">
+      <Outlet />
+    </div>
+  ),
 });
