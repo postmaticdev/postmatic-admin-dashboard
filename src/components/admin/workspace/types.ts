@@ -12,7 +12,9 @@ export type FeeType = "Percentage" | "Fixed";
 
 export interface PaymentMethodItem {
   id: string;
+  code: string;
   name: string;
+  type: string;
   logoUrl: string;
   adminFeeType: FeeType;
   adminFee: number;
@@ -34,7 +36,8 @@ export const initialImageModels: AIModelItem[] = [
   {
     id: "img-1",
     name: "DALL·E 3",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/120px-OpenAI_Logo.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/120px-OpenAI_Logo.svg.png",
     source: "OpenAI",
     temperature: 0.8,
     preprompt: "Generate high-quality, detailed images based on the following prompt:",
@@ -55,10 +58,12 @@ export const initialTextModels: AIModelItem[] = [
   {
     id: "txt-1",
     name: "GPT-4o",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/120px-OpenAI_Logo.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/120px-OpenAI_Logo.svg.png",
     source: "OpenAI",
     temperature: 0.7,
-    preprompt: "You are a helpful assistant for Postmatic platform. Answer questions professionally.",
+    preprompt:
+      "You are a helpful assistant for Postmatic platform. Answer questions professionally.",
     status: "Active",
   },
   {
@@ -75,8 +80,11 @@ export const initialTextModels: AIModelItem[] = [
 export const initialPaymentMethods: PaymentMethodItem[] = [
   {
     id: "pay-1",
+    code: "BCA",
     name: "Bank Transfer BCA",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/120px-Bank_Central_Asia.svg.png",
+    type: "bank",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/120px-Bank_Central_Asia.svg.png",
     adminFeeType: "Fixed",
     adminFee: 2500,
     otherFeeType: "Fixed",
@@ -85,8 +93,11 @@ export const initialPaymentMethods: PaymentMethodItem[] = [
   },
   {
     id: "pay-2",
+    code: "GOPAY",
     name: "GoPay",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Gopay_logo.svg/120px-Gopay_logo.svg.png",
+    type: "ewallet",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Gopay_logo.svg/120px-Gopay_logo.svg.png",
     adminFeeType: "Percentage",
     adminFee: 2,
     otherFeeType: "Fixed",
@@ -95,8 +106,11 @@ export const initialPaymentMethods: PaymentMethodItem[] = [
   },
   {
     id: "pay-3",
+    code: "OVO",
     name: "OVO",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Logo_ovo_purple.svg/120px-Logo_ovo_purple.svg.png",
+    type: "ewallet",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Logo_ovo_purple.svg/120px-Logo_ovo_purple.svg.png",
     adminFeeType: "Percentage",
     adminFee: 1.5,
     otherFeeType: "Fixed",

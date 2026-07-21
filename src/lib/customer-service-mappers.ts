@@ -51,8 +51,21 @@ function looksLikeHtml(value: string) {
   return /<\/?[a-z][\s\S]*>/i.test(value);
 }
 
+function looksLikeEscapedHtml(value: string) {
+  return /&lt;\/?[a-z][\s\S]*?&gt;/i.test(value);
+}
+
+function decodeEscapedHtmlTags(value: string) {
+  return value
+    .replace(/&lt;([\s\S]*?)&gt;/gi, "<$1>")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
 function richTextToSafeHtml(value?: string | null) {
-  const html = compactText(value, "-");
+  const rawHtml = compactText(value, "-");
+  const html = looksLikeEscapedHtml(rawHtml) ? decodeEscapedHtmlTags(rawHtml) : rawHtml;
 
   if (!looksLikeHtml(html)) {
     return plainTextToSafeHtml(html);
@@ -157,7 +170,7 @@ export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteM
     id: `website-ticket-${ticket.id}-body`,
     authorId: String(ticket.profileId ?? `website-user-${ticket.id}`),
     authorName: getReporterName(ticket),
-    content: plainTextToSafeHtml(ticket.body),
+    content: richTextToSafeHtml(ticket.body),
     attachments: urlAttachments(ticket.attachments),
     createdAt,
     direction: "in",
@@ -199,7 +212,7 @@ export function mapWebsiteMessage(message: RemoteWebsiteMessage): TicketMessage 
     externalId: message.id,
     authorId: String(message.profileId ?? profile?.id ?? `website-message-${message.id}`),
     authorName: compactText(profile?.name, out ? "CS Postmatic" : "Website User"),
-    content: out ? richTextToSafeHtml(message.body) : plainTextToSafeHtml(message.body),
+    content: richTextToSafeHtml(message.body),
     attachments: urlAttachments(message.attachments),
     createdAt: timestamp(message.createdAt),
     direction: out ? "out" : "in",

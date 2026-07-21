@@ -172,6 +172,18 @@ export interface ReplyWebsitePayload {
   attachments?: string[];
 }
 
+export interface UploadedAttachment {
+  name: string;
+  url: string;
+  type: string;
+}
+
+interface UploadCustomerServiceAttachmentPayload {
+  name: string;
+  type: string;
+  dataUrl: string;
+}
+
 export interface WhatsappBlastContact {
   id: string;
   name: string;
@@ -252,6 +264,41 @@ async function apiRequest<T>(path: string, init: RequestInit = {}) {
   return payload;
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => reject(new Error("Gagal membaca lampiran."));
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Gagal membaca lampiran."));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlToBlob(dataUrl: string, fallbackType: string) {
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,([\s\S]*)$/);
+
+  if (!match) {
+    throw new Error("Format lampiran tidak valid.");
+  }
+
+  const mimeType = match[1] || fallbackType || "application/octet-stream";
+  const isBase64 = Boolean(match[2]);
+  const data = match[3] || "";
+  const bytes = isBase64
+    ? Uint8Array.from(atob(data.replace(/\s/g, "")), (char) => char.charCodeAt(0))
+    : new TextEncoder().encode(decodeURIComponent(data));
+
+  return new Blob([bytes], { type: mimeType });
+}
+
 const getWebsiteTicketsServer = createServerFn({ method: "GET" }).handler(async () => {
   const response = await apiRequest<RemoteTicket[]>("/api/ticket/website");
   return response.data ?? [];
@@ -277,6 +324,48 @@ const replyWebsiteTicketServer = createServerFn({ method: "POST" })
       },
     );
     return response.data;
+  });
+
+const uploadCustomerServiceAttachmentServer = createServerFn({ method: "POST" })
+  .validator((data: UploadCustomerServiceAttachmentPayload) => data)
+  .handler(async ({ data }) => {
+    const fileBlob = dataUrlToBlob(data.dataUrl, data.type);
+    const formData = new FormData();
+
+    formData.append("image", fileBlob, data.name || "attachment");
+
+    const response = await fetch(buildUrl("/api/app/image-uploader/upload-single-image"), {
+      method: "POST",
+      headers: authHeaders(false),
+      body: formData,
+    });
+    const payload = (await response.json().catch(() => null)) as ApiResponse<
+      string | { imageUrl?: string | null; url?: string | null }
+    > | null;
+
+    const responseData = payload?.data;
+    const url =
+      typeof responseData === "string"
+        ? responseData
+        : typeof responseData?.imageUrl === "string"
+          ? responseData.imageUrl
+          : typeof responseData?.url === "string"
+            ? responseData.url
+            : "";
+
+    if (!response.ok || !url) {
+      throw new Error(
+        payload?.metaData?.message ||
+          payload?.responseMessage ||
+          `Upload lampiran gagal dengan status ${response.status}.`,
+      );
+    }
+
+    return {
+      name: data.name || "attachment",
+      url,
+      type: data.type || fileBlob.type,
+    } satisfies UploadedAttachment;
   });
 
 const updateWebsiteTicketStatusServer = createServerFn({ method: "POST" })
@@ -646,6 +735,18 @@ export function getWebsiteTicketDetail(ticketId: number) {
 
 export function replyWebsiteTicket(ticketId: number, payload: ReplyWebsitePayload) {
   return replyWebsiteTicketServer({ data: { ticketId, payload } });
+}
+
+export async function uploadCustomerServiceAttachment(file: File): Promise<UploadedAttachment> {
+  const dataUrl = await readFileAsDataUrl(file);
+
+  return uploadCustomerServiceAttachmentServer({
+    data: {
+      name: file.name,
+      type: file.type,
+      dataUrl,
+    },
+  });
 }
 
 export function updateWebsiteTicketStatus(ticketId: number, status: RemoteTicketStatus) {

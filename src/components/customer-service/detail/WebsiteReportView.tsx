@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,10 @@ import {
   X,
   List,
   ListOrdered,
+  FileText,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Loader2,
 } from "lucide-react";
 import { MarkAsTicketButton } from "../MarkAsTicketButton";
 import { StatusBadge } from "../StatusBadge";
@@ -31,6 +36,10 @@ import { useTickets } from "@/contexts/TicketsContext";
 import { cn } from "@/lib/utils";
 import { formatRelative, formatDateTime } from "@/lib/utils/date";
 import type { Ticket, TicketMessage } from "@/lib/types/ticket";
+import {
+  uploadCustomerServiceAttachment,
+  type UploadedAttachment,
+} from "@/lib/customer-service-api";
 
 const CustomOrderedList = OrderedList.extend({
   addAttributes() {
@@ -52,6 +61,7 @@ const CustomOrderedList = OrderedList.extend({
 interface WebsiteDraft {
   subject?: string;
   html?: string;
+  attachments?: UploadedAttachment[];
 }
 
 function htmlToPreviewText(value?: string | null) {
@@ -83,6 +93,8 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
 
   const [subject, setSubject] = useState("");
   const [editorHtml, setEditorHtml] = useState("");
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [replyingTo, setReplyingTo] = useState<TicketMessage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -109,7 +121,6 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       setEditorHtml(html);
-      saveDraft(subject, html);
     },
   });
 
@@ -119,26 +130,31 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
     if (saved) {
       setSubject(saved.subject || "");
       setEditorHtml(saved.html || "");
+      setAttachments(saved.attachments || []);
       editor?.commands.setContent(saved.html || "");
     } else {
       setSubject("");
       setEditorHtml("");
+      setAttachments([]);
       editor?.commands.setContent("");
     }
     setReplyingTo(null);
   }, [ticket.id, getDraft, draftKey, editor]);
 
-  const saveDraft = (sub: string, html: string) => {
-    if (sub.trim() || (html && html !== "<p></p>")) {
-      setDraft(draftKey, { subject: sub, html });
+  const saveDraft = useCallback((sub: string, html: string, atts: UploadedAttachment[]) => {
+    if (sub.trim() || (html && html !== "<p></p>") || atts.length > 0) {
+      setDraft(draftKey, { subject: sub, html, attachments: atts });
     } else {
       setDraft(draftKey, null);
     }
-  };
+  }, [draftKey, setDraft]);
+
+  useEffect(() => {
+    saveDraft(subject, editorHtml, attachments);
+  }, [attachments, editorHtml, saveDraft, subject]);
 
   const handleSubjectChange = (val: string) => {
     setSubject(val);
-    saveDraft(val, editorHtml);
   };
 
   // Recursively extract all messages and replies, then sort them chronologically
@@ -176,45 +192,49 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || !editor) return;
+    if (!files) return;
 
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const dataUrl = event.target.result as string;
-          let htmlToInsert = "";
+    setIsUploadingAttachment(true);
 
-          if (file.type.startsWith("image/")) {
-            htmlToInsert = `<img src="${dataUrl}" alt="${file.name}" style="max-width: 100%; max-height: 240px; display: block; border-radius: 6px; margin: 8px 0; border: 1px solid var(--border);" />`;
-          } else if (file.type.startsWith("video/")) {
-            htmlToInsert = `<video src="${dataUrl}" controls style="max-width: 100%; max-height: 240px; display: block; border-radius: 6px; margin: 8px 0; border: 1px solid var(--border);"></video>`;
-          } else {
-            htmlToInsert = `<a href="${dataUrl}" download="${file.name}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; text-decoration: underline; font-weight: 500; font-size: 12px; margin: 4px 0; color: inherit;">Lampiran ${file.name}</a>`;
-          }
+    try {
+      const uploadedAttachments = await Promise.all(
+        Array.from(files).map((file) => uploadCustomerServiceAttachment(file)),
+      );
 
-          editor.chain().focus().insertContent(htmlToInsert).run();
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+      setAttachments((currentAttachments) => [...currentAttachments, ...uploadedAttachments]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal mengunggah lampiran.");
+    } finally {
+      setIsUploadingAttachment(false);
 
-    if (fileInputRef.current) fileInputRef.current.value = "";
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments((currentAttachments) =>
+      currentAttachments.filter((_, itemIndex) => itemIndex !== index),
+    );
   };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     const content = editorHtml.trim();
-    if (!content || content === "<p></p>" || content === "<br>") return;
+    const emptyContent = !content || content === "<p></p>" || content === "<br>";
+    if ((emptyContent && attachments.length === 0) || isUploadingAttachment) return;
 
     addMessage(ticket.id, {
       authorId: "cs-agent",
       authorName: "CS Postmatic",
       subject: subject.trim() || undefined,
-      content: content,
+      content: emptyContent ? "" : content,
       direction: "out",
+      attachments: attachments.map((attachment) => ({
+        name: attachment.name,
+        url: attachment.url,
+      })),
       quotedMessage: replyingTo
         ? {
             authorName: replyingTo.authorName,
@@ -225,6 +245,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
 
     setSubject("");
     setEditorHtml("");
+    setAttachments([]);
     editor?.commands.setContent("");
     setReplyingTo(null);
     setDraft(draftKey, null);
@@ -397,6 +418,47 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               >
                 <X className="h-3 w-3" />
               </Button>
+            </div>
+          )}
+
+          {attachments.length > 0 && (
+            <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto rounded-lg border border-border bg-muted/20 p-2">
+              {attachments.map((attachment, index) => {
+                const isImage = isImageAttachment(attachment.name, attachment.url);
+                const isVideo = isVideoAttachment(attachment.name, attachment.url);
+
+                return (
+                  <div
+                    key={`${attachment.url}-${index}`}
+                    className="relative flex max-w-[220px] items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-xs text-foreground shadow-sm"
+                  >
+                    {isImage ? (
+                      <ImageIcon className="h-4 w-4 shrink-0 text-blue-500" />
+                    ) : isVideo ? (
+                      <VideoIcon className="h-4 w-4 shrink-0 text-amber-500" />
+                    ) : (
+                      <FileText className="h-4 w-4 shrink-0 text-emerald-500" />
+                    )}
+                    <a
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="truncate font-medium hover:underline"
+                      title={attachment.name}
+                    >
+                      {attachment.name}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(index)}
+                      className="ml-1 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={`Hapus ${attachment.name}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -643,6 +705,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
+              accept="image/*,video/*"
               multiple
               className="hidden"
             />
@@ -651,9 +714,14 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              disabled={isUploadingAttachment}
               onClick={() => fileInputRef.current?.click()}
             >
-              <Paperclip className="h-3.5 w-3.5" />
+              {isUploadingAttachment ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Paperclip className="h-3.5 w-3.5" />
+              )}
             </Button>
           </div>
 
@@ -661,7 +729,7 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
           <div className="relative border border-t-0 border-border/70 rounded-b-md bg-muted/20">
             {editor && editor.isEmpty && (
               <div className="absolute left-3 top-2 text-muted-foreground/60 text-sm pointer-events-none select-none">
-                Tulis balasan laporan di sini... (Sisipkan media tepat pada kursor)
+                Tulis balasan laporan di sini...
               </div>
             )}
             <EditorContent
@@ -674,10 +742,18 @@ export function WebsiteReportView({ ticket }: { ticket: Ticket }) {
           <div className="flex justify-end shrink-0">
             <Button
               type="submit"
-              disabled={!editorHtml.trim() || editorHtml === "<p></p>" || editorHtml === "<br>"}
+              disabled={
+                isUploadingAttachment ||
+                ((!editorHtml.trim() || editorHtml === "<p></p>" || editorHtml === "<br>") &&
+                  attachments.length === 0)
+              }
               className="h-9 px-4 gap-1.5 font-medium text-xs rounded shadow-sm"
             >
-              <Send className="h-3.5 w-3.5" />
+              {isUploadingAttachment ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
               Kirim Balasan
             </Button>
           </div>
