@@ -1,19 +1,43 @@
-import React, { useState, useEffect } from "react";
-import { InjectHistoryItem, getStoredHistory, injectTokens } from "./store";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getBusinessDashboardData,
+  getImageTokenInjectionHistoriesForBusinesses,
+  injectImageToken,
+} from "@/lib/business-api";
+import { InjectHistoryItem } from "./types";
 import { InjectTokenModal } from "./InjectTokenModal";
-import { Building2, Search, Coins, Plus, Calendar, User, DollarSign, X } from "lucide-react";
+import {
+  Building2,
+  Search,
+  Coins,
+  Plus,
+  Calendar,
+  User,
+  DollarSign,
+  X,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+import {
+  getErrorMessage,
+  mapBusinessTokenOverviewToAccount,
+  mapInjectionHistoryToItem,
+} from "./mappers";
 import { toast } from "sonner";
 
+const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
+const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
+  "workspace",
+  "businesses",
+  "image-token-injection-history",
+] as const;
+
 // Detail Modal for selected row
-function InjectDetailModal({
-  item,
-  onClose,
-}: {
-  item: InjectHistoryItem;
-  onClose: () => void;
-}) {
+function InjectDetailModal({ item, onClose }: { item: InjectHistoryItem; onClose: () => void }) {
   const formatNumber = (num: number) => num.toLocaleString("id-ID");
-  
+
   const formatDateTime = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString("id-ID", {
@@ -26,7 +50,10 @@ function InjectDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -47,7 +74,11 @@ function InjectDetailModal({
         <div className="px-6 pb-6 pt-6 space-y-4">
           <div className="text-center pt-2">
             <div className="h-16 w-16 rounded-2xl border-4 border-card shadow-md overflow-hidden bg-muted mx-auto">
-              <img src={item.businessLogoUrl} alt={item.businessName} className="h-full w-full object-cover" />
+              <img
+                src={item.businessLogoUrl}
+                alt={item.businessName}
+                className="h-full w-full object-cover"
+              />
             </div>
             <h3 className="text-base font-bold text-foreground mt-3">{item.businessName}</h3>
             <p className="text-xs text-muted-foreground">{item.businessCategory}</p>
@@ -56,13 +87,17 @@ function InjectDetailModal({
           <div className="border-t border-border/60 pt-4 space-y-3.5">
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Total Token Inject</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Total Token Inject
+                </span>
                 <span className="text-sm font-extrabold text-violet-600 dark:text-violet-400 mt-1 flex items-center gap-1">
                   <Coins className="h-4 w-4" /> {formatNumber(item.totalTokens)}
                 </span>
               </div>
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Price (Harga)</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Price (Harga)
+                </span>
                 <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-0.5">
                   Rp {formatNumber(item.price)}
                 </span>
@@ -71,11 +106,17 @@ function InjectDetailModal({
 
             <div className="space-y-2.5 border-t border-border/40 pt-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Tanggal & Waktu</span>
-                <span className="font-semibold text-foreground">{formatDateTime(item.dateTime)}</span>
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" /> Tanggal & Waktu
+                </span>
+                <span className="font-semibold text-foreground">
+                  {formatDateTime(item.dateTime)}
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> Injector (Admin)</span>
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5" /> Injector (Admin)
+                </span>
                 <span className="font-semibold text-foreground">{item.adminName}</span>
               </div>
             </div>
@@ -95,35 +136,73 @@ function InjectDetailModal({
 }
 
 export function TokenInjectContainer() {
-  const [history, setHistory] = useState<InjectHistoryItem[]>([]);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [showInjectModal, setShowInjectModal] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState<InjectHistoryItem | null>(null);
 
-  // Load stored history on load
-  const loadHistory = () => {
-    setHistory(getStoredHistory());
-  };
+  const businessQuery = useQuery({
+    queryKey: BUSINESS_QUERY_KEY,
+    queryFn: getBusinessDashboardData,
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  const businesses = useMemo(
+    () => (businessQuery.data?.businesses ?? []).map(mapBusinessTokenOverviewToAccount),
+    [businessQuery.data],
+  );
+  const businessIds = useMemo(() => businesses.map((business) => business.id), [businesses]);
+  const businessById = useMemo(
+    () => new Map(businesses.map((business) => [business.id, business])),
+    [businesses],
+  );
 
-  const handleInjectToken = (businessId: string, amount: number) => {
-    // Current logged-in user simulation or defaults to Super Admin
-    const result = injectTokens(businessId, amount, "Super Admin");
-    if (result.success) {
-      toast.success(`Berhasil menyuntikkan ${amount.toLocaleString("id-ID")} token ke ${result.businessName}!`);
-      loadHistory();
+  const historyQuery = useQuery({
+    queryKey: [...TOKEN_INJECTION_HISTORY_QUERY_KEY, businessIds.join(",")],
+    queryFn: () => getImageTokenInjectionHistoriesForBusinesses(businessIds),
+    enabled: businessQuery.isSuccess,
+    staleTime: 30_000,
+  });
+
+  const history = useMemo(
+    () => (historyQuery.data ?? []).map((item) => mapInjectionHistoryToItem(item, businessById)),
+    [historyQuery.data, businessById],
+  );
+
+  const injectMutation = useMutation({
+    mutationFn: injectImageToken,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: BUSINESS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: TOKEN_INJECTION_HISTORY_QUERY_KEY }),
+      ]);
+    },
+  });
+
+  const handleInjectToken = async (businessId: string, amount: number) => {
+    const target = businesses.find((business) => business.id === businessId);
+    const businessRootId = Number(businessId);
+
+    if (!Number.isFinite(businessRootId)) {
+      toast.error("Business ID tidak valid untuk token injection.");
+      return;
+    }
+
+    try {
+      await injectMutation.mutateAsync({ businessRootId, amount });
+      toast.success(
+        `Berhasil menyuntikkan ${amount.toLocaleString("id-ID")} token ke ${target?.name ?? "business"}!`,
+      );
       setShowInjectModal(false);
-    } else {
-      toast.error("Gagal melakukan token injection.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Gagal melakukan token injection."));
     }
   };
 
-  const filteredHistory = history.filter((item) =>
-    item.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.adminName.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredHistory = history.filter(
+    (item) =>
+      item.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.adminName.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   // Scorecard calculations
@@ -131,7 +210,20 @@ export function TokenInjectContainer() {
   const totalInjectTransactions = history.length;
   const uniqueBusinessesFunded = new Set(history.map((item) => item.businessId)).size;
 
+  const isLoading = businessQuery.isLoading || (businessQuery.isSuccess && historyQuery.isLoading);
+  const errorMessage = businessQuery.isError
+    ? getErrorMessage(businessQuery.error, "Gagal memuat business.")
+    : historyQuery.isError
+      ? getErrorMessage(historyQuery.error, "Gagal memuat riwayat token injection.")
+      : undefined;
+
+  const canOpenInject = !businessQuery.isLoading && !businessQuery.isError && businesses.length > 0;
   const formatNumber = (num: number) => num.toLocaleString("id-ID");
+
+  const handleRetry = () => {
+    void businessQuery.refetch();
+    void historyQuery.refetch();
+  };
 
   return (
     <div className="space-y-6">
@@ -149,14 +241,19 @@ export function TokenInjectContainer() {
                 </span>
                 <span className="text-xs text-muted-foreground font-mono">/ Token Inject</span>
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">Token Inject</h1>
-              <p className="text-sm text-muted-foreground">Kelola riwayat penyuntikan saldo token kecerdasan buatan klien.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">
+                Token Inject
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Kelola riwayat penyuntikan saldo token kecerdasan buatan klien.
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setShowInjectModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all shrink-0 self-start md:self-auto"
+            disabled={!canOpenInject || injectMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all shrink-0 self-start md:self-auto disabled:pointer-events-none disabled:opacity-60"
           >
             <Plus className="h-4 w-4" /> Inject Token
           </button>
@@ -169,7 +266,9 @@ export function TokenInjectContainer() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-muted-foreground">Total Injected Tokens</p>
-              <p className="text-3xl font-extrabold text-foreground mt-1">{formatNumber(totalTokensInjected)}</p>
+              <p className="text-3xl font-extrabold text-foreground mt-1">
+                {formatNumber(totalTokensInjected)}
+              </p>
               <p className="text-xs text-muted-foreground mt-0.5">Kumulatif saldo terisi</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-violet-500/10 flex items-center justify-center">
@@ -182,7 +281,9 @@ export function TokenInjectContainer() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-muted-foreground">Transaksi Inject</p>
-              <p className="text-3xl font-extrabold text-foreground mt-1">{totalInjectTransactions}</p>
+              <p className="text-3xl font-extrabold text-foreground mt-1">
+                {totalInjectTransactions}
+              </p>
               <p className="text-xs text-muted-foreground mt-0.5">Total suntikan berhasil</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
@@ -195,7 +296,9 @@ export function TokenInjectContainer() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-muted-foreground">Bisnis Terisi</p>
-              <p className="text-3xl font-extrabold text-foreground mt-1">{uniqueBusinessesFunded}</p>
+              <p className="text-3xl font-extrabold text-foreground mt-1">
+                {uniqueBusinessesFunded}
+              </p>
               <p className="text-xs text-muted-foreground mt-0.5">Klien bisnis disuntik saldo</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
@@ -223,77 +326,122 @@ export function TokenInjectContainer() {
 
       {/* History Table */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-xs font-semibold text-muted-foreground">
-              <th className="py-3 px-4">Profile & Business Name</th>
-              <th className="py-3 px-4 text-right">Total Token Inject</th>
-              <th className="py-3 px-4 text-right">Price (Harga)</th>
-              <th className="py-3 pr-4 pl-3 text-right">Date & Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredHistory.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="py-12 text-center text-muted-foreground">
-                  <div className="flex flex-col items-center gap-2">
-                    <Coins className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-sm font-medium">Belum ada riwayat token injection.</p>
-                  </div>
-                </td>
+        <div className="max-h-[520px] overflow-auto md:max-h-[calc(100vh-22rem)]">
+          <table className="w-full min-w-[720px] text-left border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border bg-muted text-xs font-semibold text-muted-foreground shadow-sm">
+                <th className="py-3 px-4">Profile & Business Name</th>
+                <th className="py-3 px-4 text-right">Total Token Inject</th>
+                <th className="py-3 px-4 text-right">Price (Harga)</th>
+                <th className="py-3 pr-4 pl-3 text-right">Date & Time</th>
               </tr>
-            ) : (
-              filteredHistory.map((item) => (
-                <tr
-                  key={item.id}
-                  onClick={() => setSelectedHistory(item)}
-                  className="group transition-colors border-b border-border/60 hover:bg-muted/40 bg-card cursor-pointer"
-                >
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-xl border border-border overflow-hidden shrink-0 bg-muted">
-                        <img src={item.businessLogoUrl} alt={item.businessName} className="h-full w-full object-cover" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{item.businessName}</p>
-                        <p className="text-[11px] text-muted-foreground">{item.businessCategory}</p>
-                      </div>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center">
+                    <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Memuat riwayat token injection...
                     </div>
-                  </td>
-                  <td className="py-3 px-4 text-right font-extrabold text-sm text-foreground">
-                    <div className="flex items-center justify-end gap-1 text-primary">
-                      <Coins className="h-3.5 w-3.5 text-yellow-500" />
-                      <span>{formatNumber(item.totalTokens)} Token</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-right font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                    Rp {formatNumber(item.price)}
-                  </td>
-                  <td className="py-3 pr-4 pl-3 text-right whitespace-nowrap">
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(item.dateTime).toLocaleDateString("id-ID", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })} &bull; {new Date(item.dateTime).toLocaleTimeString("id-ID", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : errorMessage ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center">
+                    <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
+                      <div className="inline-flex items-center gap-2 font-semibold text-destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        Gagal memuat riwayat token injection.
+                      </div>
+                      <p className="text-xs">{errorMessage}</p>
+                      <button
+                        type="button"
+                        onClick={handleRetry}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Coba lagi
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center gap-2">
+                      <Coins className="h-8 w-8 text-muted-foreground/50" />
+                      <p className="text-sm font-medium">Belum ada riwayat token injection.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredHistory.map((item) => (
+                  <tr
+                    key={item.id}
+                    onClick={() => setSelectedHistory(item)}
+                    className="group transition-colors border-b border-border/60 hover:bg-muted/40 bg-card cursor-pointer"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl border border-border overflow-hidden shrink-0 bg-muted">
+                          <img
+                            src={item.businessLogoUrl}
+                            alt={item.businessName}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {item.businessName}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {item.businessCategory}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-right font-extrabold text-sm text-foreground">
+                      <div className="flex items-center justify-end gap-1 text-primary">
+                        <Coins className="h-3.5 w-3.5 text-yellow-500" />
+                        <span>{formatNumber(item.totalTokens)} Token</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                      Rp {formatNumber(item.price)}
+                    </td>
+                    <td className="py-3 pr-4 pl-3 text-right whitespace-nowrap">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.dateTime).toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}{" "}
+                        &bull;{" "}
+                        {new Date(item.dateTime).toLocaleTimeString("id-ID", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filteredHistory.length}</strong> dari <strong>{history.length}</strong> riwayat
+          Menampilkan <strong>{filteredHistory.length}</strong> dari{" "}
+          <strong>{history.length}</strong> riwayat
         </div>
       </div>
 
       {/* Inject Token Modal Popup */}
       {showInjectModal && (
         <InjectTokenModal
+          businesses={businesses}
+          isLoading={businessQuery.isLoading}
+          isSubmitting={injectMutation.isPending}
           onClose={() => setShowInjectModal(false)}
           onInject={handleInjectToken}
         />
@@ -301,10 +449,7 @@ export function TokenInjectContainer() {
 
       {/* Row Details Modal Popup */}
       {selectedHistory && (
-        <InjectDetailModal
-          item={selectedHistory}
-          onClose={() => setSelectedHistory(null)}
-        />
+        <InjectDetailModal item={selectedHistory} onClose={() => setSelectedHistory(null)} />
       )}
     </div>
   );

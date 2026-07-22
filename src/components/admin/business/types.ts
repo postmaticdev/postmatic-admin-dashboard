@@ -9,6 +9,18 @@ export interface BusinessAccount {
   joinedAt: string;
 }
 
+export interface InjectHistoryItem {
+  id: string;
+  businessId: string;
+  businessName: string;
+  businessLogoUrl: string;
+  businessCategory: string;
+  totalTokens: number;
+  price: number;
+  dateTime: string;
+  adminName: string;
+}
+
 export const initialBusinesses: BusinessAccount[] = [
   {
     id: "b-1",

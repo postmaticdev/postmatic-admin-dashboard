@@ -1,38 +1,36 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getBusinessDashboardData } from "@/lib/business-api";
 import { BusinessAccount } from "./types";
 import { BusinessTableList } from "./BusinessTableList";
 import { BusinessFormView } from "./BusinessFormView";
-import { getStoredBusinesses, setStoredBusinesses } from "./store";
+import { getErrorMessage, mapBusinessTokenOverviewToAccount } from "./mappers";
 import { toast } from "sonner";
 import { Building2, Plus } from "lucide-react";
 
+const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
+
 export function BusinessContainer() {
-  const [items, setItems] = useState<BusinessAccount[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list");
   const [editingItem, setEditingItem] = useState<BusinessAccount | null>(null);
 
-  // Load from store on mount and when viewMode changes to list
-  useEffect(() => {
-    setItems(getStoredBusinesses());
-  }, [viewMode]);
+  const businessQuery = useQuery({
+    queryKey: BUSINESS_QUERY_KEY,
+    queryFn: getBusinessDashboardData,
+    staleTime: 30_000,
+  });
+
+  const items = useMemo(
+    () => (businessQuery.data?.businesses ?? []).map(mapBusinessTokenOverviewToAccount),
+    [businessQuery.data],
+  );
 
   const handleSave = (data: Omit<BusinessAccount, "id">, id?: string) => {
-    let updatedItems: BusinessAccount[];
-    if (id) {
-      updatedItems = items.map((item) => (item.id === id ? { ...item, ...data } : item));
-      toast.success(`Data bisnis "${data.name}" berhasil diperbarui!`);
-    } else {
-      const newItem: BusinessAccount = {
-        ...data,
-        id: `b-${Date.now()}`,
-      };
-      updatedItems = [newItem, ...items];
-      toast.success(`Bisnis "${data.name}" berhasil didaftarkan!`);
-    }
-    setStoredBusinesses(updatedItems);
-    setItems(updatedItems);
-    setViewMode("list");
-    setEditingItem(null);
+    toast.error(
+      id
+        ? `Endpoint edit business untuk form sederhana "${data.name}" belum tersedia.`
+        : `Endpoint create business untuk form sederhana "${data.name}" belum tersedia.`,
+    );
   };
 
   const handleEdit = (item: BusinessAccount) => {
@@ -60,10 +58,16 @@ export function BusinessContainer() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
                     Workspace Management
                   </span>
-                  <span className="text-xs text-muted-foreground font-mono">/ Business Management</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    / Business Management
+                  </span>
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">Business Management</h1>
-                <p className="text-sm text-muted-foreground">Kelola profil bisnis, saldo token AI, dan keanggotaan klien.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">
+                  Business Management
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Kelola profil bisnis, saldo token AI, dan keanggotaan klien.
+                </p>
               </div>
             </div>
             <button
@@ -80,7 +84,14 @@ export function BusinessContainer() {
       {viewMode === "list" ? (
         <BusinessTableList
           items={items}
+          isLoading={businessQuery.isLoading}
+          errorMessage={
+            businessQuery.isError
+              ? getErrorMessage(businessQuery.error, "Gagal memuat data business.")
+              : undefined
+          }
           onEdit={handleEdit}
+          onRetry={() => businessQuery.refetch()}
         />
       ) : (
         <BusinessFormView
