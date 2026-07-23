@@ -26,8 +26,7 @@ jobs:
           vercel-args: ${{ github.ref_name == 'main' && '--prod' || '' }}
           
           # Mengatur subdomain khusus untuk branch staging.
-          # Ganti 'staging.domainkamu.com' dengan subdomain asli kamu!
-          alias-domains: ${{ github.ref_name == 'staging' && 'staging.domainkamu.com' || '' }}
+          alias-domains: ${{ github.ref_name == 'staging' && 'admin-haystudio-staging.postmatic.id' || '' }}
 
       - name: Send Notification to Discord
         uses: sarisia/actions-status-discord@v1
