@@ -1,0 +1,43 @@
+name: Deploy Frontend to Vercel
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v20
+        id: vercel_deploy
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          
+          # Jika push ke main, deploy ke lingkungan Production Vercel. 
+          # Jika staging, Vercel akan menganggapnya Preview environment.
+          vercel-args: ${{ github.ref_name == 'main' && '--prod' || '' }}
+          
+          # Mengatur subdomain khusus untuk branch staging.
+          # Ganti 'staging.domainkamu.com' dengan subdomain asli kamu!
+          alias-domains: ${{ github.ref_name == 'staging' && 'staging.domainkamu.com' || '' }}
+
+      - name: Send Notification to Discord
+        uses: sarisia/actions-status-discord@v1
+        if: always()
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          username: "中野 二乃 (Frontend)"
+          title: "Deploy Frontend ke ${{ github.ref_name == 'main' && 'PRODUCTION 🚀' || 'STAGING 🛠️' }}"
+          content: ${{ job.status == 'failure' && '🚨 **@here Haaah?!** Frontend-nya gagal deploy! Cepat cek log-nya, mataku sakit melihat UI yang rusak!' || '✅ Hmph, UI/UX-nya sudah berhasil di-deploy. J-jangan harap aku akan memujinya!' }}
+          description: |
+            *Deployment Frontend* baru saja diproses. 
+            Cek perubahannya dan pastikan tidak ada *bug* visual yang memalukan! 😤
