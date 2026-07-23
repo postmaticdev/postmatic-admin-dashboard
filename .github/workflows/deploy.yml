@@ -1,4 +1,4 @@
-name: Deploy Frontend to Vercel
+name: Deploy Admin Dashboard to Vercel
 
 on:
   push:
@@ -34,9 +34,10 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: ${{ job.status }}
-          username: "中野 二乃 (Frontend)"
-          title: "Deploy Frontend ke ${{ github.ref_name == 'main' && 'PRODUCTION 🚀' || 'STAGING 🛠️' }}"
-          content: ${{ job.status == 'failure' && '🚨 **@here Haaah?!** Frontend-nya gagal deploy! Cepat cek log-nya, mataku sakit melihat UI yang rusak!' || '✅ Hmph, UI/UX-nya sudah berhasil di-deploy. J-jangan harap aku akan memujinya!' }}
+          username: "中野 二乃 (Admin Tools)"
+          title: "Update Admin Dashboard: ${{ github.ref_name == 'main' && 'PRODUCTION 🚀' || 'STAGING 🛠️' }}"
+          content: ${{ job.status == 'failure' && '🚨 **@here Haaah?!** Kalian ini niat bikin alat admin tidak sih?! Deploy-nya gagal tuh! Kalau dashboard admin saja hancur, bagaimana mau ngurusin data utamanya?! Cepat perbaiki!' || '✅ Hmph, akhirnya dashboard adminnya berhasil di-deploy. Y-ya baguslah kalau lancar, jadi kerjaan kalian lebih mudah. Tapi awas kalau masih ada tombol yang error ya!' }}
           description: |
-            *Deployment Frontend* baru saja diproses. 
-            Cek perubahannya dan pastikan tidak ada *bug* visual yang memalukan! 😤
+            Pembaruan untuk *Internal Admin Dashboard* sudah selesai diproses. 
+            
+            Coba kalian tes sendiri! Kalau ada tabel atau data yang nggak muncul, cepat perbaiki kodenya, jangan langsung merengek mencariku! 😤
