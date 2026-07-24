@@ -5,7 +5,7 @@ import type {
   RemoteWhatsappMessage,
   RemoteWhatsappRoom,
 } from "@/lib/customer-service-api";
-import type { Ticket, TicketMessage, TicketStatus } from "@/lib/types/ticket";
+import type { Ticket, TicketMessage, TicketReference, TicketStatus } from "@/lib/types/ticket";
 import { normalizeWhatsappDigits } from "@/lib/whatsapp-room-aliases";
 
 export function remoteStatusToTicketStatus(status?: string | null): TicketStatus | undefined {
@@ -110,6 +110,11 @@ function urlAttachments(urls?: string[] | null) {
   }));
 }
 
+function numberOrUndefined(value?: number | string | null) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function getReporterName(ticket: RemoteTicket) {
   const email = compactText(ticket.email);
   if (email) return email.split("@")[0] || email;
@@ -166,6 +171,10 @@ function getWhatsappRoomDisplayName(room: RemoteWhatsappRoom, phoneHandle: strin
 export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteMessage[]): Ticket {
   const createdAt = timestamp(ticket.createdAt);
   const updatedAt = timestamp(ticket.updatedAt ?? ticket.createdAt);
+  const detailMessages = messages ?? ticket.messages ?? undefined;
+  const hasDetailMessages = Array.isArray(detailMessages);
+  const remoteLastMessage =
+    ticket.lastMessage && "ticketId" in ticket.lastMessage ? ticket.lastMessage : undefined;
   const initialMessage: TicketMessage = {
     id: `website-ticket-${ticket.id}-body`,
     authorId: String(ticket.profileId ?? `website-user-${ticket.id}`),
@@ -176,15 +185,26 @@ export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteM
     direction: "in",
   };
 
-  const mappedMessages = messages?.map(mapWebsiteMessage) ?? [];
+  const mappedMessages = detailMessages?.map(mapWebsiteMessage) ?? [];
   const allMessages = [initialMessage, ...mappedMessages].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
   const lastMessage = allMessages.at(-1);
+  const fallbackLastMessageAt =
+    ticket.lastMessageAt ??
+    ticket.latestMessageAt ??
+    remoteLastMessage?.createdAt ??
+    ticket.createdAt;
   const snippet = compactText(
-    htmlToText(messages ? lastMessage?.content : ticket.body),
-    lastMessage?.attachments?.length ? "Pesan media" : "-",
+    htmlToText(hasDetailMessages ? lastMessage?.content : (remoteLastMessage?.body ?? ticket.body)),
+    (hasDetailMessages ? lastMessage?.attachments?.length : remoteLastMessage?.attachments?.length)
+      ? "Pesan media"
+      : "-",
   );
+
+  const lastMessageAt = hasDetailMessages
+    ? (lastMessage?.createdAt ?? timestamp(fallbackLastMessageAt))
+    : timestamp(fallbackLastMessageAt);
 
   return {
     id: `website:${ticket.id}`,
@@ -194,11 +214,16 @@ export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteM
     snippet,
     senderName: getReporterName(ticket),
     senderHandle: getReporterHandle(ticket),
-    updatedAt: newerTimestamp(updatedAt, messages ? lastMessage?.createdAt : undefined),
+    updatedAt: newerTimestamp(updatedAt, hasDetailMessages ? lastMessage?.createdAt : undefined),
+    lastMessageAt,
     status: remoteStatusToTicketStatus(ticket.slaStatus),
+    unread: Number(ticket.unreadMessages ?? 0) > 0,
+    unreadCount: Number(ticket.unreadMessages ?? 0) || undefined,
     isSavedAsTicket: true,
     isSynced: true,
-    isDetailsLoaded: Boolean(messages),
+    isDetailsLoaded: hasDetailMessages,
+    isPinned: Boolean(ticket.isPinned),
+    viewKind: "ticket",
     messages: allMessages,
   };
 }
@@ -219,64 +244,115 @@ export function mapWebsiteMessage(message: RemoteWebsiteMessage): TicketMessage 
   };
 }
 
-export function mapWhatsappRoom(room: RemoteWhatsappRoom, linkedTicket?: RemoteTicket): Ticket {
+export function remoteTicketToReference(ticket: RemoteTicket): TicketReference {
+  return {
+    id: Number(ticket.id),
+    subject: compactText(ticket.subject, `Ticket #${ticket.id}`),
+    body: compactText(ticket.body),
+    status: remoteStatusToTicketStatus(ticket.slaStatus),
+    isPinned: Boolean(ticket.isPinned),
+    createdAt: ticket.createdAt ?? undefined,
+    updatedAt: ticket.updatedAt ?? undefined,
+    messageExternalId: numberOrUndefined(ticket.whatsappMessageChatId),
+  };
+}
+
+export function mapWhatsappRoom(
+  room: RemoteWhatsappRoom,
+  ticketHistory: TicketReference[] = [],
+): Ticket {
   const roomId = Number(room.id);
   const phoneHandle = getWhatsappRoomPhoneHandle(room);
   const displayName = getWhatsappRoomDisplayName(room, phoneHandle, roomId);
-  const linkedTicketId = linkedTicket?.id != null ? Number(linkedTicket.id) : undefined;
+  const unreadCount = Number(room.unreadMessage ?? 0);
+  const roomUpdatedAt = timestamp(room.updatedAt ?? room.createdAt);
 
   return {
     id: `whatsapp:${roomId}`,
     externalIds: {
       whatsappRoomChatId: roomId,
-      whatsappTicketId: linkedTicketId,
     },
+    viewKind: "conversation",
     source: "whatsapp",
-    subject: compactText(linkedTicket?.subject, `Chat WhatsApp - ${displayName}`),
-    snippet: compactText(linkedTicket?.body, "Room chat WhatsApp"),
+    subject: `Chat WhatsApp - ${displayName}`,
+    snippet: "Room chat WhatsApp",
     senderName: displayName,
     senderHandle:
       phoneHandle || (isLidHandle(room.chatId) ? "WhatsApp" : compactText(room.chatId, "WhatsApp")),
-    updatedAt: timestamp(linkedTicket?.updatedAt ?? room.updatedAt ?? room.createdAt),
-    status: remoteStatusToTicketStatus(linkedTicket?.slaStatus),
-    isSavedAsTicket: Boolean(linkedTicket),
+    updatedAt: roomUpdatedAt,
+    lastMessageAt: roomUpdatedAt,
+    unread: unreadCount > 0,
+    unreadCount: unreadCount || undefined,
+    isPinned: Boolean(room.isPinned),
+    isSavedAsTicket: false,
     isSynced: true,
     isDetailsLoaded: false,
+    ticketHistory,
     messages: [],
   };
 }
 
-export function mapWhatsappTicketWithoutRoom(ticket: RemoteTicket): Ticket {
+export function mapWhatsappTicket(
+  ticket: RemoteTicket,
+  room?: RemoteWhatsappRoom,
+  ticketHistory?: TicketReference[],
+): Ticket {
   const roomId = ticket.whatsappRoomChatId != null ? Number(ticket.whatsappRoomChatId) : undefined;
+  const phoneHandle = room ? getWhatsappRoomPhoneHandle(room) : "";
+  const displayName = room
+    ? getWhatsappRoomDisplayName(room, phoneHandle, Number(room.id))
+    : roomId
+      ? `WhatsApp Room ${roomId}`
+      : "WhatsApp User";
+  const reference = remoteTicketToReference(ticket);
+  const history = ticketHistory?.length
+    ? [reference, ...ticketHistory.filter((item) => item.id !== reference.id)]
+    : [reference];
+
+  const ticketUpdatedAt = timestamp(ticket.updatedAt ?? ticket.createdAt);
+  const lastMessageAt = timestamp(room?.updatedAt ?? ticket.updatedAt ?? ticket.createdAt);
 
   return {
     id: `whatsapp-ticket:${ticket.id}`,
     externalIds: {
       whatsappTicketId: Number(ticket.id),
       whatsappRoomChatId: roomId,
+      whatsappTicketMessageChatId: reference.messageExternalId,
     },
+    viewKind: "ticket",
     source: "whatsapp",
     subject: compactText(ticket.subject, `WhatsApp Ticket #${ticket.id}`),
     snippet: compactText(ticket.body, "-"),
-    senderName: roomId ? `WhatsApp Room ${roomId}` : "WhatsApp User",
-    senderHandle: "WhatsApp",
-    updatedAt: timestamp(ticket.updatedAt ?? ticket.createdAt),
+    senderName: displayName,
+    senderHandle:
+      phoneHandle ||
+      (room && isLidHandle(room.chatId) ? "WhatsApp" : compactText(room?.chatId, "WhatsApp")),
+    updatedAt: ticketUpdatedAt,
+    lastMessageAt,
     status: remoteStatusToTicketStatus(ticket.slaStatus),
+    isPinned: Boolean(ticket.isPinned),
     isSavedAsTicket: true,
     isSynced: true,
     isDetailsLoaded: false,
+    ticketHistory: history,
+    focusedMessageExternalId: reference.messageExternalId,
     messages: [
       {
         id: `whatsapp-ticket-${ticket.id}-body`,
         authorId: "customer",
-        authorName: "WhatsApp User",
+        authorName: displayName,
         content: compactText(ticket.body, "-"),
         attachments: urlAttachments(ticket.attachments),
         createdAt: timestamp(ticket.createdAt),
         direction: "in",
+        ticketReferences: [reference],
       },
     ],
   };
+}
+
+export function mapWhatsappTicketWithoutRoom(ticket: RemoteTicket): Ticket {
+  return mapWhatsappTicket(ticket);
 }
 
 export function mapWhatsappMessage(
@@ -321,14 +397,107 @@ export function mapWhatsappMessage(
   };
 }
 
+function remoteWhatsappMessageBody(message: RemoteWhatsappMessage) {
+  return compactText(message.body).toLowerCase();
+}
+
+function referenceBody(reference: TicketReference) {
+  return compactText(reference.body).toLowerCase();
+}
+
+function findReferenceMessageId(
+  reference: TicketReference,
+  messages: RemoteWhatsappMessage[],
+  usedMessageIds: Set<number>,
+) {
+  if (reference.messageExternalId != null) return reference.messageExternalId;
+
+  const body = referenceBody(reference);
+  if (body) {
+    const sameBody = messages.find(
+      (message) =>
+        !usedMessageIds.has(Number(message.id)) &&
+        message.senderType === "customer" &&
+        remoteWhatsappMessageBody(message) === body,
+    );
+    if (sameBody) return Number(sameBody.id);
+  }
+
+  if (!reference.createdAt) return undefined;
+
+  const referenceTime = new Date(reference.createdAt).getTime();
+  if (!Number.isFinite(referenceTime)) return undefined;
+
+  const closest = messages
+    .filter(
+      (message) => !usedMessageIds.has(Number(message.id)) && message.senderType === "customer",
+    )
+    .map((message) => ({
+      message,
+      distance: Math.abs(
+        new Date(message.createdAt ?? message.sentAt ?? "").getTime() - referenceTime,
+      ),
+    }))
+    .filter((item) => Number.isFinite(item.distance))
+    .sort((a, b) => a.distance - b.distance)[0]?.message;
+
+  if (closest) return Number(closest.id);
+
+  const direct = messages.find(
+    (message) =>
+      Number(message.ticketId) === reference.id && !usedMessageIds.has(Number(message.id)),
+  );
+
+  return direct ? Number(direct.id) : undefined;
+}
+
+function resolveWhatsappTicketReferences(ticket: Ticket, messages: RemoteWhatsappMessage[]) {
+  const references = ticket.ticketHistory ?? [];
+  const usedMessageIds = new Set<number>();
+  const refsByMessageId = new Map<number, TicketReference[]>();
+
+  references.forEach((reference) => {
+    const messageExternalId = findReferenceMessageId(reference, messages, usedMessageIds);
+    if (messageExternalId == null) return;
+
+    usedMessageIds.add(messageExternalId);
+    const resolvedReference = { ...reference, messageExternalId };
+    const existing = refsByMessageId.get(messageExternalId) ?? [];
+    refsByMessageId.set(messageExternalId, [...existing, resolvedReference]);
+  });
+
+  return refsByMessageId;
+}
+
 export function applyWhatsappMessages(ticket: Ticket, messages: RemoteWhatsappMessage[]): Ticket {
+  const refsByMessageId = resolveWhatsappTicketReferences(ticket, messages);
   const mappedMessages = messages
-    .map((message) => mapWhatsappMessage(message, ticket.senderName))
+    .map((message) => {
+      const mappedMessage = mapWhatsappMessage(message, ticket.senderName);
+      const messageExternalId = Number(message.id);
+      const ticketReferences = refsByMessageId.get(messageExternalId);
+
+      return ticketReferences?.length
+        ? {
+            ...mappedMessage,
+            ticketReferences,
+          }
+        : mappedMessage;
+    })
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   const lastMessage = mappedMessages.at(-1);
   const referableMessage = [...messages]
     .reverse()
     .find((message) => message.senderType === "customer" || message.body || message.mediaUrl);
+  const focusedTicketMessage = mappedMessages.find((message) =>
+    message.ticketReferences?.some((ref) => ref.id === ticket.externalIds?.whatsappTicketId),
+  );
+  const focusedMessageExternalId =
+    ticket.focusedMessageExternalId ??
+    numberOrUndefined(ticket.externalIds?.whatsappTicketMessageChatId) ??
+    numberOrUndefined(focusedTicketMessage?.externalId);
+  const lastMessageSnippet =
+    lastMessage?.content || (lastMessage?.attachments?.length ? "Pesan media" : ticket.snippet);
 
   return {
     ...ticket,
@@ -338,10 +507,16 @@ export function applyWhatsappMessages(ticket: Ticket, messages: RemoteWhatsappMe
         referableMessage?.id != null
           ? Number(referableMessage.id)
           : ticket.externalIds?.whatsappMessageChatId,
+      whatsappTicketMessageChatId:
+        ticket.externalIds?.whatsappTicketMessageChatId ?? focusedMessageExternalId,
     },
-    snippet:
-      lastMessage?.content || (lastMessage?.attachments?.length ? "Pesan media" : ticket.snippet),
-    updatedAt: lastMessage?.createdAt ?? ticket.updatedAt,
+    focusedMessageExternalId,
+    snippet: lastMessageSnippet,
+    updatedAt:
+      ticket.viewKind === "ticket"
+        ? ticket.updatedAt
+        : (lastMessage?.createdAt ?? ticket.updatedAt),
+    lastMessageAt: lastMessage?.createdAt ?? ticket.lastMessageAt ?? ticket.updatedAt,
     isDetailsLoaded: true,
     messages: mappedMessages,
   };

@@ -37,15 +37,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTickets } from "@/contexts/TicketsContext";
 import {
   getWhatsappBlastContacts,
-  sendWhatsappBlast,
+  getChatBlastHistories,
+  sendChatBlast,
   type WhatsappBlastContact,
-  type RemoteWhatsappBlastResultItem,
+  type RemoteChatBlastHistory,
 } from "@/lib/customer-service-api";
-import type { Ticket, TicketMessage } from "@/lib/types/ticket";
-import {
-  rememberWhatsappRoomAlias,
-  whatsappPhonesMatch,
-} from "@/lib/whatsapp-room-aliases";
+import type { Ticket } from "@/lib/types/ticket";
+import { whatsappPhonesMatch } from "@/lib/whatsapp-room-aliases";
 
 export const Route = createFileRoute("/_dashboard/crm-blast")({
   component: CrmBlastPage,
@@ -55,8 +53,9 @@ interface BlastCampaign {
   id: string;
   campaignName: string;
   platform: "whatsapp" | "gmail" | "website";
-  status: "success" | "schedule";
+  status: "success" | "schedule" | "queued" | "processing" | "failed";
   assign: number;
+  succeedAssign?: number;
   dateTime: string;
   message: string;
   subject?: string;
@@ -71,6 +70,7 @@ interface ContactUser {
   email?: string;
   avatarUrl?: string;
   role: "user" | "admin" | "business";
+  sourceId?: string | number;
 }
 
 const MOCK_USERS: ContactUser[] = [
@@ -93,41 +93,6 @@ const MOCK_USERS: ContactUser[] = [
   { id: "u-17", name: "Siti Rahma", handle: "+62 823-2221-5847", role: "business" },
 ];
 
-const INITIAL_BLASTS: BlastCampaign[] = [
-  {
-    id: "b-1",
-    campaignName: "Promo Gajian Spektakuler",
-    platform: "whatsapp",
-    status: "success",
-    assign: 3,
-    dateTime: "12 Jul 2026, 10:00",
-    message: "Promo Gajian Spektakuler! Dapatkan diskon 50% untuk semua produk premium khusus hari ini dengan kode voucher GAJIAN50. Hubungi CS untuk order.",
-    targets: "+62 812-1000-5000, +62 813-1111-5077, +62 814-1222-5154",
-  },
-  {
-    id: "b-2",
-    campaignName: "Monthly Product Newsletter",
-    platform: "gmail",
-    status: "success",
-    assign: 3,
-    dateTime: "10 Jul 2026, 09:15",
-    subject: "Update Fitur Postmatic - Juli 2026",
-    message: "Halo rekan-rekan, berikut update bulanan fitur terbaru Postmatic, termasuk rich editor and CRM Blast. Selamat menggunakan!",
-    targets: "ahmad.jalal@gmail.com, citra.dewi@gmail.com, heri.wibowo@gmail.com",
-  },
-  {
-    id: "b-3",
-    campaignName: "Pengumuman Maintenance Server",
-    platform: "website",
-    status: "schedule",
-    assign: 2,
-    dateTime: "15 Jul 2026, 23:00",
-    subject: "Pemberitahuan Pemeliharaan Sistem",
-    message: "Sistem website report akan mengalami maintenance berkala pada hari Rabu, 15 Juli jam 23:00 - Kamis 01:00 WIB. Terima kasih atas pengertiannya.",
-    targets: "farida@website.com, kartika.sari@gmail.com",
-  },
-];
-
 function normalizeWhatsappTarget(value: string) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return "";
@@ -147,17 +112,6 @@ function normalizeWhatsappTarget(value: string) {
   return digits;
 }
 
-function formatWhatsappHandle(value: string) {
-  const normalized = normalizeWhatsappTarget(value);
-  if (!normalized) return value.trim();
-
-  if (normalized.startsWith("62") && normalized.length > 2) {
-    return `+62 ${normalized.slice(2)}`;
-  }
-
-  return `+${normalized}`;
-}
-
 function parseTargetList(targetGroup: string, manualInput: string) {
   return `${targetGroup},${manualInput}`
     .split(/[,;\n]+/)
@@ -165,21 +119,79 @@ function parseTargetList(targetGroup: string, manualInput: string) {
     .filter(Boolean);
 }
 
-function toBlastDeliveryStatus(status?: string | null) {
+function toCampaignStatus(status?: string | null): BlastCampaign["status"] {
   const normalized = status?.toLowerCase();
 
-  if (
-    !normalized ||
-    normalized === "enqueued" ||
-    normalized === "queued" ||
-    normalized === "scheduled"
-  ) {
-    return "pending";
-  }
-  if (normalized === "success") return "sent";
-  if (normalized === "skipped") return "failed";
+  if (normalized === "success") return "success";
+  if (normalized === "failed" || normalized === "error") return "failed";
+  if (normalized === "processing") return "processing";
+  if (normalized === "scheduled" || normalized === "schedule") return "schedule";
+  return "queued";
+}
 
-  return normalized;
+function formatBlastDate(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+
+  return date.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
+  const platform =
+    history.channelType === "gmail" || history.channelType === "website"
+      ? history.channelType
+      : "whatsapp";
+  const targets = (history.targets ?? []).filter(Boolean);
+
+  return {
+    id: `remote-${history.id}`,
+    campaignName: history.subject?.trim() || `Blast #${history.id}`,
+    platform,
+    status: toCampaignStatus(history.status),
+    assign: Number(history.totalAssign ?? targets.length) || 0,
+    succeedAssign: Number(history.succeedAssign ?? 0) || undefined,
+    dateTime: formatBlastDate(history.scheduledFor ?? history.createdAt),
+    message: history.body ?? "",
+    subject: history.subject ?? undefined,
+    targets: targets.join(", "),
+  };
+}
+
+function getBlastStatusMeta(status: BlastCampaign["status"]) {
+  if (status === "success") {
+    return {
+      label: "Success",
+      className:
+        "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20",
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "Failed",
+      className:
+        "bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20",
+    };
+  }
+
+  if (status === "processing") {
+    return {
+      label: "Processing",
+      className:
+        "bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20",
+    };
+  }
+
+  return {
+    label: status === "schedule" ? "Schedule" : "Queued",
+    className:
+      "bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20",
+  };
 }
 
 function findExistingWhatsappTicket(target: string, tickets: Ticket[]) {
@@ -197,11 +209,10 @@ function findExistingWhatsappTicket(target: string, tickets: Ticket[]) {
 }
 
 function CrmBlastPage() {
-  const { addMessage, createTicket, getBySource, refreshTickets } = useTickets();
-  const [blasts, setBlasts] = useState<BlastCampaign[]>(INITIAL_BLASTS);
+  const { getBySource, refreshTickets } = useTickets();
   const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Detail Dialog modal states
   const [selectedBlast, setSelectedBlast] = useState<BlastCampaign | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -216,7 +227,9 @@ function CrmBlastPage() {
 
   // View state: 'list' | 'create'
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
-  const [activePlatform, setActivePlatform] = useState<"whatsapp" | "gmail" | "website">("whatsapp");
+  const [activePlatform, setActivePlatform] = useState<"whatsapp" | "gmail" | "website">(
+    "whatsapp",
+  );
 
   // Form states
   const [campaignName, setCampaignName] = useState("");
@@ -237,15 +250,28 @@ function CrmBlastPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"user" | "admin" | "business">("user");
 
-  const whatsappContactsQuery = useQuery({
-    queryKey: ["crm-blast", "whatsapp-contacts"],
+  const blastContactsQuery = useQuery({
+    queryKey: ["crm-blast", "contacts"],
     queryFn: getWhatsappBlastContacts,
-    enabled: isImportOpen && activePlatform === "whatsapp",
+    enabled: isImportOpen && activePlatform !== "gmail",
     staleTime: 60_000,
   });
 
+  const blastHistoriesQuery = useQuery({
+    queryKey: ["crm-blast", "history-table"],
+    queryFn: getChatBlastHistories,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const remoteBlasts = useMemo(
+    () => (blastHistoriesQuery.data ?? []).map(mapRemoteBlast),
+    [blastHistoriesQuery.data],
+  );
+  const blasts = remoteBlasts;
+
   const filteredBlasts = blasts.filter((b) =>
-    b.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
+    b.campaignName.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleOpenDetail = (blast: BlastCampaign) => {
@@ -276,180 +302,122 @@ function CrmBlastPage() {
   const handleSaveBlast = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const targetList = parseTargetList(targetGroup, manualInput);
-    const finalTargets = targetList.join(", ");
+    const targetList = parseTargetList(
+      targetGroup,
+      activePlatform === "website" ? "" : manualInput,
+    );
 
     if (!campaignName.trim() || !composeMessage.trim() || !targetList.length) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
-
-    const assignCount = targetList.length;
 
     setSendBlastError("");
     setIsSendingBlast(true);
 
     try {
-      const whatsappBlastItems = new Map<string, RemoteWhatsappBlastResultItem>();
       const contactPool =
-        activePlatform === "whatsapp" ? (whatsappContactsQuery.data ?? []) : MOCK_USERS;
-      const whatsappTickets = activePlatform === "whatsapp" ? getBySource("whatsapp") : [];
-      const recipientPlans = targetList.map((handle) => {
-        const normalizedTarget = normalizeWhatsappTarget(handle);
-        const matchedUser = contactPool.find((u) => {
-          if (activePlatform !== "whatsapp") {
-            return u.handle.toLowerCase() === handle.toLowerCase();
-          }
-
-          return u.phone === normalizedTarget || normalizeWhatsappTarget(u.handle) === normalizedTarget;
-        });
-        const existingTicket =
-          activePlatform === "whatsapp"
-            ? findExistingWhatsappTicket(normalizedTarget || handle, whatsappTickets)
-            : undefined;
-
-        return {
-          handle,
-          normalizedTarget,
-          matchedUser,
-          existingTicket,
-        };
-      });
-
-      if (activePlatform === "whatsapp") {
-        const normalizedTargets = Array.from(
-          new Set(
-            recipientPlans
-              .filter((plan) => !plan.existingTicket)
-              .map((plan) => plan.normalizedTarget)
-              .filter(Boolean),
-          ),
-        );
-
-        if (normalizedTargets.length > 0) {
-          const blastResult = await sendWhatsappBlast({
-            targets: normalizedTargets,
-            body: composeMessage,
-          });
-
-          (blastResult?.items ?? []).forEach((item) => {
-            const normalizedTarget = normalizeWhatsappTarget(item.target ?? "");
-            if (normalizedTarget) {
-              whatsappBlastItems.set(normalizedTarget, item);
-            }
-          });
-        }
-      }
-
-      const newBlast: BlastCampaign = {
-        id: `b-${Date.now()}`,
-        campaignName: campaignName.trim(),
-        platform: activePlatform,
-        status: "success",
-        assign: assignCount || 1,
-        dateTime: new Date().toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-        message: composeMessage,
-        subject: activePlatform !== "whatsapp" ? composeSubject : undefined,
-        targets: finalTargets,
+        activePlatform === "gmail"
+          ? MOCK_USERS
+          : (blastContactsQuery.data ?? []).map((contact) => ({
+              id: contact.id,
+              name: contact.name,
+              handle: contact.handle,
+              phone: contact.phone,
+              email: contact.email,
+              avatarUrl: contact.avatarUrl,
+              role: contact.role,
+              sourceId: contact.sourceId,
+            }));
+      const targets = {
+        profileIds: [] as string[],
+        businessIds: [] as number[],
+        phoneNumbers: [] as string[],
+        emails: [] as string[],
       };
 
-      setBlasts([newBlast, ...blasts]);
+      if (activePlatform === "whatsapp") {
+        const whatsappRooms = getBySource("whatsapp");
+        const ineligibleTargets: string[] = [];
 
-      // Create room chats in Customer Service for each target recipient
-      recipientPlans.forEach((plan, idx) => {
-        const { existingTicket, handle, matchedUser, normalizedTarget } = plan;
-        const blastItem =
-          activePlatform === "whatsapp" ? whatsappBlastItems.get(normalizedTarget) : undefined;
-        const messageExternalId = blastItem?.whatsappMessageChatId;
-        const roomChatId = existingTicket?.externalIds?.whatsappRoomChatId ?? blastItem?.whatsappRoomChatId;
-        const sentStatus =
-          activePlatform === "whatsapp" && existingTicket
-            ? "pending"
-            : activePlatform === "whatsapp" ? toBlastDeliveryStatus(blastItem?.status) : undefined;
-        const createdAt = new Date().toISOString();
-        const contactName = matchedUser ? matchedUser.name : handle;
-        const senderHandle =
-          activePlatform === "whatsapp"
-            ? (matchedUser?.handle ?? formatWhatsappHandle(normalizedTarget || handle))
-            : handle;
-        const cleanSnippet = composeMessage.replace(/<[^>]*>?/gm, "").substring(0, 100);
-        const blastMessage: TicketMessage = {
-          id:
-            activePlatform === "whatsapp" && messageExternalId != null
-              ? `whatsapp-message-${messageExternalId}`
-              : `msg-blast-${Date.now()}-${idx}`,
-          externalId: messageExternalId ?? undefined,
-          authorId: "cs",
-          authorName: "CS Postmatic",
-          subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : undefined,
-          content: composeMessage,
-          createdAt,
-          direction: "out",
-          sentStatus,
-          pendingAt: sentStatus === "pending" ? createdAt : undefined,
-        };
+        targetList.forEach((handle) => {
+          const normalizedTarget = normalizeWhatsappTarget(handle);
+          const existingTicket = findExistingWhatsappTicket(
+            normalizedTarget || handle,
+            whatsappRooms,
+          );
 
-        if (activePlatform === "whatsapp" && roomChatId != null && normalizedTarget) {
-          rememberWhatsappRoomAlias({
-            roomChatId,
-            phone: normalizedTarget,
-            senderName: contactName,
-            senderHandle,
-            senderAvatar: matchedUser?.avatarUrl,
-            subject: campaignName.trim(),
-            snippet: cleanSnippet,
-            updatedAt: createdAt,
-            lastMessage: blastMessage,
-          });
-        }
+          if (!existingTicket) {
+            ineligibleTargets.push(handle);
+            return;
+          }
 
-        if (activePlatform === "whatsapp" && existingTicket) {
-          addMessage(existingTicket.id, {
-            authorId: "cs",
-            authorName: "CS Postmatic",
-            content: composeMessage,
-            direction: "out",
-          });
-          return;
-        }
-
-        createTicket({
-          id:
-            activePlatform === "whatsapp" && roomChatId != null
-              ? `whatsapp:${roomChatId}`
-              : undefined,
-          externalIds:
-            activePlatform === "whatsapp"
-              ? {
-                  whatsappRoomChatId: roomChatId ?? undefined,
-                  whatsappMessageChatId: messageExternalId ?? undefined,
-                }
-              : undefined,
-          source: activePlatform,
-          subject: activePlatform !== "whatsapp" ? (composeSubject.trim() || campaignName.trim()) : campaignName.trim(),
-          snippet: cleanSnippet,
-          senderName: contactName,
-          senderHandle,
-          senderAvatar: matchedUser?.avatarUrl,
-          isSavedAsTicket: true,
-          isSynced: activePlatform === "whatsapp" ? roomChatId != null : undefined,
-          isDetailsLoaded: activePlatform === "whatsapp" ? true : undefined,
-          messages: [blastMessage],
+          const phoneNumber =
+            normalizedTarget || normalizeWhatsappTarget(existingTicket.senderHandle);
+          if (phoneNumber) targets.phoneNumbers.push(phoneNumber);
         });
+
+        if (ineligibleTargets.length > 0) {
+          throw new Error(
+            `Nomor berikut belum eligible untuk WhatsApp blast: ${ineligibleTargets.join(", ")}`,
+          );
+        }
+      } else if (activePlatform === "website") {
+        targetList.forEach((handle) => {
+          const matchedContact = contactPool.find(
+            (contact) => contact.handle.toLowerCase() === handle.toLowerCase(),
+          );
+
+          if (matchedContact?.role === "business") {
+            const businessId = Number(matchedContact.sourceId);
+            if (Number.isFinite(businessId)) targets.businessIds.push(businessId);
+            return;
+          }
+
+          if (typeof matchedContact?.sourceId === "string") {
+            targets.profileIds.push(matchedContact.sourceId);
+          }
+        });
+      } else {
+        targets.emails.push(...targetList.filter((target) => target.includes("@")));
+      }
+
+      targets.profileIds = Array.from(new Set(targets.profileIds));
+      targets.businessIds = Array.from(new Set(targets.businessIds));
+      targets.phoneNumbers = Array.from(new Set(targets.phoneNumbers));
+      targets.emails = Array.from(new Set(targets.emails));
+
+      const totalTargets =
+        targets.profileIds.length +
+        targets.businessIds.length +
+        targets.phoneNumbers.length +
+        targets.emails.length;
+
+      if (totalTargets === 0) {
+        throw new Error("Pilih minimal satu penerima yang valid untuk blast.");
+      }
+
+      await sendChatBlast({
+        subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
+        body: composeMessage,
+        attachments: [],
+        channelType: activePlatform,
+        broadcastType: "direct",
+        schedule: null,
+        targets,
       });
 
+      await blastHistoriesQuery.refetch();
+
       setViewMode("list");
+      refreshTickets();
 
       if (activePlatform === "whatsapp") {
-        refreshTickets();
-
         if (typeof window !== "undefined") {
           window.setTimeout(refreshTickets, 1_500);
           window.setTimeout(refreshTickets, 5_000);
         }
       }
     } catch (error) {
-      setSendBlastError(
-        error instanceof Error ? error.message : "Gagal mengirim WhatsApp blast.",
-      );
+      setSendBlastError(error instanceof Error ? error.message : "Gagal mengirim WhatsApp blast.");
     } finally {
       setIsSendingBlast(false);
     }
@@ -507,7 +475,9 @@ function CrmBlastPage() {
           }
 
           if (activePlatform === "whatsapp") {
-            setComposeMessage((prev) => (prev ? `${prev}\n[File: ${file.name}]` : `[File: ${file.name}]`));
+            setComposeMessage((prev) =>
+              prev ? `${prev}\n[File: ${file.name}]` : `[File: ${file.name}]`,
+            );
           } else {
             insertHtmlAtCursor(htmlToInsert);
           }
@@ -519,30 +489,120 @@ function CrmBlastPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleConfirmSchedule = () => {
-    const targetList = parseTargetList(targetGroup, manualInput);
-    const finalTargets = targetList.join(", ");
+  const handleConfirmSchedule = async () => {
+    const targetList = parseTargetList(
+      targetGroup,
+      activePlatform === "website" ? "" : manualInput,
+    );
 
-    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length || !scheduleTime) return;
+    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length || !scheduleTime)
+      return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
 
-    const assignCount = targetList.length;
+    setSendBlastError("");
+    setIsSendingBlast(true);
 
-    const newBlast: BlastCampaign = {
-      id: `b-${Date.now()}`,
-      campaignName: campaignName.trim(),
-      platform: activePlatform,
-      status: "schedule",
-      assign: assignCount || 1,
-      dateTime: new Date(scheduleTime).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-      message: composeMessage,
-      subject: activePlatform !== "whatsapp" ? composeSubject : undefined,
-      targets: finalTargets,
-    };
+    try {
+      const contactPool =
+        activePlatform === "gmail"
+          ? MOCK_USERS
+          : (blastContactsQuery.data ?? []).map((contact) => ({
+              id: contact.id,
+              name: contact.name,
+              handle: contact.handle,
+              phone: contact.phone,
+              email: contact.email,
+              avatarUrl: contact.avatarUrl,
+              role: contact.role,
+              sourceId: contact.sourceId,
+            }));
+      const targets = {
+        profileIds: [] as string[],
+        businessIds: [] as number[],
+        phoneNumbers: [] as string[],
+        emails: [] as string[],
+      };
 
-    setBlasts([newBlast, ...blasts]);
-    setIsScheduleModalOpen(false);
-    setViewMode("list");
+      if (activePlatform === "whatsapp") {
+        const whatsappRooms = getBySource("whatsapp");
+        const ineligibleTargets: string[] = [];
+
+        targetList.forEach((handle) => {
+          const normalizedTarget = normalizeWhatsappTarget(handle);
+          const existingTicket = findExistingWhatsappTicket(
+            normalizedTarget || handle,
+            whatsappRooms,
+          );
+
+          if (!existingTicket) {
+            ineligibleTargets.push(handle);
+            return;
+          }
+
+          const phoneNumber =
+            normalizedTarget || normalizeWhatsappTarget(existingTicket.senderHandle);
+          if (phoneNumber) targets.phoneNumbers.push(phoneNumber);
+        });
+
+        if (ineligibleTargets.length > 0) {
+          throw new Error(
+            `Nomor berikut belum eligible untuk WhatsApp blast: ${ineligibleTargets.join(", ")}`,
+          );
+        }
+      } else if (activePlatform === "website") {
+        targetList.forEach((handle) => {
+          const matchedContact = contactPool.find(
+            (contact) => contact.handle.toLowerCase() === handle.toLowerCase(),
+          );
+
+          if (matchedContact?.role === "business") {
+            const businessId = Number(matchedContact.sourceId);
+            if (Number.isFinite(businessId)) targets.businessIds.push(businessId);
+            return;
+          }
+
+          if (typeof matchedContact?.sourceId === "string") {
+            targets.profileIds.push(matchedContact.sourceId);
+          }
+        });
+      } else {
+        targets.emails.push(...targetList.filter((target) => target.includes("@")));
+      }
+
+      targets.profileIds = Array.from(new Set(targets.profileIds));
+      targets.businessIds = Array.from(new Set(targets.businessIds));
+      targets.phoneNumbers = Array.from(new Set(targets.phoneNumbers));
+      targets.emails = Array.from(new Set(targets.emails));
+
+      const totalTargets =
+        targets.profileIds.length +
+        targets.businessIds.length +
+        targets.phoneNumbers.length +
+        targets.emails.length;
+
+      if (totalTargets === 0) {
+        throw new Error("Pilih minimal satu penerima yang valid untuk blast.");
+      }
+
+      await sendChatBlast({
+        subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
+        body: composeMessage,
+        attachments: [],
+        channelType: activePlatform,
+        broadcastType: "scheduled",
+        schedule: new Date(scheduleTime).toISOString(),
+        targets,
+      });
+
+      await blastHistoriesQuery.refetch();
+      setIsScheduleModalOpen(false);
+      setViewMode("list");
+    } catch (error) {
+      setSendBlastError(error instanceof Error ? error.message : "Gagal menjadwalkan blast.");
+      setIsScheduleModalOpen(false);
+    } finally {
+      setIsSendingBlast(false);
+    }
   };
 
   // Helper formatting tool exec command
@@ -556,8 +616,8 @@ function CrmBlastPage() {
 
   // Import Modal Handlers
   const importableContacts = useMemo<ContactUser[]>(() => {
-    if (activePlatform === "whatsapp") {
-      return (whatsappContactsQuery.data ?? []).map((contact: WhatsappBlastContact) => ({
+    if (activePlatform !== "gmail") {
+      const contacts = (blastContactsQuery.data ?? []).map((contact: WhatsappBlastContact) => ({
         id: contact.id,
         name: contact.name,
         handle: contact.handle,
@@ -565,11 +625,19 @@ function CrmBlastPage() {
         email: contact.email,
         avatarUrl: contact.avatarUrl,
         role: contact.role,
+        sourceId: contact.sourceId,
       }));
+
+      if (activePlatform !== "whatsapp") return contacts;
+
+      const whatsappRooms = getBySource("whatsapp");
+      return contacts.filter((contact) =>
+        findExistingWhatsappTicket(contact.phone ?? contact.handle, whatsappRooms),
+      );
     }
 
     return MOCK_USERS;
-  }, [activePlatform, whatsappContactsQuery.data]);
+  }, [activePlatform, blastContactsQuery.data, getBySource]);
 
   const filteredUsers = importableContacts.filter((u) => {
     if (activePlatform === "whatsapp") {
@@ -577,19 +645,19 @@ function CrmBlastPage() {
     } else if (activePlatform === "gmail") {
       if (!u.handle.includes("@")) return false;
     }
-    
+
     // Filter by active Tab Category (role)
     if (u.role !== activeTab) return false;
 
     const term = importSearch.toLowerCase();
     return u.name.toLowerCase().includes(term) || u.handle.toLowerCase().includes(term);
   });
-  const isImportLoading = activePlatform === "whatsapp" && whatsappContactsQuery.isLoading;
-  const importContactsError = activePlatform === "whatsapp" ? whatsappContactsQuery.error : null;
+  const isImportLoading = activePlatform !== "gmail" && blastContactsQuery.isLoading;
+  const importContactsError = activePlatform !== "gmail" ? blastContactsQuery.error : null;
 
   const handleToggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
     );
   };
 
@@ -604,7 +672,9 @@ function CrmBlastPage() {
   };
 
   const handleImportConfirm = () => {
-    const selectedHandles = importableContacts.filter((u) => selectedUserIds.includes(u.id)).map((u) => u.handle);
+    const selectedHandles = importableContacts
+      .filter((u) => selectedUserIds.includes(u.id))
+      .map((u) => u.handle);
     if (selectedHandles.length > 0) {
       const handlesString = selectedHandles.join(", ");
       setTargetGroup((prev) => (prev.trim() ? `${prev.trim()}, ${handlesString}` : handlesString));
@@ -630,7 +700,13 @@ function CrmBlastPage() {
   const hasInvalidTargets = parsedTargets.some((t) => !isValidHandle(t));
 
   const hasTargets = parsedTargets.length > 0;
-  const isFormValid = campaignName.trim() && composeMessage.trim() && hasTargets && !hasInvalidTargets && !isSendingBlast && (activePlatform === "whatsapp" || composeSubject.trim());
+  const isFormValid =
+    campaignName.trim() &&
+    composeMessage.trim() &&
+    hasTargets &&
+    !hasInvalidTargets &&
+    !isSendingBlast &&
+    (activePlatform === "whatsapp" || composeSubject.trim());
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground relative">
@@ -643,7 +719,9 @@ function CrmBlastPage() {
                 <Megaphone className="h-5 w-5 text-primary" />
                 CRM Blast
               </h1>
-              <p className="text-xs text-muted-foreground">Kelola dan kirim broadcast campaign pelanggan Anda</p>
+              <p className="text-xs text-muted-foreground">
+                Kelola dan kirim broadcast campaign pelanggan Anda
+              </p>
             </div>
 
             {/* Create Button Dropdown */}
@@ -716,7 +794,19 @@ function CrmBlastPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredBlasts.length === 0 ? (
+                  {blastHistoriesQuery.isLoading ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">
+                        Memuat riwayat blast...
+                      </td>
+                    </tr>
+                  ) : blastHistoriesQuery.error ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">
+                        Gagal memuat riwayat blast.
+                      </td>
+                    </tr>
+                  ) : filteredBlasts.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">
                         Belum ada riwayat blast.
@@ -729,7 +819,9 @@ function CrmBlastPage() {
                         onClick={() => handleOpenDetail(b)}
                         className="hover:bg-muted/45 cursor-pointer transition-colors"
                       >
-                        <td className="px-6 py-4 font-semibold text-foreground">{b.campaignName}</td>
+                        <td className="px-6 py-4 font-semibold text-foreground">
+                          {b.campaignName}
+                        </td>
                         <td className="px-6 py-4 text-center">
                           <span className="inline-flex items-center gap-1 text-xs justify-center font-medium">
                             {b.platform === "whatsapp" && (
@@ -750,18 +842,26 @@ function CrmBlastPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center">
-                          {b.status === "success" ? (
-                            <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 text-[10px] uppercase font-bold py-0.5 px-2">
-                              Success
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 text-[10px] uppercase font-bold py-0.5 px-2">
-                              Schedule
-                            </Badge>
-                          )}
+                          {(() => {
+                            const statusMeta = getBlastStatusMeta(b.status);
+                            return (
+                              <Badge
+                                className={cn(
+                                  statusMeta.className,
+                                  "py-0.5 px-2 text-[10px] font-bold uppercase",
+                                )}
+                              >
+                                {statusMeta.label}
+                              </Badge>
+                            );
+                          })()}
                         </td>
-                        <td className="px-6 py-4 text-center font-medium text-foreground/80">{b.assign}</td>
-                        <td className="px-6 py-4 text-right text-xs text-muted-foreground">{b.dateTime}</td>
+                        <td className="px-6 py-4 text-center font-medium text-foreground/80">
+                          {b.assign}
+                        </td>
+                        <td className="px-6 py-4 text-right text-xs text-muted-foreground">
+                          {b.dateTime}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -773,7 +873,10 @@ function CrmBlastPage() {
       ) : (
         /* Create Campaign Form View */
         <div className="flex-1 overflow-auto bg-muted/20">
-          <form onSubmit={handleSaveBlast} className="mx-auto max-w-5xl px-6 py-8 flex flex-col gap-6">
+          <form
+            onSubmit={handleSaveBlast}
+            className="mx-auto max-w-5xl px-6 py-8 flex flex-col gap-6"
+          >
             <input
               type="file"
               ref={fileInputRef}
@@ -794,9 +897,17 @@ function CrmBlastPage() {
               </Button>
               <div>
                 <h1 className="text-lg font-bold tracking-tight text-foreground">
-                  Isi Pesan Blast ({activePlatform === "whatsapp" ? "WhatsApp" : activePlatform === "gmail" ? "Gmail" : "Website"})
+                  Isi Pesan Blast (
+                  {activePlatform === "whatsapp"
+                    ? "WhatsApp"
+                    : activePlatform === "gmail"
+                      ? "Gmail"
+                      : "Website"}
+                  )
                 </h1>
-                <p className="text-xs text-muted-foreground">Tulis detail campaign broadcast Anda</p>
+                <p className="text-xs text-muted-foreground">
+                  Tulis detail campaign broadcast Anda
+                </p>
               </div>
             </div>
 
@@ -804,7 +915,9 @@ function CrmBlastPage() {
             <div className="rounded-lg border border-border bg-card shadow-sm overflow-hidden flex flex-col">
               {/* Campaign Name Flex Row */}
               <div className="flex items-center border-b border-border/70 py-3.5 px-5 bg-card shrink-0">
-                <span className="text-xs font-semibold text-muted-foreground w-12 shrink-0">Nama</span>
+                <span className="text-xs font-semibold text-muted-foreground w-12 shrink-0">
+                  Nama
+                </span>
                 <input
                   required
                   placeholder="Masukkan nama campaign blast"
@@ -818,7 +931,9 @@ function CrmBlastPage() {
               <div className="flex items-center justify-between border-b border-border/70 py-3.5 px-5 bg-card shrink-0">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-semibold text-muted-foreground w-12">Dari</span>
-                  <span className="text-xs font-bold text-foreground">hayhasan.project@gmail.com</span>
+                  <span className="text-xs font-bold text-foreground">
+                    hayhasan.project@gmail.com
+                  </span>
                 </div>
                 <ChevronDown className="h-4 w-4 text-muted-foreground cursor-pointer opacity-60" />
               </div>
@@ -826,71 +941,97 @@ function CrmBlastPage() {
               {/* Kepada Row (Contains Chip Tags + Import Button - Max Height scrollbar applied) */}
               <div className="flex items-start justify-between border-b border-border/70 py-3 px-5 bg-card gap-4 shrink-0">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <span className="text-xs font-semibold text-muted-foreground w-12 pt-1.5">Kepada</span>
-                  
+                  <span className="text-xs font-semibold text-muted-foreground w-12 pt-1.5">
+                    Kepada
+                  </span>
+
                   {/* Tidy container layout with max-height and custom thin scroll area */}
                   <div className="flex flex-wrap gap-2 flex-1 min-w-0 pr-2 pt-0.5 max-h-20 overflow-y-auto select-text scrollbar-thin">
-                    {targetGroup.split(",").map(t => t.trim()).filter(Boolean).map((handle, idx) => {
-                      const isValid = isValidHandle(handle);
-                      return (
-                        <Badge
-                          key={idx}
-                          variant="secondary"
-                          className={cn(
-                            "flex items-center gap-1.5 text-xs px-2.5 py-1 font-semibold rounded border",
-                            isValid
-                              ? "bg-muted/65 border-border text-foreground/90"
-                              : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
-                          )}
-                        >
-                          {handle}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newList = targetGroup.split(",").map(h => h.trim()).filter(h => h !== handle).join(", ");
-                              setTargetGroup(newList);
-                            }}
-                            className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-muted"
+                    {targetGroup
+                      .split(",")
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                      .map((handle, idx) => {
+                        const isValid = isValidHandle(handle);
+                        return (
+                          <Badge
+                            key={idx}
+                            variant="secondary"
+                            className={cn(
+                              "flex items-center gap-1.5 text-xs px-2.5 py-1 font-semibold rounded border",
+                              isValid
+                                ? "bg-muted/65 border-border text-foreground/90"
+                                : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400",
+                            )}
                           >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                    
+                            {handle}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newList = targetGroup
+                                  .split(",")
+                                  .map((h) => h.trim())
+                                  .filter((h) => h !== handle)
+                                  .join(", ");
+                                setTargetGroup(newList);
+                              }}
+                              className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-muted"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+
                     {/* Inline Manual Tags Input supporting Comma and Space splitters */}
                     <input
                       type="text"
                       value={manualInput}
                       onChange={(e) => {
+                        if (activePlatform === "website") return;
                         const val = e.target.value;
                         setManualInput(val);
                         if (val.endsWith(",") || val.endsWith(" ")) {
                           const cleanVal = val.slice(0, -1).trim();
                           if (cleanVal) {
-                            setTargetGroup((prev) => (prev.trim() ? `${prev.trim()}, ${cleanVal}` : cleanVal));
+                            setTargetGroup((prev) =>
+                              prev.trim() ? `${prev.trim()}, ${cleanVal}` : cleanVal,
+                            );
                           }
                           setManualInput("");
                         }
                       }}
                       onKeyDown={(e) => {
+                        if (activePlatform === "website") return;
                         if (e.key === "Enter") {
                           e.preventDefault();
                           const cleanVal = manualInput.trim();
                           if (cleanVal) {
-                            setTargetGroup((prev) => (prev.trim() ? `${prev.trim()}, ${cleanVal}` : cleanVal));
+                            setTargetGroup((prev) =>
+                              prev.trim() ? `${prev.trim()}, ${cleanVal}` : cleanVal,
+                            );
                           }
                           setManualInput("");
                         } else if (e.key === "Backspace" && !manualInput) {
-                          const parts = targetGroup.split(",").map(s => s.trim()).filter(Boolean);
+                          const parts = targetGroup
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean);
                           if (parts.length > 0) {
                             parts.pop();
                             setTargetGroup(parts.join(", "));
                           }
                         }
                       }}
-                      placeholder={targetGroup ? "" : "Ketik nomer manual..."}
-                      className="border-0 bg-transparent p-0 text-xs focus:ring-0 focus:outline-none placeholder:text-muted-foreground/60 flex-1 min-w-[120px] h-6"
+                      disabled={activePlatform === "website"}
+                      placeholder={
+                        targetGroup
+                          ? ""
+                          : activePlatform === "website"
+                            ? "Pilih penerima via Import"
+                            : "Ketik nomer manual..."
+                      }
+                      className="border-0 bg-transparent p-0 text-xs focus:ring-0 focus:outline-none placeholder:text-muted-foreground/60 flex-1 min-w-[120px] h-6 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -1138,7 +1279,10 @@ function CrmBlastPage() {
 
                   {actionDropdownOpen && (
                     <>
-                      <div className="fixed inset-0 z-30" onClick={() => setActionDropdownOpen(false)} />
+                      <div
+                        className="fixed inset-0 z-30"
+                        onClick={() => setActionDropdownOpen(false)}
+                      />
                       <div className="absolute right-0 bottom-full mb-1.5 w-36 rounded-lg border border-border bg-popover p-1.5 shadow-xl z-40 text-foreground">
                         <button
                           type="button"
@@ -1186,7 +1330,9 @@ function CrmBlastPage() {
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                     Campaign Name
                   </span>
-                  <p className="text-base font-bold text-foreground">{selectedBlast.campaignName}</p>
+                  <p className="text-base font-bold text-foreground">
+                    {selectedBlast.campaignName}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 border-y border-border/60 py-3">
@@ -1217,15 +1363,19 @@ function CrmBlastPage() {
                     <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                       Status
                     </span>
-                    {selectedBlast.status === "success" ? (
-                      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 text-[10px] uppercase font-bold py-0.5 px-2">
-                        Success
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 text-[10px] uppercase font-bold py-0.5 px-2">
-                        Schedule
-                      </Badge>
-                    )}
+                    {(() => {
+                      const statusMeta = getBlastStatusMeta(selectedBlast.status);
+                      return (
+                        <Badge
+                          className={cn(
+                            statusMeta.className,
+                            "py-0.5 px-2 text-[10px] font-bold uppercase",
+                          )}
+                        >
+                          {statusMeta.label}
+                        </Badge>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -1260,7 +1410,9 @@ function CrmBlastPage() {
                     <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                       Subject
                     </span>
-                    <p className="font-semibold text-foreground bg-muted/30 px-3 py-1.5 rounded border border-border/50">{selectedBlast.subject}</p>
+                    <p className="font-semibold text-foreground bg-muted/30 px-3 py-1.5 rounded border border-border/50">
+                      {selectedBlast.subject}
+                    </p>
                   </div>
                 )}
 
@@ -1347,8 +1499,11 @@ function CrmBlastPage() {
                   .split(",")
                   .map((t) => t.trim())
                   .filter(Boolean)
-                  .filter((handle) => handle.toLowerCase().includes(recipientSearch.toLowerCase())).length === 0 && (
-                  <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada penerima yang cocok.</p>
+                  .filter((handle) => handle.toLowerCase().includes(recipientSearch.toLowerCase()))
+                  .length === 0 && (
+                  <p className="p-8 text-center text-xs text-muted-foreground">
+                    Tidak ada penerima yang cocok.
+                  </p>
                 )}
               </div>
             </ScrollArea>
@@ -1459,7 +1614,7 @@ function CrmBlastPage() {
                     "py-2.5 px-4 text-xs font-bold border-b-2 transition-colors uppercase tracking-wider",
                     activeTab === tab
                       ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {tab}
@@ -1472,7 +1627,10 @@ function CrmBlastPage() {
               <label className="inline-flex items-center gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={filteredUsers.length > 0 && filteredUsers.every((u) => selectedUserIds.includes(u.id))}
+                  checked={
+                    filteredUsers.length > 0 &&
+                    filteredUsers.every((u) => selectedUserIds.includes(u.id))
+                  }
                   onChange={handleToggleSelectAll}
                   disabled={isImportLoading || Boolean(importContactsError)}
                   className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 bg-muted/10 cursor-pointer"
@@ -1488,13 +1646,13 @@ function CrmBlastPage() {
                 {isImportLoading ? (
                   <div className="flex items-center justify-center gap-2 p-8 text-xs font-medium text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Memuat kontak WhatsApp...
+                    Memuat kontak blast...
                   </div>
                 ) : importContactsError ? (
                   <div className="flex flex-col items-center gap-3 p-8 text-center">
                     <div className="flex items-center gap-2 text-xs font-semibold text-red-600 dark:text-red-400">
                       <AlertCircle className="h-4 w-4" />
-                      Gagal memuat kontak WhatsApp.
+                      Gagal memuat kontak blast.
                     </div>
                     <p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">
                       {importContactsError instanceof Error
@@ -1505,7 +1663,7 @@ function CrmBlastPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => whatsappContactsQuery.refetch()}
+                      onClick={() => blastContactsQuery.refetch()}
                       className="h-8 gap-1.5 text-xs font-semibold"
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
@@ -1513,7 +1671,9 @@ function CrmBlastPage() {
                     </Button>
                   </div>
                 ) : filteredUsers.length === 0 ? (
-                  <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada kontak yang cocok.</p>
+                  <p className="p-8 text-center text-xs text-muted-foreground">
+                    Tidak ada kontak yang cocok.
+                  </p>
                 ) : (
                   filteredUsers.map((u) => {
                     const isChecked = selectedUserIds.includes(u.id);
@@ -1530,7 +1690,9 @@ function CrmBlastPage() {
                             className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 bg-muted/10 cursor-pointer"
                           />
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground truncate">{u.name}</p>
+                            <p className="text-xs font-semibold text-foreground truncate">
+                              {u.name}
+                            </p>
                             <p className="text-[11px] text-muted-foreground truncate">{u.handle}</p>
                           </div>
                         </div>
@@ -1552,7 +1714,9 @@ function CrmBlastPage() {
               </Button>
               <Button
                 onClick={handleImportConfirm}
-                disabled={selectedUserIds.length === 0 || isImportLoading || Boolean(importContactsError)}
+                disabled={
+                  selectedUserIds.length === 0 || isImportLoading || Boolean(importContactsError)
+                }
                 className="h-8.5 text-xs font-semibold px-4"
               >
                 Import Terpilih ({selectedUserIds.length})

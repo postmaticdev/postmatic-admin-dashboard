@@ -54,6 +54,11 @@ const COUNTRIES = [
   { code: "KR", name: "South Korea", flag: "🇰🇷", dialCode: "+82" },
 ];
 
+function getTicketLastMessageTime(ticket: Ticket) {
+  const time = new Date(ticket.lastMessageAt ?? ticket.updatedAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 export function TicketListPanel({
   title,
   tickets,
@@ -169,11 +174,11 @@ export function TicketListPanel({
     return matchesSearch && matchesStatus && matchesPlatform;
   });
 
-  // Sort by isPinned (pinned first) then by updatedAt descending (newest first)
+  // Sort by isPinned (pinned first) then by latest message descending (newest first)
   const sortedTickets = [...filteredTickets].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    return getTicketLastMessageTime(b) - getTicketLastMessageTime(a);
   });
 
   const filteredCountries = COUNTRIES.filter(

@@ -12,7 +12,8 @@ interface Props {
 }
 
 export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
-  const { error, ensureTicketDetails, isLoading, markAsRead, refreshTickets } = useTickets();
+  const { error, ensureTicketDetails, getById, isLoading, markAsRead, refreshTickets } =
+    useTickets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isComposingEmail, setIsComposingEmail] = useState(false);
   const [replyToData, setReplyToData] = useState<{
@@ -57,7 +58,9 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
     setIsComposingEmail(true);
   };
 
-  const selected = tickets.find((t) => t.id === selectedId);
+  const selected = selectedId
+    ? (tickets.find((t) => t.id === selectedId) ?? getById(selectedId))
+    : undefined;
 
   return (
     <div className="grid h-full min-h-0 grid-cols-10">
@@ -83,7 +86,11 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
             replyToData={replyToData}
           />
         ) : (
-          <TicketDetailPanel ticket={selected} onReplyEmail={handleReplyEmail} />
+          <TicketDetailPanel
+            ticket={selected}
+            onReplyEmail={handleReplyEmail}
+            onSelectTicket={handleSelect}
+          />
         )}
       </div>
     </div>

@@ -1,8 +1,9 @@
-import { Fragment, useState, useRef, useEffect } from "react";
+import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Paperclip,
   Send,
@@ -11,14 +12,17 @@ import {
   CornerUpLeft,
   Image as ImageIcon,
   Video as VideoIcon,
+  BookmarkPlus,
+  History,
+  LocateFixed,
 } from "lucide-react";
-import { MarkAsTicketButton } from "../MarkAsTicketButton";
 import { StatusBadge } from "../StatusBadge";
 import { TicketStatusSelector } from "../TicketStatusSelector";
+import { TicketConfirmationDialog } from "../TicketConfirmationDialog";
 import { useTickets } from "@/contexts/TicketsContext";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/utils/date";
-import type { Ticket, TicketMessage } from "@/lib/types/ticket";
+import type { Ticket, TicketMessage, TicketReference } from "@/lib/types/ticket";
 
 interface AttachedFile {
   name: string;
@@ -29,6 +33,11 @@ interface AttachedFile {
 interface WhatsappDraft {
   text?: string;
   attachments?: AttachedFile[];
+}
+
+interface TicketMessageTarget {
+  message: TicketMessage;
+  externalId: number;
 }
 
 function getMessageDateKey(iso: string) {
@@ -81,16 +90,131 @@ function getDeliveryLabel(message: TicketMessage) {
   return status || "";
 }
 
-export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
-  const { addMessage, getDraft, setDraft } = useTickets();
+function getTicketSubjectDefault(ticket: Ticket, target: TicketMessageTarget | null) {
+  const messageText = target?.message.content.trim();
+  if (messageText) return messageText.slice(0, 80);
+
+  return ticket.subject;
+}
+
+function mergeTicketReferences(
+  references: Array<TicketReference | null | undefined>,
+  activeTicketId?: number,
+) {
+  const byId = new Map<number, TicketReference>();
+
+  references.forEach((reference) => {
+    if (!reference) return;
+
+    const existing = byId.get(reference.id);
+    byId.set(reference.id, {
+      ...existing,
+      ...reference,
+      subject: reference.subject || existing?.subject || `Ticket #${reference.id}`,
+      body: reference.body || existing?.body,
+      status: reference.status ?? existing?.status,
+      isPinned: reference.isPinned ?? existing?.isPinned,
+      createdAt: reference.createdAt ?? existing?.createdAt,
+      updatedAt: reference.updatedAt ?? existing?.updatedAt,
+      messageExternalId: reference.messageExternalId ?? existing?.messageExternalId,
+    });
+  });
+
+  return [...byId.values()].sort((a, b) => {
+    if (a.id === activeTicketId) return -1;
+    if (b.id === activeTicketId) return 1;
+
+    const aTime = new Date(a.createdAt ?? a.updatedAt ?? "").getTime();
+    const bTime = new Date(b.createdAt ?? b.updatedAt ?? "").getTime();
+
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    return b.id - a.id;
+  });
+}
+
+function whatsappTicketToReference(ticket: Ticket): TicketReference | null {
+  const id = ticket.externalIds?.whatsappTicketId;
+  if (id == null) return null;
+
+  const existingReference = ticket.ticketHistory?.find((reference) => reference.id === id);
+
+  return {
+    id,
+    subject: ticket.subject || existingReference?.subject || `Ticket #${id}`,
+    body: existingReference?.body || ticket.snippet,
+    status: ticket.status ?? existingReference?.status,
+    isPinned: ticket.isPinned ?? existingReference?.isPinned,
+    createdAt: existingReference?.createdAt,
+    updatedAt: ticket.updatedAt ?? existingReference?.updatedAt,
+    messageExternalId:
+      ticket.focusedMessageExternalId ??
+      ticket.externalIds?.whatsappTicketMessageChatId ??
+      existingReference?.messageExternalId,
+  };
+}
+
+interface WhatsappChatViewProps {
+  ticket: Ticket;
+  onSelectTicket?: (id: string) => void;
+}
+
+export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewProps) {
+  const {
+    addMessage,
+    getDraft,
+    markAsTicket,
+    openWhatsappTicketReference,
+    setDraft,
+    tickets: allTickets,
+  } = useTickets();
   const draftKey = `wa-reply-${ticket.id}`;
 
   const [inputText, setInputText] = useState("");
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [replyingTo, setReplyingTo] = useState<TicketMessage | null>(null);
+  const [ticketMessageTarget, setTicketMessageTarget] = useState<TicketMessageTarget | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef(new Map<string, HTMLDivElement>());
+  const activeWhatsappTicketId = ticket.externalIds?.whatsappTicketId;
+  const roomChatId = ticket.externalIds?.whatsappRoomChatId;
+  const historyReferences = useMemo(() => {
+    const roomTicketReferences = allTickets
+      .filter(
+        (item) =>
+          item.source === "whatsapp" &&
+          item.viewKind === "ticket" &&
+          item.externalIds?.whatsappRoomChatId === roomChatId,
+      )
+      .map(whatsappTicketToReference);
+    const messageTicketReferences = ticket.messages.flatMap(
+      (message) => message.ticketReferences ?? [],
+    );
+
+    return mergeTicketReferences(
+      [...(ticket.ticketHistory ?? []), ...messageTicketReferences, ...roomTicketReferences],
+      activeWhatsappTicketId,
+    );
+  }, [activeWhatsappTicketId, allTickets, roomChatId, ticket.messages, ticket.ticketHistory]);
+  const selectedTicketReference =
+    historyReferences.find((item) => item.id === activeWhatsappTicketId) ?? historyReferences[0];
+  const focusedMessageExternalId =
+    ticket.focusedMessageExternalId ?? selectedTicketReference?.messageExternalId;
+  const isTicketView = ticket.viewKind === "ticket";
+
+  const jumpToMessage = useCallback(
+    (messageExternalId = focusedMessageExternalId) => {
+      if (messageExternalId == null) return;
+
+      const target = messageRefs.current.get(String(messageExternalId));
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    },
+    [focusedMessageExternalId],
+  );
 
   // Load draft when ticket changes
   useEffect(() => {
@@ -104,6 +228,13 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
     }
     setReplyingTo(null);
   }, [ticket.id, getDraft, draftKey]);
+
+  useEffect(() => {
+    if (!isTicketView || focusedMessageExternalId == null) return;
+
+    const timeout = window.setTimeout(() => jumpToMessage(focusedMessageExternalId), 150);
+    return () => window.clearTimeout(timeout);
+  }, [focusedMessageExternalId, isTicketView, jumpToMessage, ticket.messages]);
 
   // Save draft when states change
   const saveDraft = (text: string, atts: AttachedFile[]) => {
@@ -220,6 +351,21 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
     };
   });
 
+  const handleHistoryTicketClick = (reference: TicketReference) => {
+    if (reference.id === activeWhatsappTicketId) {
+      jumpToMessage(reference.messageExternalId);
+      return;
+    }
+
+    const ticketId = openWhatsappTicketReference(ticket.id, reference);
+    if (onSelectTicket && ticketId) {
+      onSelectTicket(ticketId);
+      return;
+    }
+
+    jumpToMessage(reference.messageExternalId);
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3 shrink-0">
@@ -231,14 +377,80 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
           <div>
             <p className="text-sm font-semibold text-foreground">{ticket.senderName}</p>
             <p className="text-xs text-muted-foreground">{ticket.senderHandle}</p>
+            {isTicketView && (
+              <p className="mt-0.5 max-w-md truncate text-xs font-medium text-foreground">
+                {ticket.subject}
+              </p>
+            )}
           </div>
-          <StatusBadge status={ticket.status} />
+          {isTicketView && <StatusBadge status={ticket.status} />}
         </div>
         <div className="flex items-center gap-2">
-          <TicketStatusSelector ticketId={ticket.id} currentStatus={ticket.status} />
-          <MarkAsTicketButton ticket={ticket} />
+          {isTicketView ? (
+            <TicketStatusSelector ticketId={ticket.id} currentStatus={ticket.status} />
+          ) : null}
         </div>
       </header>
+
+      {historyReferences.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted/20 px-6 py-2 text-xs">
+          <History className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-semibold text-muted-foreground">History ticket</span>
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+            {historyReferences.map((reference) => (
+              <button
+                key={reference.id}
+                type="button"
+                onClick={() => handleHistoryTicketClick(reference)}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-[11px] font-semibold transition-colors",
+                  reference.id === activeWhatsappTicketId
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span>
+                  #{reference.id} {reference.subject}
+                </span>
+                <StatusBadge status={reference.status} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isTicketView && (
+        <div className="border-b border-border bg-card px-6 py-3">
+          <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/25 p-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="h-5 rounded px-1.5 text-[10px]">
+                  Ticket #{ticket.externalIds?.whatsappTicketId}
+                </Badge>
+                <StatusBadge status={ticket.status} />
+              </div>
+              <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                {ticket.subject}
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {selectedTicketReference?.body || ticket.snippet}
+              </p>
+            </div>
+            {focusedMessageExternalId != null && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => jumpToMessage()}
+                className="h-8 shrink-0 gap-1.5 text-xs"
+              >
+                <LocateFixed className="h-3.5 w-3.5" />
+                Jump
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="flex flex-col gap-3 px-6 py-6">
@@ -273,6 +485,15 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
                   </div>
                 )}
                 <div
+                  ref={(node) => {
+                    if (m.externalId == null) return;
+                    const key = String(m.externalId);
+                    if (node) {
+                      messageRefs.current.set(key, node);
+                    } else {
+                      messageRefs.current.delete(key);
+                    }
+                  }}
                   className={cn(
                     "flex group items-center gap-2",
                     out ? "justify-end" : "justify-start",
@@ -286,6 +507,22 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
                       title="Balas pesan ini"
                     >
                       <CornerUpLeft className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+
+                  {!out && Number.isFinite(Number(m.externalId)) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTicketMessageTarget({
+                          message: m,
+                          externalId: Number(m.externalId),
+                        })
+                      }
+                      className="shrink-0 rounded-full p-1.5 text-muted-foreground opacity-60 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      title="Tandai bubble ini sebagai ticket"
+                    >
+                      <BookmarkPlus className="h-3.5 w-3.5" />
                     </button>
                   )}
 
@@ -309,6 +546,24 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
                       >
                         <p className="font-bold text-[10px] mb-0.5">{m.quotedMessage.authorName}</p>
                         <p className="truncate text-[11px]">{m.quotedMessage.content}</p>
+                      </div>
+                    )}
+
+                    {m.ticketReferences && m.ticketReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {m.ticketReferences.map((reference) => (
+                          <span
+                            key={reference.id}
+                            className={cn(
+                              "rounded border px-1.5 py-0.5 text-[10px] font-bold",
+                              out
+                                ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                : "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                            )}
+                          >
+                            Ticket #{reference.id}
+                          </span>
+                        ))}
                       </div>
                     )}
 
@@ -492,6 +747,23 @@ export function WhatsappChatView({ ticket }: { ticket: Ticket }) {
           </div>
         </form>
       </footer>
+
+      <TicketConfirmationDialog
+        open={ticketMessageTarget !== null}
+        defaultSubject={getTicketSubjectDefault(ticket, ticketMessageTarget)}
+        onOpenChange={(open) => {
+          if (!open) setTicketMessageTarget(null);
+        }}
+        onConfirm={(subject) => {
+          if (ticketMessageTarget) {
+            return markAsTicket(ticket.id, {
+              subject,
+              messageExternalId: ticketMessageTarget.externalId,
+            });
+          }
+          throw new Error("Pilih bubble pesan WhatsApp yang ingin dijadikan ticket.");
+        }}
+      />
     </div>
   );
 }

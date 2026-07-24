@@ -26,13 +26,20 @@ export interface RemoteTicket {
   channel: "website" | "whatsapp";
   priority?: string | null;
   slaStatus?: "open" | "pending" | "in_progress" | "resolved" | string | null;
+  isPinned?: boolean | null;
+  unreadMessages?: number | null;
   whatsappRoomChatId?: number | null;
+  whatsappMessageChatId?: number | null;
   subject?: string | null;
   body?: string | null;
   countryCode?: string | null;
   phone?: string | null;
   email?: string | null;
   attachments?: string[] | null;
+  lastMessageAt?: string | null;
+  latestMessageAt?: string | null;
+  lastMessage?: RemoteWebsiteMessage | RemoteWhatsappMessage | null;
+  messages?: RemoteWebsiteMessage[] | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -68,6 +75,8 @@ export interface RemoteWhatsappRoom {
   roomName?: string | null;
   countryCode?: string | null;
   phone?: string | null;
+  isPinned?: boolean | null;
+  unreadMessage?: number | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -196,27 +205,64 @@ export interface WhatsappBlastContact {
   sourceId: string | number;
 }
 
-export interface WhatsappBlastPayload {
-  targets: string[];
+export interface ChatBlastTargetsPayload {
+  profileIds?: string[];
+  businessIds?: number[];
+  phoneNumbers?: string[];
+  emails?: string[];
+}
+
+export interface ChatBlastPayload {
+  subject: string;
   body: string;
+  attachments?: string[];
+  channelType: "whatsapp" | "gmail" | "website";
+  broadcastType: "direct" | "scheduled";
+  schedule: string | null;
+  targets: ChatBlastTargetsPayload;
 }
 
-export interface RemoteWhatsappBlastResultItem {
-  target?: string | null;
+export interface RemoteChatBlastHistory {
+  id: number;
+  subject?: string | null;
+  body?: string | null;
+  attachments?: string[] | null;
+  channelType?: "whatsapp" | "gmail" | "website" | string | null;
+  totalAssign?: number | null;
+  succeedAssign?: number | null;
+  targets?: string[] | null;
+  broadcastType?: "direct" | "scheduled" | string | null;
+  status?: "queued" | "processing" | "success" | "failed" | string | null;
+  scheduledFor?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteNotificationChatBlast {
+  id?: number | null;
+  subject?: string | null;
+  body?: string | null;
+  attachments?: string[] | null;
+  channelType?: "whatsapp" | "gmail" | "website" | string | null;
+  broadcastType?: string | null;
   status?: string | null;
-  whatsappRoomChatId?: number | null;
-  whatsappMessageChatId?: number | null;
-  scheduledDelaySeconds?: number | null;
-  scheduledCumulativeSeconds?: number | null;
+  scheduledFor?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
-export interface RemoteWhatsappBlastResult {
-  totalTargets?: number | null;
-  enqueued?: number | null;
-  skipped?: number | null;
-  minDelaySeconds?: number | null;
-  maxDelaySeconds?: number | null;
-  items?: RemoteWhatsappBlastResultItem[] | null;
+export interface RemoteNotification {
+  id: number;
+  chatBlastMessageHistoryId?: number | null;
+  profileId?: string | null;
+  readAt?: string | null;
+  chatBlast?: RemoteNotificationChatBlast | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteNotificationUnreadCount {
+  totalUnread?: number | null;
 }
 
 export type RemoteTicketStatus = "open" | "pending" | "in_progress" | "resolved";
@@ -300,8 +346,31 @@ function dataUrlToBlob(dataUrl: string, fallbackType: string) {
 }
 
 const getWebsiteTicketsServer = createServerFn({ method: "GET" }).handler(async () => {
-  const response = await apiRequest<RemoteTicket[]>("/api/ticket/website");
-  return response.data ?? [];
+  const tickets = await apiRequestAllPages<RemoteTicket>("/api/ticket/website");
+  const detailResults = await Promise.allSettled(
+    tickets.map(async (ticket) => {
+      const response = await apiRequest<RemoteWebsiteTicketDetail>(
+        `/api/ticket/website/${ticket.id}`,
+      );
+      return response.data;
+    }),
+  );
+
+  return tickets.map((ticket, index) => {
+    const result = detailResults[index];
+    if (result?.status !== "fulfilled") return ticket;
+
+    const detail = result.value;
+    const detailTicket = detail?.ticket ?? ticket;
+
+    return {
+      ...ticket,
+      ...detailTicket,
+      isPinned: ticket.isPinned ?? detailTicket.isPinned,
+      unreadMessages: ticket.unreadMessages ?? detailTicket.unreadMessages,
+      messages: detail?.messages ?? ticket.messages ?? [],
+    } satisfies RemoteTicket;
+  });
 });
 
 const getWebsiteTicketDetailServer = createServerFn({ method: "GET" })
@@ -395,6 +464,26 @@ const updateWhatsappTicketStatusServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
+const setTicketPinnedServer = createServerFn({ method: "POST" })
+  .validator((data: { ticketId: number; isPinned: boolean }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteTicket>("/api/ticket/common/set-pinned", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.data;
+  });
+
+const setWhatsappRoomPinnedServer = createServerFn({ method: "POST" })
+  .validator((data: { whatsappRoomChatId: number; isPinned: boolean }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteWhatsappRoom>("/api/chat/whatsapp/set-pinned", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.data ?? { id: data.whatsappRoomChatId, isPinned: data.isPinned };
+  });
+
 const getWhatsappRoomsServer = createServerFn({ method: "GET" }).handler(async () => {
   return apiRequestAllPages<RemoteWhatsappRoom>("/api/chat/whatsapp");
 });
@@ -462,36 +551,71 @@ function appendQuery(path: string, query: Record<string, string | number | undef
   return queryString ? `${path}?${queryString}` : path;
 }
 
+function numberFromPagination(pagination: Record<string, unknown>, keys: string[]) {
+  const value = keys.map((key) => pagination[key]).find((item) => item != null);
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function getPaginationTotalPages(pagination: unknown) {
   if (!pagination || typeof pagination !== "object") return 1;
 
-  const totalPages = (pagination as { totalPages?: unknown }).totalPages;
-  return typeof totalPages === "number" && Number.isFinite(totalPages) && totalPages > 0
-    ? totalPages
-    : 1;
+  const paginationRecord = pagination as Record<string, unknown>;
+  const totalPages = numberFromPagination(paginationRecord, [
+    "totalPages",
+    "totalPage",
+    "lastPage",
+    "pageCount",
+  ]);
+  if (totalPages != null && totalPages > 0) return totalPages;
+
+  const total = numberFromPagination(paginationRecord, ["total", "totalItems", "count"]);
+  const limit = numberFromPagination(paginationRecord, ["limit", "perPage", "pageSize"]);
+  if (total != null && limit != null && limit > 0) {
+    return Math.max(1, Math.ceil(total / limit));
+  }
+
+  return 1;
+}
+
+function getPaginationHasNextPage(pagination: unknown, currentPage: number, totalPages: number) {
+  if (pagination && typeof pagination === "object") {
+    const hasNextPage = (pagination as { hasNextPage?: unknown }).hasNextPage;
+    if (hasNextPage === true) return true;
+    if (currentPage < totalPages) return true;
+    if (hasNextPage === false) return false;
+  }
+
+  return currentPage < totalPages;
 }
 
 async function apiRequestAllPages<T>(
   path: string,
   query: Record<string, string | number | undefined> = {},
+  init: RequestInit = {},
 ) {
   let page = 1;
   let totalPages = 1;
+  let hasNextPage = true;
   const items: T[] = [];
 
   do {
-    const response = await apiRequest<T[]>(
+    const response = await apiRequest<T[] | T>(
       appendQuery(path, {
         ...query,
         limit: query.limit ?? CONTACT_PAGE_LIMIT,
         page,
       }),
+      init,
     );
 
-    items.push(...(response.data ?? []));
+    const data = response.data;
+    items.push(...(Array.isArray(data) ? data : data ? [data] : []));
     totalPages = getPaginationTotalPages(response.pagination);
+    hasNextPage = getPaginationHasNextPage(response.pagination, page, totalPages);
     page += 1;
-  } while (page <= totalPages && page <= CONTACT_PAGE_CAP);
+  } while (hasNextPage && page <= CONTACT_PAGE_CAP);
 
   return items;
 }
@@ -697,33 +821,47 @@ const getWhatsappBlastContactsServer = createServerFn({ method: "GET" }).handler
   return contacts;
 });
 
-const sendWhatsappBlastServer = createServerFn({ method: "POST" })
-  .validator((data: WhatsappBlastPayload) => data)
+const getChatBlastHistoriesServer = createServerFn({ method: "GET" }).handler(async () => {
+  return apiRequestAllPages<RemoteChatBlastHistory>(
+    "/api/chat/blast",
+    {
+      limit: 10,
+      sort: "desc",
+      sortBy: "id",
+    },
+    { cache: "no-store" },
+  );
+});
+
+const getChatBlastHistoryServer = createServerFn({ method: "GET" })
+  .validator((data: { id: number }) => data)
   .handler(async ({ data }) => {
-    const targets = Array.from(
-      new Set(
-        data.targets
-          .map((target) => normalizeWhatsappPhone(target))
-          .filter((target): target is string => Boolean(target)),
-      ),
-    );
-    const body = data.body.trim();
-
-    if (!targets.length) {
-      throw new Error("Tambahkan minimal satu nomor WhatsApp yang valid.");
-    }
-
-    if (!body) {
-      throw new Error("Isi pesan WhatsApp blast belum diisi.");
-    }
-
-    const response = await apiRequest<RemoteWhatsappBlastResult>("/api/chat/whatsapp/blast", {
-      method: "POST",
-      body: JSON.stringify({ targets, body }),
-    });
-
+    const response = await apiRequest<RemoteChatBlastHistory>(`/api/chat/blast/${data.id}`);
     return response.data;
   });
+
+const sendChatBlastServer = createServerFn({ method: "POST" })
+  .validator((data: ChatBlastPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteChatBlastHistory>("/api/chat/blast", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.data;
+  });
+
+const getCommonNotificationsServer = createServerFn({ method: "GET" }).handler(async () => {
+  return apiRequestAllPages<RemoteNotification>("/api/notification/common");
+});
+
+const getCommonNotificationUnreadCountServer = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const response = await apiRequest<RemoteNotificationUnreadCount>(
+      "/api/notification/common/unread-count",
+    );
+    return response.data ?? { totalUnread: 0 };
+  },
+);
 
 export function getWebsiteTickets() {
   return getWebsiteTicketsServer();
@@ -761,6 +899,14 @@ export function updateWhatsappTicketStatus(ticketId: number, status: RemoteTicke
   return updateWhatsappTicketStatusServer({ data: { ticketId, status } });
 }
 
+export function setTicketPinned(ticketId: number, isPinned: boolean) {
+  return setTicketPinnedServer({ data: { ticketId, isPinned } });
+}
+
+export function setWhatsappRoomPinned(whatsappRoomChatId: number, isPinned: boolean) {
+  return setWhatsappRoomPinnedServer({ data: { whatsappRoomChatId, isPinned } });
+}
+
 export function getWhatsappRooms() {
   return getWhatsappRoomsServer();
 }
@@ -785,8 +931,24 @@ export function getWhatsappBlastContacts() {
   return getWhatsappBlastContactsServer();
 }
 
-export function sendWhatsappBlast(payload: WhatsappBlastPayload) {
-  return sendWhatsappBlastServer({ data: payload });
+export function getChatBlastHistories() {
+  return getChatBlastHistoriesServer();
+}
+
+export function getChatBlastHistory(id: number) {
+  return getChatBlastHistoryServer({ data: { id } });
+}
+
+export function sendChatBlast(payload: ChatBlastPayload) {
+  return sendChatBlastServer({ data: payload });
+}
+
+export function getCommonNotifications() {
+  return getCommonNotificationsServer();
+}
+
+export function getCommonNotificationUnreadCount() {
+  return getCommonNotificationUnreadCountServer();
 }
 
 export function getRealtimeWebsocketUrl(accessToken?: string | null) {

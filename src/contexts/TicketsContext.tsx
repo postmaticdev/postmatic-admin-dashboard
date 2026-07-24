@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import {
   createWhatsappRoom,
   createWhatsappTicket,
+  getChatBlastHistories,
   getRealtimeWebsocketUrl,
   getWebsiteTicketDetail,
   getWebsiteTickets,
@@ -22,8 +23,11 @@ import {
   getWhatsappTickets,
   replyWebsiteTicket,
   replyWhatsappRoom,
+  setTicketPinned,
+  setWhatsappRoomPinned,
   updateWebsiteTicketStatus,
   updateWhatsappTicketStatus,
+  type RemoteChatBlastHistory,
   type RemoteTicket,
   type RemoteWebsiteMessage,
   type RemoteWhatsappMessage,
@@ -36,12 +40,19 @@ import {
   mapWebsiteTicket,
   mapWhatsappMessage,
   mapWhatsappRoom,
-  mapWhatsappTicketWithoutRoom,
+  mapWhatsappTicket,
+  remoteTicketToReference,
   remoteStatusToTicketStatus,
   ticketStatusToRemoteStatus,
 } from "@/lib/customer-service-mappers";
 import { MOCK_TICKETS } from "@/lib/mock/tickets";
-import type { Ticket, TicketMessage, TicketSource, TicketStatus } from "@/lib/types/ticket";
+import type {
+  Ticket,
+  TicketMessage,
+  TicketReference,
+  TicketSource,
+  TicketStatus,
+} from "@/lib/types/ticket";
 import {
   findWhatsappRoomAlias,
   normalizeWhatsappDigits,
@@ -57,6 +68,7 @@ const REALTIME_PING_INTERVAL_MS = 15_000;
 const REALTIME_RECONNECT_DELAY_MS = 2_000;
 const REALTIME_MAX_RECONNECT_ATTEMPTS = 3;
 const REALTIME_FALLBACK_REFRESH_INTERVAL_MS = 5_000;
+const WHATSAPP_BLAST_DEDUPE_WINDOW_MS = 10 * 60 * 1_000;
 
 function getNewerTimestamp(left: string, right?: string | null) {
   if (!right) return left;
@@ -76,6 +88,99 @@ function htmlToSnippetText(value?: string | null) {
     .replace(/&#039;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function htmlToMessageText(value?: string | null) {
+  return (value ?? "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function getAttachmentName(url: string, fallback: string) {
+  const rawName = url.split(/[?#]/)[0].split("/").filter(Boolean).at(-1) ?? fallback;
+
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
+function getWhatsappBlastStatus(history: RemoteChatBlastHistory) {
+  return history.status?.toLowerCase().trim() ?? "";
+}
+
+function isDeliveredWhatsappBlast(history: RemoteChatBlastHistory) {
+  if (history.channelType?.toLowerCase() !== "whatsapp") return false;
+
+  const status = getWhatsappBlastStatus(history);
+  const succeedAssign = Number(history.succeedAssign ?? 0);
+
+  return (
+    succeedAssign > 0 ||
+    status === "success" ||
+    status === "sent" ||
+    status === "delivered" ||
+    status === "done" ||
+    status === "completed"
+  );
+}
+
+function getWhatsappBlastTargets(history: RemoteChatBlastHistory) {
+  return (history.targets ?? [])
+    .map((target) => target?.trim())
+    .filter((target): target is string => Boolean(target));
+}
+
+function whatsappTargetMatches(left?: string | null, right?: string | null) {
+  const normalizedLeft = left?.trim().toLowerCase();
+  const normalizedRight = right?.trim().toLowerCase();
+
+  return Boolean(
+    normalizedLeft &&
+    normalizedRight &&
+    (normalizedLeft === normalizedRight || whatsappPhonesMatch(normalizedLeft, normalizedRight)),
+  );
+}
+
+function mapWhatsappBlastHistoryMessage(history: RemoteChatBlastHistory): TicketMessage {
+  const createdAt =
+    history.updatedAt ?? history.scheduledFor ?? history.createdAt ?? new Date().toISOString();
+  const content =
+    htmlToMessageText(history.body) || htmlToMessageText(history.subject) || `Blast #${history.id}`;
+  const attachments = (history.attachments ?? [])
+    .map((url) => url?.trim())
+    .filter((url): url is string => Boolean(url))
+    .map((url, index) => ({
+      name: getAttachmentName(url, `blast-${history.id}-${index + 1}`),
+      url,
+    }));
+
+  return {
+    id: `whatsapp-blast:${history.id}`,
+    externalId: `chat-blast:${history.id}`,
+    authorId: "agent",
+    authorName: "CS Postmatic",
+    subject: htmlToMessageText(history.subject) || undefined,
+    content,
+    attachments: attachments.length ? attachments : undefined,
+    createdAt,
+    direction: "out",
+    sentStatus: getWhatsappBlastStatus(history) || null,
+    sentAt: history.updatedAt ?? history.createdAt ?? createdAt,
+  };
 }
 
 function getRealtimeTopics(tickets: Ticket[]) {
@@ -105,7 +210,14 @@ interface TicketsContextValue {
   getBySource: (source: TicketSource) => Ticket[];
   getSaved: () => Ticket[];
   getById: (id: string) => Ticket | undefined;
-  markAsTicket: (id: string, opts?: { subject?: string }) => Promise<void>;
+  openWhatsappTicketReference: (
+    sourceTicketId: string,
+    reference: TicketReference,
+  ) => string | null;
+  markAsTicket: (
+    id: string,
+    opts?: { subject?: string; messageExternalId?: number },
+  ) => Promise<void>;
   unmarkAsTicket: (id: string) => void;
   togglePinTicket: (id: string) => void;
   createTicket: (
@@ -148,6 +260,93 @@ function isUnhelpfulWhatsappIdentity(value?: string | null) {
   return !text || /@lid$/i.test(text) || /^WhatsApp Room \d+$/i.test(text) || text === "WhatsApp";
 }
 
+function isWhatsappTicketView(ticket: Ticket) {
+  return ticket.source === "whatsapp" && ticket.viewKind === "ticket";
+}
+
+function isWhatsappConversationView(ticket: Ticket) {
+  return ticket.source === "whatsapp" && ticket.viewKind !== "ticket";
+}
+
+function getRemoteTicketId(ticket: Ticket) {
+  return ticket.externalIds?.websiteTicketId ?? ticket.externalIds?.whatsappTicketId;
+}
+
+function mergeTicketReference(existing: TicketReference | undefined, next: TicketReference) {
+  return {
+    ...existing,
+    ...next,
+    subject: next.subject || existing?.subject || `Ticket #${next.id}`,
+    body: next.body || existing?.body,
+    status: next.status ?? existing?.status,
+    isPinned: next.isPinned ?? existing?.isPinned,
+    createdAt: next.createdAt ?? existing?.createdAt,
+    updatedAt: next.updatedAt ?? existing?.updatedAt,
+    messageExternalId: next.messageExternalId ?? existing?.messageExternalId,
+  } satisfies TicketReference;
+}
+
+function mergeTicketReferences(references: Array<TicketReference | null | undefined>) {
+  const byId = new Map<number, TicketReference>();
+
+  references.forEach((reference) => {
+    if (!reference) return;
+    byId.set(reference.id, mergeTicketReference(byId.get(reference.id), reference));
+  });
+
+  return [...byId.values()].sort((a, b) => {
+    const aTime = new Date(a.createdAt ?? a.updatedAt ?? "").getTime();
+    const bTime = new Date(b.createdAt ?? b.updatedAt ?? "").getTime();
+
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    return b.id - a.id;
+  });
+}
+
+function ticketToWhatsappReference(ticket: Ticket) {
+  const ticketId = ticket.externalIds?.whatsappTicketId;
+  if (ticket.source !== "whatsapp" || ticketId == null) return null;
+
+  const existingReference = ticket.ticketHistory?.find((reference) => reference.id === ticketId);
+
+  return {
+    id: ticketId,
+    subject: ticket.subject || existingReference?.subject || `Ticket #${ticketId}`,
+    body: existingReference?.body || ticket.snippet,
+    status: ticket.status ?? existingReference?.status,
+    isPinned: ticket.isPinned ?? existingReference?.isPinned,
+    createdAt: existingReference?.createdAt,
+    updatedAt: ticket.updatedAt ?? existingReference?.updatedAt,
+    messageExternalId:
+      ticket.focusedMessageExternalId ??
+      ticket.externalIds?.whatsappTicketMessageChatId ??
+      existingReference?.messageExternalId,
+  } satisfies TicketReference;
+}
+
+function collectWhatsappRoomReferences(
+  tickets: Ticket[],
+  roomChatId: number,
+  extraReferences: TicketReference[] = [],
+) {
+  const roomTickets = tickets.filter(
+    (ticket) =>
+      ticket.source === "whatsapp" && ticket.externalIds?.whatsappRoomChatId === roomChatId,
+  );
+
+  return mergeTicketReferences([
+    ...extraReferences,
+    ...roomTickets.flatMap((ticket) => ticket.ticketHistory ?? []),
+    ...roomTickets.flatMap((ticket) =>
+      ticket.messages.flatMap((message) => message.ticketReferences ?? []),
+    ),
+    ...roomTickets.map(ticketToWhatsappReference),
+  ]);
+}
+
 function applyWhatsappRoomAliases(tickets: Ticket[]) {
   return tickets.map((ticket) => {
     if (ticket.source !== "whatsapp") return ticket;
@@ -183,9 +382,13 @@ function applyWhatsappRoomAliases(tickets: Ticket[]) {
       senderName: shouldUseAliasIdentity ? alias.senderName : ticket.senderName,
       senderHandle: shouldUseAliasIdentity ? alias.senderHandle : ticket.senderHandle,
       senderAvatar: alias.senderAvatar ?? ticket.senderAvatar,
-      subject: shouldUseAliasIdentity ? (alias.subject ?? ticket.subject) : ticket.subject,
+      subject:
+        shouldUseAliasIdentity && isWhatsappConversationView(ticket)
+          ? (alias.subject ?? ticket.subject)
+          : ticket.subject,
       snippet: shouldUseAliasSnippet ? (alias.snippet ?? ticket.snippet) : ticket.snippet,
       updatedAt: getNewerTimestamp(ticket.updatedAt, alias.updatedAt),
+      lastMessageAt: getNewerTimestamp(ticket.lastMessageAt ?? ticket.updatedAt, alias.updatedAt),
       messages,
     };
   });
@@ -207,10 +410,13 @@ function ticketsShareRemoteIdentity(left: Ticket, right: Ticket) {
 
   return Boolean(
     left.source === "whatsapp" &&
-    ((leftIds?.whatsappRoomChatId != null &&
-      leftIds.whatsappRoomChatId === rightIds?.whatsappRoomChatId) ||
-      (leftIds?.whatsappTicketId != null &&
-        leftIds.whatsappTicketId === rightIds?.whatsappTicketId)),
+    ((leftIds?.whatsappTicketId != null &&
+      rightIds?.whatsappTicketId != null &&
+      leftIds.whatsappTicketId === rightIds.whatsappTicketId) ||
+      (isWhatsappConversationView(left) &&
+        isWhatsappConversationView(right) &&
+        leftIds?.whatsappRoomChatId != null &&
+        leftIds.whatsappRoomChatId === rightIds?.whatsappRoomChatId)),
   );
 }
 
@@ -251,6 +457,12 @@ function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) 
       updatedAt: keepLocalDetails
         ? getNewerTimestamp(remoteTicket.updatedAt, localTicket.updatedAt)
         : remoteTicket.updatedAt,
+      lastMessageAt: keepLocalDetails
+        ? getNewerTimestamp(
+            remoteTicket.lastMessageAt ?? remoteTicket.updatedAt,
+            localTicket.lastMessageAt ?? localTicket.updatedAt,
+          )
+        : (remoteTicket.lastMessageAt ?? remoteTicket.updatedAt),
       messages: keepLocalDetails ? localTicket.messages : remoteTicket.messages,
       externalIds: {
         ...remoteTicket.externalIds,
@@ -269,24 +481,6 @@ function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) 
   );
 
   return [...mergedRemote, ...localOnlyWithoutRemoteDuplicates];
-}
-
-function getTicketMessageExternalId(message: TicketMessage) {
-  return typeof message.externalId === "number" ? message.externalId : Number(message.externalId);
-}
-
-function getReferableWhatsappMessageId(ticket: Ticket) {
-  if (ticket.externalIds?.whatsappMessageChatId) {
-    return ticket.externalIds.whatsappMessageChatId;
-  }
-
-  const message = [...ticket.messages]
-    .reverse()
-    .find(
-      (item) => item.authorId !== "system" && Number.isFinite(getTicketMessageExternalId(item)),
-    );
-
-  return message ? getTicketMessageExternalId(message) : undefined;
 }
 
 function toExternalAttachmentUrls(message: Omit<TicketMessage, "id" | "createdAt">) {
@@ -328,39 +522,210 @@ function getWhatsappRoomPhoneCandidates(room: RemoteWhatsappRoom) {
 
 function findWhatsappRoomByTarget(rooms: RemoteWhatsappRoom[], target: string) {
   return rooms.find((room) =>
-    getWhatsappRoomPhoneCandidates(room).some((candidate) => whatsappPhonesMatch(candidate, target)),
+    getWhatsappRoomPhoneCandidates(room).some((candidate) =>
+      whatsappTargetMatches(candidate, target),
+    ),
   );
 }
 
+function getWhatsappTicketTargetCandidates(ticket: Ticket) {
+  return [
+    ticket.senderHandle,
+    ticket.senderName,
+    ticket.subject,
+    ticket.externalIds?.whatsappRoomChatId != null
+      ? String(ticket.externalIds.whatsappRoomChatId)
+      : undefined,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function historyMatchesWhatsappRoom(history: RemoteChatBlastHistory, room?: RemoteWhatsappRoom) {
+  if (!room) return false;
+
+  const candidates = getWhatsappRoomPhoneCandidates(room);
+
+  return getWhatsappBlastTargets(history).some((target) =>
+    candidates.some((candidate) => whatsappTargetMatches(candidate, target)),
+  );
+}
+
+function historyMatchesWhatsappTicket(
+  history: RemoteChatBlastHistory,
+  ticket: Ticket,
+  room?: RemoteWhatsappRoom,
+) {
+  if (historyMatchesWhatsappRoom(history, room)) return true;
+
+  const candidates = getWhatsappTicketTargetCandidates(ticket);
+
+  return getWhatsappBlastTargets(history).some((target) =>
+    candidates.some((candidate) => whatsappTargetMatches(candidate, target)),
+  );
+}
+
+function getWhatsappBlastMessagesForTicket(
+  histories: RemoteChatBlastHistory[],
+  ticket: Ticket,
+  room?: RemoteWhatsappRoom,
+) {
+  if (ticket.source !== "whatsapp") return [];
+
+  return histories
+    .filter(isDeliveredWhatsappBlast)
+    .filter((history) => historyMatchesWhatsappTicket(history, ticket, room))
+    .map(mapWhatsappBlastHistoryMessage);
+}
+
+function getWhatsappBlastMessagesByRoom(
+  histories: RemoteChatBlastHistory[],
+  rooms: RemoteWhatsappRoom[],
+) {
+  const messagesByRoomId = new Map<number, TicketMessage[]>();
+
+  histories.filter(isDeliveredWhatsappBlast).forEach((history) => {
+    getWhatsappBlastTargets(history).forEach((target) => {
+      const matchedRoom = findWhatsappRoomByTarget(rooms, target);
+      const roomId = matchedRoom?.id != null ? Number(matchedRoom.id) : undefined;
+      if (roomId == null || !Number.isFinite(roomId)) return;
+
+      const message = mapWhatsappBlastHistoryMessage(history);
+      const previousMessages = messagesByRoomId.get(roomId) ?? [];
+
+      if (!previousMessages.some((item) => item.id === message.id)) {
+        messagesByRoomId.set(roomId, [...previousMessages, message]);
+      }
+    });
+  });
+
+  return messagesByRoomId;
+}
+
+function uniqueTicketMessages(messages: TicketMessage[]) {
+  return messages.reduce<TicketMessage[]>(
+    (uniqueMessages, message) =>
+      uniqueMessages.some((item) => messagesLookEquivalent(item, message))
+        ? uniqueMessages
+        : [...uniqueMessages, message],
+    [],
+  );
+}
+
+function messageTimeDistance(left?: string | null, right?: string | null) {
+  const leftTime = new Date(left ?? "").getTime();
+  const rightTime = new Date(right ?? "").getTime();
+
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return Number.POSITIVE_INFINITY;
+
+  return Math.abs(leftTime - rightTime);
+}
+
+function messagesLookEquivalent(left: TicketMessage, right: TicketMessage) {
+  if (left.id === right.id) return true;
+
+  if (left.externalId != null && right.externalId != null) {
+    return String(left.externalId) === String(right.externalId);
+  }
+
+  return (
+    left.direction === right.direction &&
+    left.direction === "out" &&
+    htmlToSnippetText(left.content).toLowerCase() ===
+      htmlToSnippetText(right.content).toLowerCase() &&
+    messageTimeDistance(left.createdAt, right.createdAt) <= WHATSAPP_BLAST_DEDUPE_WINDOW_MS
+  );
+}
+
+function mergeWhatsappBlastMessagesIntoTicket(ticket: Ticket, blastMessages: TicketMessage[]) {
+  const missingMessages = blastMessages.filter(
+    (blastMessage) =>
+      !ticket.messages.some((message) => messagesLookEquivalent(message, blastMessage)),
+  );
+
+  if (!missingMessages.length) return ticket;
+
+  const messages = sortTicketMessages([...ticket.messages, ...missingMessages]);
+  const lastMessage = messages.at(-1);
+  const lastMessageAt = lastMessage?.createdAt ?? ticket.lastMessageAt ?? ticket.updatedAt;
+
+  return {
+    ...ticket,
+    snippet: lastMessage ? getMessageSnippet(lastMessage, ticket.snippet) : ticket.snippet,
+    updatedAt: isWhatsappTicketView(ticket) ? ticket.updatedAt : lastMessageAt,
+    lastMessageAt: getNewerTimestamp(ticket.lastMessageAt ?? ticket.updatedAt, lastMessageAt),
+    messages,
+  };
+}
+
 async function getCustomerServiceOverview() {
-  const [websiteTickets, whatsappTickets, whatsappRooms] = await Promise.all([
+  const [websiteTickets, whatsappTickets, whatsappRooms, chatBlastHistories] = await Promise.all([
     getWebsiteTickets(),
     getWhatsappTickets(),
     getWhatsappRooms(),
+    getChatBlastHistories().catch(() => [] as RemoteChatBlastHistory[]),
   ]);
 
-  const whatsappTicketByRoomId = new Map(
-    whatsappTickets
-      .filter((ticket) => ticket.whatsappRoomChatId != null)
-      .map((ticket) => [Number(ticket.whatsappRoomChatId), ticket]),
+  const whatsappRoomById = new Map(whatsappRooms.map((room) => [Number(room.id), room]));
+  const whatsappBlastMessagesByRoomId = getWhatsappBlastMessagesByRoom(
+    chatBlastHistories,
+    whatsappRooms,
   );
-  const roomIds = new Set(whatsappRooms.map((room) => Number(room.id)));
+  const whatsappTicketHistoryByRoomId = new Map<
+    number,
+    ReturnType<typeof remoteTicketToReference>[]
+  >();
+
+  whatsappTickets.forEach((ticket) => {
+    if (ticket.whatsappRoomChatId == null) return;
+
+    const roomId = Number(ticket.whatsappRoomChatId);
+    const previousHistory = whatsappTicketHistoryByRoomId.get(roomId) ?? [];
+    whatsappTicketHistoryByRoomId.set(roomId, [
+      ...previousHistory,
+      remoteTicketToReference(ticket),
+    ]);
+  });
 
   const websiteMapped = websiteTickets.map((ticket) => mapWebsiteTicket(ticket));
-  const whatsappRoomMapped = whatsappRooms.map((room) =>
-    mapWhatsappRoom(room, whatsappTicketByRoomId.get(Number(room.id))),
-  );
-  const orphanWhatsappTickets = whatsappTickets
-    .filter(
-      (ticket) =>
-        ticket.whatsappRoomChatId == null || !roomIds.has(Number(ticket.whatsappRoomChatId)),
-    )
-    .map((ticket) => mapWhatsappTicketWithoutRoom(ticket));
+  const whatsappRoomMapped = whatsappRooms.map((room) => {
+    const roomId = Number(room.id);
+
+    return mergeWhatsappBlastMessagesIntoTicket(
+      mapWhatsappRoom(
+        room,
+        [...(whatsappTicketHistoryByRoomId.get(roomId) ?? [])].sort(
+          (a, b) => new Date(b.createdAt ?? "").getTime() - new Date(a.createdAt ?? "").getTime(),
+        ),
+      ),
+      whatsappBlastMessagesByRoomId.get(roomId) ?? [],
+    );
+  });
+  const whatsappTicketMapped = whatsappTickets.map((ticket) => {
+    const roomId =
+      ticket.whatsappRoomChatId != null ? Number(ticket.whatsappRoomChatId) : undefined;
+    const room = roomId != null ? whatsappRoomById.get(roomId) : undefined;
+    const mappedTicket = mapWhatsappTicket(
+      ticket,
+      room,
+      roomId != null ? whatsappTicketHistoryByRoomId.get(roomId) : undefined,
+    );
+    const roomBlastMessages =
+      roomId != null ? (whatsappBlastMessagesByRoomId.get(roomId) ?? []) : [];
+    const ticketBlastMessages = getWhatsappBlastMessagesForTicket(
+      chatBlastHistories,
+      mappedTicket,
+      room,
+    );
+
+    return mergeWhatsappBlastMessagesIntoTicket(
+      mappedTicket,
+      uniqueTicketMessages([...roomBlastMessages, ...ticketBlastMessages]),
+    );
+  });
 
   return applyWhatsappRoomAliases([
     ...websiteMapped,
     ...whatsappRoomMapped,
-    ...orphanWhatsappTickets,
+    ...whatsappTicketMapped,
   ]);
 }
 
@@ -455,6 +820,7 @@ function mergeMessageIntoTicket(ticket: Ticket, message: TicketMessage) {
     ...ticket,
     snippet: getMessageSnippet(lastMessage ?? message, ticket.snippet),
     updatedAt: lastMessage?.createdAt ?? message.createdAt,
+    lastMessageAt: lastMessage?.createdAt ?? message.createdAt,
     unread: message.direction === "in" ? true : ticket.unread,
     isDetailsLoaded: true,
     messages,
@@ -467,24 +833,45 @@ function getRemoteTicketStatus(ticket?: RemoteTicket | null, fallbackStatus?: st
 
 function matchesRemoteTicket(ticket: Ticket, remoteTicket: RemoteTicket) {
   const remoteTicketId = Number(remoteTicket.id);
-  const remoteRoomId =
-    remoteTicket.whatsappRoomChatId != null ? Number(remoteTicket.whatsappRoomChatId) : undefined;
 
   if (remoteTicket.channel === "website") {
     return ticket.externalIds?.websiteTicketId === remoteTicketId;
   }
 
-  return (
-    ticket.externalIds?.whatsappTicketId === remoteTicketId ||
-    (remoteRoomId != null && ticket.externalIds?.whatsappRoomChatId === remoteRoomId)
-  );
+  return ticket.externalIds?.whatsappTicketId === remoteTicketId;
 }
 
 function upsertRealtimeTicket(tickets: Ticket[], remoteTicket: RemoteTicket) {
+  const linkedRoom =
+    remoteTicket.channel === "whatsapp" && remoteTicket.whatsappRoomChatId != null
+      ? tickets.find(
+          (ticket) =>
+            isWhatsappConversationView(ticket) &&
+            ticket.externalIds?.whatsappRoomChatId === Number(remoteTicket.whatsappRoomChatId),
+        )
+      : undefined;
+  const linkedRemoteRoom =
+    remoteTicket.channel === "whatsapp" && remoteTicket.whatsappRoomChatId != null
+      ? ({
+          id: Number(remoteTicket.whatsappRoomChatId),
+          roomName: linkedRoom?.senderName,
+          chatId: linkedRoom?.senderHandle,
+          createdAt: linkedRoom?.lastMessageAt ?? linkedRoom?.updatedAt,
+          updatedAt: linkedRoom?.lastMessageAt ?? linkedRoom?.updatedAt,
+        } satisfies RemoteWhatsappRoom)
+      : undefined;
+  const remoteReference =
+    remoteTicket.channel === "whatsapp" ? remoteTicketToReference(remoteTicket) : undefined;
+  const linkedTicketHistory = remoteReference
+    ? [
+        remoteReference,
+        ...(linkedRoom?.ticketHistory ?? []).filter((item) => item.id !== remoteReference.id),
+      ]
+    : linkedRoom?.ticketHistory;
   const mappedTicket =
     remoteTicket.channel === "website"
       ? mapWebsiteTicket(remoteTicket)
-      : mapWhatsappTicketWithoutRoom(remoteTicket);
+      : mapWhatsappTicket(remoteTicket, linkedRemoteRoom, linkedTicketHistory);
   let found = false;
 
   const updatedTickets = tickets.map((ticket) => {
@@ -501,13 +888,35 @@ function upsertRealtimeTicket(tickets: Ticket[], remoteTicket: RemoteTicket) {
       subject: mappedTicket.subject,
       snippet: mappedTicket.snippet || ticket.snippet,
       updatedAt: mappedTicket.updatedAt,
+      lastMessageAt: mappedTicket.lastMessageAt ?? ticket.lastMessageAt,
       status: mappedTicket.status ?? ticket.status,
       isSavedAsTicket: true,
       isSynced: true,
+      isPinned: mappedTicket.isPinned,
     };
   });
 
-  return found ? updatedTickets : [mappedTicket, ...tickets];
+  const withTicket = found ? updatedTickets : [mappedTicket, ...tickets];
+
+  if (!remoteReference || remoteTicket.whatsappRoomChatId == null) return withTicket;
+
+  const roomChatId = Number(remoteTicket.whatsappRoomChatId);
+  return withTicket.map((ticket) => {
+    if (ticket.source !== "whatsapp" || ticket.externalIds?.whatsappRoomChatId !== roomChatId) {
+      return ticket;
+    }
+
+    const history = ticket.ticketHistory ?? [];
+    const nextHistory = [
+      remoteReference,
+      ...history.filter((reference) => reference.id !== remoteReference.id),
+    ];
+
+    return {
+      ...ticket,
+      ticketHistory: nextHistory,
+    };
+  });
 }
 
 function applyRealtimeTicketStatus(
@@ -518,7 +927,28 @@ function applyRealtimeTicketStatus(
   const status = getRemoteTicketStatus(remoteTicket, fallbackStatus);
 
   return tickets.map((ticket) => {
-    if (!matchesRemoteTicket(ticket, remoteTicket)) return ticket;
+    const isMatchingTicket = matchesRemoteTicket(ticket, remoteTicket);
+    const shouldUpdateLinkedHistory =
+      remoteTicket.channel === "whatsapp" &&
+      remoteTicket.whatsappRoomChatId != null &&
+      ticket.source === "whatsapp" &&
+      ticket.externalIds?.whatsappRoomChatId === Number(remoteTicket.whatsappRoomChatId);
+
+    if (!isMatchingTicket && !shouldUpdateLinkedHistory) return ticket;
+
+    if (!isMatchingTicket && shouldUpdateLinkedHistory) {
+      const reference = remoteTicketToReference(remoteTicket);
+
+      return {
+        ...ticket,
+        ticketHistory: [
+          reference,
+          ...(ticket.ticketHistory ?? []).filter((item) => item.id !== reference.id),
+        ],
+      };
+    }
+    const remoteReference =
+      remoteTicket.channel === "whatsapp" ? remoteTicketToReference(remoteTicket) : undefined;
 
     return {
       ...ticket,
@@ -537,6 +967,13 @@ function applyRealtimeTicketStatus(
       status: status ?? ticket.status,
       updatedAt: remoteTicket.updatedAt ?? ticket.updatedAt,
       isSavedAsTicket: true,
+      isPinned: remoteTicket.isPinned ?? ticket.isPinned,
+      ticketHistory: remoteReference
+        ? [
+            remoteReference,
+            ...(ticket.ticketHistory ?? []).filter((item) => item.id !== remoteReference.id),
+          ]
+        : ticket.ticketHistory,
     };
   });
 }
@@ -594,19 +1031,34 @@ function applyRealtimeWhatsappMessage(
 
     const mappedMessage = mapWhatsappMessage(message, ticket.senderName);
 
+    if (isWhatsappTicketView(ticket)) {
+      const lastMessageAt = getNewerTimestamp(
+        ticket.lastMessageAt ?? ticket.updatedAt,
+        mappedMessage.createdAt,
+      );
+
+      if (!ticket.isDetailsLoaded) {
+        return {
+          ...ticket,
+          lastMessageAt,
+        };
+      }
+
+      return {
+        ...ticket,
+        lastMessageAt,
+        messages: upsertTicketMessage(ticket.messages, mappedMessage),
+      };
+    }
+
     return mergeMessageIntoTicket(
       {
         ...ticket,
         externalIds: {
           ...ticket.externalIds,
           whatsappRoomChatId: roomChatId,
-          whatsappTicketId:
-            message.ticketId != null
-              ? Number(message.ticketId)
-              : ticket.externalIds?.whatsappTicketId,
           whatsappMessageChatId: Number(message.id),
         },
-        isSavedAsTicket: message.ticketId != null ? true : ticket.isSavedAsTicket,
       },
       mappedMessage,
     );
@@ -624,10 +1076,9 @@ function applyRealtimeWhatsappMessage(
         ...baseTicket,
         externalIds: {
           ...baseTicket.externalIds,
-          whatsappTicketId: message.ticketId != null ? Number(message.ticketId) : undefined,
           whatsappMessageChatId: Number(message.id),
         },
-        isSavedAsTicket: message.ticketId != null,
+        isSavedAsTicket: false,
       },
       mappedMessage,
     ),
@@ -880,61 +1331,93 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
   }, [queryClient]);
 
-  const loadTicketDetails = useCallback(async (ticket: Ticket) => {
-    if (loadingDetailsRef.current.has(ticket.id)) {
-      return ticket;
-    }
+  const getChatBlastHistoriesCached = useCallback(
+    () =>
+      queryClient.fetchQuery({
+        queryKey: ["customer-service", "whatsapp-blast-histories"],
+        queryFn: getChatBlastHistories,
+        staleTime: 0,
+      }),
+    [queryClient],
+  );
 
-    loadingDetailsRef.current.add(ticket.id);
-
-    try {
-      if (ticket.source === "website" && ticket.externalIds?.websiteTicketId) {
-        const detail = await getWebsiteTicketDetail(ticket.externalIds.websiteTicketId);
-        const mappedTicket = mapWebsiteTicket(detail.ticket, detail.messages ?? []);
-        setTickets((previous) =>
-          previous.map((item) =>
-            item.id === ticket.id
-              ? { ...mappedTicket, isPinned: item.isPinned, unread: item.unread }
-              : item,
-          ),
-        );
-        return mappedTicket;
+  const loadTicketDetails = useCallback(
+    async (ticket: Ticket) => {
+      if (loadingDetailsRef.current.has(ticket.id)) {
+        return ticket;
       }
 
-      if (ticket.source === "whatsapp" && ticket.externalIds?.whatsappRoomChatId) {
-        const messages = await getWhatsappMessages(ticket.externalIds.whatsappRoomChatId);
-        const updatedTicket = applyWhatsappMessages(ticket, messages);
-        setTickets((previous) =>
-          previous.map((item) =>
-            item.id === ticket.id
-              ? { ...updatedTicket, isPinned: item.isPinned, unread: item.unread }
-              : item,
-          ),
-        );
-        return updatedTicket;
+      loadingDetailsRef.current.add(ticket.id);
+
+      try {
+        if (ticket.source === "website" && ticket.externalIds?.websiteTicketId) {
+          const detail = await getWebsiteTicketDetail(ticket.externalIds.websiteTicketId);
+          const mappedTicket = mapWebsiteTicket(detail.ticket, detail.messages ?? []);
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === ticket.id
+                ? { ...mappedTicket, isPinned: item.isPinned, unread: item.unread }
+                : item,
+            ),
+          );
+          return mappedTicket;
+        }
+
+        if (ticket.source === "whatsapp" && ticket.externalIds?.whatsappRoomChatId) {
+          const [messages, chatBlastHistories] = await Promise.all([
+            getWhatsappMessages(ticket.externalIds.whatsappRoomChatId),
+            getChatBlastHistoriesCached().catch(() => [] as RemoteChatBlastHistory[]),
+          ]);
+          const ticketWithMessages = applyWhatsappMessages(ticket, messages);
+          const updatedTicket = mergeWhatsappBlastMessagesIntoTicket(
+            ticketWithMessages,
+            getWhatsappBlastMessagesForTicket(chatBlastHistories, ticketWithMessages),
+          );
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === ticket.id
+                ? { ...updatedTicket, isPinned: item.isPinned, unread: item.unread }
+                : item,
+            ),
+          );
+          return updatedTicket;
+        }
+
+        return ticket;
+      } finally {
+        loadingDetailsRef.current.delete(ticket.id);
       }
+    },
+    [getChatBlastHistoriesCached],
+  );
 
-      return ticket;
-    } finally {
-      loadingDetailsRef.current.delete(ticket.id);
-    }
-  }, []);
+  const refreshWhatsappMessages = useCallback(
+    async (ticketId: string, roomChatId: number) => {
+      const [messages, chatBlastHistories] = await Promise.all([
+        getWhatsappMessages(roomChatId),
+        getChatBlastHistoriesCached().catch(() => [] as RemoteChatBlastHistory[]),
+      ]);
 
-  const refreshWhatsappMessages = useCallback(async (ticketId: string, roomChatId: number) => {
-    const messages = await getWhatsappMessages(roomChatId);
+      setTickets((previous) =>
+        previous.map((item) => {
+          if (item.id !== ticketId) return item;
 
-    setTickets((previous) =>
-      previous.map((item) =>
-        item.id === ticketId
-          ? {
-              ...applyWhatsappMessages(item, messages),
-              isPinned: item.isPinned,
-              unread: item.unread,
-            }
-          : item,
-      ),
-    );
-  }, []);
+          const ticketWithMessages = applyWhatsappMessages(item, messages);
+          const updatedTicket = mergeWhatsappBlastMessagesIntoTicket(
+            ticketWithMessages,
+            getWhatsappBlastMessagesForTicket(chatBlastHistories, ticketWithMessages),
+          );
+
+          return {
+            ...updatedTicket,
+            isPinned: item.isPinned,
+            unread: item.unread,
+          };
+        }),
+      );
+    },
+    [getChatBlastHistoriesCached],
+  );
 
   useEffect(() => {
     if (!shouldUseRealtimeFallback || typeof window === "undefined") return;
@@ -993,20 +1476,20 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   );
 
   const markAsTicket = useCallback(
-    async (id: string, opts?: { subject?: string }) => {
+    async (id: string, opts?: { subject?: string; messageExternalId?: number }) => {
       let ticket = ticketsRef.current.find((item) => item.id === id);
       if (!ticket) return;
 
       const subject = opts?.subject?.trim() || ticket.subject;
 
-      if (ticket.source === "whatsapp" && !ticket.externalIds?.whatsappTicketId) {
-        if (!ticket.isDetailsLoaded) {
-          ticket = await loadTicketDetails(ticket);
+      if (ticket.source === "whatsapp") {
+        const whatsappMessageChatId = Number(opts?.messageExternalId);
+        if (!Number.isFinite(whatsappMessageChatId)) {
+          throw new Error("Pilih bubble pesan WhatsApp yang ingin dijadikan ticket.");
         }
 
-        const whatsappMessageChatId = getReferableWhatsappMessageId(ticket);
-        if (!whatsappMessageChatId) {
-          throw new Error("Room WhatsApp belum memiliki pesan yang bisa dijadikan tiket.");
+        if (!ticket.isDetailsLoaded) {
+          ticket = await loadTicketDetails(ticket);
         }
 
         const createdTicket = await createWhatsappTicket({
@@ -1014,31 +1497,73 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           priority: "high",
           whatsappMessageChatId,
         });
+        const roomChatId =
+          ticket.externalIds?.whatsappRoomChatId ??
+          (createdTicket.whatsappRoomChatId != null
+            ? Number(createdTicket.whatsappRoomChatId)
+            : undefined);
+        const reference = remoteTicketToReference({
+          ...createdTicket,
+          whatsappMessageChatId,
+        });
+        const mappedTicket = mapWhatsappTicket(
+          {
+            ...createdTicket,
+            whatsappMessageChatId,
+          },
+          roomChatId != null
+            ? {
+                id: roomChatId,
+                roomName: ticket.senderName,
+                chatId: ticket.senderHandle,
+                createdAt: ticket.lastMessageAt ?? ticket.updatedAt,
+                updatedAt: ticket.lastMessageAt ?? ticket.updatedAt,
+              }
+            : undefined,
+          [reference, ...(ticket.ticketHistory ?? []).filter((item) => item.id !== reference.id)],
+        );
 
         setLocallyUnmarkedTicketIds((previous) => {
           const next = new Set(previous);
-          next.delete(id);
+          next.delete(mappedTicket.id);
           return next;
         });
         setTickets((previous) =>
-          previous.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  isSavedAsTicket: true,
-                  subject,
-                  snippet: createdTicket.body || item.snippet,
-                  status: remoteStatusToTicketStatus(createdTicket.slaStatus) ?? item.status,
-                  externalIds: {
-                    ...item.externalIds,
-                    whatsappTicketId: Number(createdTicket.id),
-                    whatsappRoomChatId:
-                      createdTicket.whatsappRoomChatId != null
-                        ? Number(createdTicket.whatsappRoomChatId)
-                        : item.externalIds?.whatsappRoomChatId,
-                  },
-                }
-              : item,
+          [
+            mappedTicket,
+            ...previous.map((item) => {
+              const shouldAttachHistory =
+                item.source === "whatsapp" &&
+                roomChatId != null &&
+                item.externalIds?.whatsappRoomChatId === roomChatId;
+
+              if (!shouldAttachHistory) return item;
+
+              const history = item.ticketHistory ?? [];
+              return {
+                ...item,
+                ticketHistory: [
+                  reference,
+                  ...history.filter((ticketReference) => ticketReference.id !== reference.id),
+                ],
+                messages: item.messages.map((message) =>
+                  Number(message.externalId) === whatsappMessageChatId
+                    ? {
+                        ...message,
+                        ticketReferences: [
+                          reference,
+                          ...(message.ticketReferences ?? []).filter(
+                            (ticketReference) => ticketReference.id !== reference.id,
+                          ),
+                        ],
+                      }
+                    : message,
+                ),
+              };
+            }),
+          ].filter(
+            (item, index, allTickets) =>
+              allTickets.findIndex((candidate) => candidate.id === item.id) === index,
           ),
         );
         queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
@@ -1083,18 +1608,151 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const togglePinTicket = useCallback((id: string) => {
-    setTickets((previous) =>
-      previous.map((ticket) =>
-        ticket.id === id
-          ? {
-              ...ticket,
-              isPinned: !ticket.isPinned,
-            }
-          : ticket,
-      ),
-    );
-  }, []);
+  const togglePinTicket = useCallback(
+    (id: string) => {
+      const ticket = ticketsRef.current.find((item) => item.id === id);
+      const nextPinned = !ticket?.isPinned;
+      const remoteTicketId = ticket ? getRemoteTicketId(ticket) : undefined;
+      const whatsappRoomChatId = ticket?.externalIds?.whatsappRoomChatId;
+
+      setTickets((previous) =>
+        previous.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                isPinned: nextPinned,
+              }
+            : item,
+        ),
+      );
+
+      if (ticket && isWhatsappConversationView(ticket) && whatsappRoomChatId != null) {
+        setWhatsappRoomPinned(whatsappRoomChatId, nextPinned)
+          .then((remoteRoom) => {
+            setTickets((previous) =>
+              previous.map((item) =>
+                isWhatsappConversationView(item) &&
+                item.externalIds?.whatsappRoomChatId === remoteRoom.id
+                  ? {
+                      ...item,
+                      isPinned: Boolean(remoteRoom.isPinned),
+                    }
+                  : item,
+              ),
+            );
+            queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+          })
+          .catch(() => {
+            setTickets((previous) =>
+              previous.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      isPinned: ticket.isPinned,
+                    }
+                  : item,
+              ),
+            );
+          });
+        return;
+      }
+
+      if (!remoteTicketId || ticket?.viewKind === "conversation") return;
+
+      setTicketPinned(remoteTicketId, nextPinned)
+        .then((remoteTicket) => {
+          setTickets((previous) =>
+            applyRealtimeTicketStatus(
+              upsertRealtimeTicket(previous, remoteTicket),
+              remoteTicket,
+              remoteTicket.slaStatus,
+            ),
+          );
+          queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+        })
+        .catch(() => {
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    isPinned: ticket?.isPinned,
+                  }
+                : item,
+            ),
+          );
+        });
+    },
+    [queryClient],
+  );
+
+  const openWhatsappTicketReference = useCallback(
+    (sourceTicketId: string, reference: TicketReference) => {
+      const sourceTicket = ticketsRef.current.find((item) => item.id === sourceTicketId);
+      const roomChatId = sourceTicket?.externalIds?.whatsappRoomChatId;
+
+      if (!sourceTicket || sourceTicket.source !== "whatsapp" || roomChatId == null) {
+        return null;
+      }
+
+      const ticketId = `whatsapp-ticket:${reference.id}`;
+
+      setTickets((previous) => {
+        const source = previous.find((item) => item.id === sourceTicketId) ?? sourceTicket;
+        const existing = previous.find((item) => item.id === ticketId);
+        const roomHistory = collectWhatsappRoomReferences(previous, roomChatId, [reference]);
+        const activeReference = roomHistory.find((item) => item.id === reference.id) ?? reference;
+        const ticketMessages =
+          existing?.messages.length && existing.isDetailsLoaded
+            ? existing.messages
+            : source.messages;
+        const nextTicket: Ticket = {
+          ...source,
+          ...existing,
+          id: ticketId,
+          externalIds: {
+            ...source.externalIds,
+            ...existing?.externalIds,
+            whatsappRoomChatId: roomChatId,
+            whatsappTicketId: reference.id,
+            whatsappTicketMessageChatId: activeReference.messageExternalId,
+          },
+          viewKind: "ticket",
+          subject: existing?.subject || activeReference.subject || `Ticket #${reference.id}`,
+          snippet: existing?.snippet || activeReference.body || source.snippet,
+          status: existing?.status ?? activeReference.status,
+          isPinned: existing?.isPinned ?? activeReference.isPinned ?? false,
+          isSavedAsTicket: true,
+          isSynced: existing?.isSynced ?? source.isSynced,
+          isDetailsLoaded: existing?.isDetailsLoaded ?? source.isDetailsLoaded,
+          ticketHistory: mergeTicketReferences([activeReference, ...roomHistory]),
+          focusedMessageExternalId: activeReference.messageExternalId,
+          messages: ticketMessages,
+        };
+        const withReferencedTicket = previous.some((item) => item.id === ticketId)
+          ? previous.map((item) => (item.id === ticketId ? nextTicket : item))
+          : [nextTicket, ...previous];
+        const nextRoomHistory = collectWhatsappRoomReferences(withReferencedTicket, roomChatId, [
+          activeReference,
+        ]);
+
+        return withReferencedTicket.map((item) =>
+          item.source === "whatsapp" && item.externalIds?.whatsappRoomChatId === roomChatId
+            ? {
+                ...item,
+                ticketHistory: mergeTicketReferences([
+                  ...(item.ticketHistory ?? []),
+                  ...nextRoomHistory,
+                ]),
+              }
+            : item,
+        );
+      });
+
+      return ticketId;
+    },
+    [],
+  );
 
   const createTicket = useCallback(
     (
@@ -1107,11 +1765,13 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       const newId =
         newTicketData.id ??
         `t-${newTicketData.source}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const createdAt = new Date().toISOString();
       const newTicket: Ticket = {
         status: newTicketData.status,
         ...newTicketData,
         id: newId,
-        updatedAt: new Date().toISOString(),
+        updatedAt: createdAt,
+        lastMessageAt: newTicketData.lastMessageAt ?? createdAt,
         isSavedAsTicket: newTicketData.isSavedAsTicket ?? false,
       };
       setTickets((previous) =>
@@ -1162,26 +1822,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           remoteStatus,
         );
       } else if (ticket.source === "whatsapp") {
-        const preparedTicket = ticket.isDetailsLoaded ? ticket : await loadTicketDetails(ticket);
-        const whatsappMessageChatId = getReferableWhatsappMessageId(preparedTicket);
-
-        if (!whatsappMessageChatId) {
-          throw new Error("Room WhatsApp belum memiliki pesan yang bisa dijadikan tiket.");
-        }
-
-        const createdTicket = await createWhatsappTicket({
-          subject: preparedTicket.subject,
-          priority: "high",
-          whatsappMessageChatId,
-        });
-
-        setLocallyUnmarkedTicketIds((previous) => {
-          const next = new Set(previous);
-          next.delete(ticket.id);
-          return next;
-        });
-
-        remoteTicket = await updateWhatsappTicketStatus(Number(createdTicket.id), remoteStatus);
+        throw new Error("Status WhatsApp hanya bisa diubah dari item ticket, bukan room chat.");
       }
 
       if (!remoteTicket) {
@@ -1193,7 +1834,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       );
       queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
     },
-    [loadTicketDetails, queryClient],
+    [queryClient],
   );
 
   const updateTicketStatus = useCallback(
@@ -1268,6 +1909,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                 ...item,
                 snippet: getMessageSnippet(optimisticMessage, item.snippet),
                 updatedAt: optimisticMessage.createdAt,
+                lastMessageAt: optimisticMessage.createdAt,
                 messages: [...item.messages, optimisticMessage],
               }
             : item,
@@ -1378,6 +2020,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                   subject: duplicateFromState?.subject ?? item.subject,
                   snippet: getMessageSnippet(lastMessage, item.snippet),
                   updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+                  lastMessageAt: getNewerTimestamp(
+                    item.lastMessageAt ?? item.updatedAt,
+                    lastMessage.createdAt,
+                  ),
                   isSynced: true,
                   isDetailsLoaded: true,
                   messages,
@@ -1424,7 +2070,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           body,
         })
           .then(async (createResult: WhatsappRoomCreateResult) => {
-            const roomChatId = createResult.room?.id != null ? Number(createResult.room.id) : undefined;
+            const roomChatId =
+              createResult.room?.id != null ? Number(createResult.room.id) : undefined;
 
             if (!roomChatId) {
               throw new Error("Endpoint create room WhatsApp belum mengembalikan room chat.");
@@ -1498,6 +2145,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                   ...item,
                   snippet: getMessageSnippet(lastMessage, item.snippet),
                   updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+                  lastMessageAt: getNewerTimestamp(
+                    item.lastMessageAt ?? item.updatedAt,
+                    lastMessage.createdAt,
+                  ),
                   messages,
                 };
               }),
@@ -1527,6 +2178,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                         ...item.externalIds,
                         whatsappMessageChatId: Number(remoteMessage.id),
                       },
+                      lastMessageAt: getNewerTimestamp(
+                        item.lastMessageAt ?? item.updatedAt,
+                        mappedMessage.createdAt,
+                      ),
                       messages: item.messages.map((message) =>
                         message.id === optimisticMessage.id ? mappedMessage : message,
                       ),
@@ -1534,7 +2189,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                   : item,
               ),
             );
-            scheduleWhatsappMessagesRefresh(ticketId, ticket.externalIds?.whatsappRoomChatId!);
+            const roomChatId = ticket.externalIds?.whatsappRoomChatId;
+            if (roomChatId != null) {
+              scheduleWhatsappMessagesRefresh(ticketId, roomChatId);
+            }
           })
           .catch(() => queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }));
       }
@@ -1557,15 +2215,22 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       error: overviewQuery.error instanceof Error ? overviewQuery.error.message : null,
       refreshTickets,
       ensureTicketDetails,
-      getBySource: (source) => tickets.filter((ticket) => ticket.source === source),
+      getBySource: (source) =>
+        tickets.filter(
+          (ticket) =>
+            ticket.source === source &&
+            (source !== "whatsapp" || isWhatsappConversationView(ticket)),
+        ),
       getSaved: () =>
         tickets.filter(
           (ticket) =>
             ticket.isSavedAsTicket &&
             ticket.source !== "gmail" &&
+            (ticket.source !== "whatsapp" || isWhatsappTicketView(ticket)) &&
             !locallyUnmarkedTicketIds.has(ticket.id),
         ),
       getById: (id) => tickets.find((ticket) => ticket.id === id),
+      openWhatsappTicketReference,
       markAsTicket,
       unmarkAsTicket,
       togglePinTicket,
@@ -1584,6 +2249,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       locallyUnmarkedTicketIds,
       markAsRead,
       markAsTicket,
+      openWhatsappTicketReference,
       overviewQuery.error,
       overviewQuery.isLoading,
       refreshTickets,

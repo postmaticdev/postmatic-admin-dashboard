@@ -13,12 +13,31 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
+function getMessagePreview(message: Ticket["messages"][number] | undefined) {
+  if (!message) return "";
+
+  const text = message.content
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text) return text;
+
+  return message.attachments?.length ? "Pesan media" : "";
+}
+
 export function TicketCard({ ticket, active, onSelect }: Props) {
   const { togglePinTicket } = useTickets();
 
   const lastMessage = ticket.messages[ticket.messages.length - 1];
+  const preview =
+    ticket.source === "whatsapp" && ticket.viewKind === "ticket"
+      ? getMessagePreview(lastMessage) || ticket.snippet
+      : ticket.snippet;
   const isUnread = ticket.unread === true;
+  const unreadCount = ticket.unreadCount ?? (isUnread ? 1 : 0);
   const isUnreplied = !isUnread && lastMessage && lastMessage.direction === "in";
+  const pinLabel = ticket.viewKind === "ticket" ? "ticket" : "chat";
+  const displayTime = ticket.lastMessageAt ?? ticket.updatedAt;
 
   return (
     <button
@@ -40,13 +59,24 @@ export function TicketCard({ ticket, active, onSelect }: Props) {
             <p className="truncate text-sm font-semibold text-foreground">{ticket.senderName}</p>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[11px] text-muted-foreground">
-                {formatRelative(ticket.updatedAt)}
+                {formatRelative(displayTime)}
               </span>
               {isUnread && (
-                <span className="h-2 w-2 rounded-full bg-[#ff3b30] shrink-0" title="Belum dibaca" />
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full bg-[#ff3b30] text-[9px] font-bold leading-none text-white",
+                    unreadCount > 1 ? "px-1.5 py-0.5" : "h-2 w-2",
+                  )}
+                  title={`${unreadCount} pesan belum dibaca`}
+                >
+                  {unreadCount > 1 ? unreadCount : ""}
+                </span>
               )}
               {isUnreplied && (
-                <span className="h-2 w-2 rounded-full bg-neutral-400 dark:bg-neutral-500 shrink-0" title="Belum dibalas" />
+                <span
+                  className="h-2 w-2 rounded-full bg-neutral-400 dark:bg-neutral-500 shrink-0"
+                  title="Belum dibalas"
+                />
               )}
               <button
                 type="button"
@@ -56,21 +86,33 @@ export function TicketCard({ ticket, active, onSelect }: Props) {
                 }}
                 className={cn(
                   "text-muted-foreground transition-all p-0.5 rounded hover:bg-muted-foreground/10 hover:text-foreground",
-                  ticket.isPinned ? "text-primary opacity-100" : "opacity-0 group-hover:opacity-100"
+                  ticket.isPinned
+                    ? "text-primary opacity-100"
+                    : "opacity-0 group-hover:opacity-100",
                 )}
-                title={ticket.isPinned ? "Lepas sematan" : "Sematkan chat"}
+                title={ticket.isPinned ? `Lepas sematan ${pinLabel}` : `Sematkan ${pinLabel}`}
               >
-                <Pin className={cn("h-3 w-3 transition-transform", ticket.isPinned && "fill-current -rotate-45 text-primary")} />
+                <Pin
+                  className={cn(
+                    "h-3 w-3 transition-transform",
+                    ticket.isPinned && "fill-current -rotate-45 text-primary",
+                  )}
+                />
               </button>
             </div>
           </div>
           <p className="truncate text-sm font-medium text-foreground/90">{ticket.subject}</p>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{ticket.snippet}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{preview}</p>
         </div>
       </div>
       <div className="flex items-center gap-1.5 pl-11">
         <SourceBadge source={ticket.source} />
         <StatusBadge status={ticket.status} />
+        {ticket.viewKind === "ticket" && ticket.source === "whatsapp" && (
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            Ticket
+          </span>
+        )}
       </div>
     </button>
   );
