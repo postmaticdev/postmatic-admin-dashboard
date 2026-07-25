@@ -69,6 +69,13 @@ function setClientCookie(name: string, value: string | null) {
   )}; Path=/; Max-Age=604800; SameSite=Lax${secure}`;
 }
 
+export function clearLegacyAuthStorage() {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 export function getLoginUrl() {
   const returnOrigin = getReturnOrigin();
   const url = new URL("/login", AUTH_ORIGIN);
@@ -86,12 +93,14 @@ export function redirectToLogin() {
 
 export function getAccessToken() {
   if (typeof window === "undefined") return null;
-  return getCookie(ACCESS_TOKEN_KEY) ?? localStorage.getItem(ACCESS_TOKEN_KEY);
+  clearLegacyAuthStorage();
+  return getCookie(ACCESS_TOKEN_KEY);
 }
 
 export function getRefreshToken() {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  clearLegacyAuthStorage();
+  return getCookie(REFRESH_TOKEN_KEY);
 }
 
 export function getStoredAuthTokens(): AuthTokens {
@@ -109,18 +118,18 @@ export function hasStoredAuthToken() {
 export function setAuthTokens(accessToken: string | null, refreshToken: string | null) {
   if (typeof window === "undefined") return;
 
+  clearLegacyAuthStorage();
+
   if (accessToken) {
-    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     setClientCookie(ACCESS_TOKEN_KEY, accessToken);
   } else {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
     setClientCookie(ACCESS_TOKEN_KEY, null);
   }
 
   if (refreshToken) {
-    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    setClientCookie(REFRESH_TOKEN_KEY, refreshToken);
   } else {
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    setClientCookie(REFRESH_TOKEN_KEY, null);
   }
 }
 
