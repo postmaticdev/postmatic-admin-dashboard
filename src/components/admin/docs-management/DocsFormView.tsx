@@ -32,18 +32,21 @@ import {
   FileText,
   CheckCircle2,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
-import {
-  LucideIconPickerModal,
-  renderLucideIcon,
-} from "./LucideIconPickerModal";
+import { LucideIconPickerModal, renderLucideIcon } from "./LucideIconPickerModal";
 
 interface DocsFormViewProps {
   initialDoc: DocItem | null; // null if create mode, DocItem if edit mode
   existingMenuLabels: string[];
-  onSave: (docData: Omit<DocItem, "id" | "order" | "updatedAt">, id?: string) => void;
+  onSave: (
+    docData: Omit<DocItem, "id" | "order" | "updatedAt">,
+    id?: string,
+  ) => void | Promise<void>;
   onCancel: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void | Promise<void>;
+  isSaving?: boolean;
+  isDeleting?: boolean;
 }
 
 export function DocsFormView({
@@ -52,10 +55,14 @@ export function DocsFormView({
   onSave,
   onCancel,
   onDelete,
+  isSaving = false,
+  isDeleting = false,
 }: DocsFormViewProps) {
   const isEditMode = Boolean(initialDoc);
 
   const [title, setTitle] = useState(initialDoc?.title || "");
+  const [slug, setSlug] = useState(initialDoc?.slug || "");
+  const [hasEditedSlug, setHasEditedSlug] = useState(Boolean(initialDoc?.slug));
   const [menuLabel, setMenuLabel] = useState(initialDoc?.menuLabel || "Getting Started");
   const [customMenuInput, setCustomMenuInput] = useState("");
   const [isCustomMenu, setIsCustomMenu] = useState(false);
@@ -66,9 +73,20 @@ export function DocsFormView({
   const [iconModalOpen, setIconModalOpen] = useState(false);
   const [description, setDescription] = useState(initialDoc?.description || "");
 
-  // Auto slug generation from title if in create mode
+  const createSlug = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  // Auto slug generation from title while the slug has not been edited manually
   const handleTitleChange = (val: string) => {
     setTitle(val);
+    if (!isEditMode && !hasEditedSlug) {
+      setSlug(createSlug(val));
+    }
   };
 
   const editor = useEditor({
@@ -149,24 +167,25 @@ export function DocsFormView({
       return;
     }
 
-    const finalMenuLabel = isCustomMenu
-      ? customMenuInput.trim() || "Getting Started"
-      : menuLabel;
+    const finalMenuLabel = isCustomMenu ? customMenuInput.trim() || "Getting Started" : menuLabel;
 
     const contentHtml = editor?.getHTML() || "";
 
     onSave(
       {
         title,
-        slug: title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled-doc",
+        slug: slug.trim() || createSlug(title) || "untitled-doc",
         menuLabel: finalMenuLabel,
+        categoryId: initialDoc?.menuLabel === finalMenuLabel ? initialDoc?.categoryId : undefined,
+        categorySlug:
+          initialDoc?.menuLabel === finalMenuLabel ? initialDoc?.categorySlug : undefined,
         description,
         content: contentHtml,
         status,
         author: "Admin",
         icon: selectedIcon,
       },
-      initialDoc?.id
+      initialDoc?.id,
     );
   };
 
@@ -214,7 +233,9 @@ export function DocsFormView({
                 }`}
               />
             </button>
-            <span className={`text-xs font-bold ${status === "Published" ? "text-primary" : "text-muted-foreground"}`}>
+            <span
+              className={`text-xs font-bold ${status === "Published" ? "text-primary" : "text-muted-foreground"}`}
+            >
               {status}
             </span>
           </div>
@@ -223,10 +244,15 @@ export function DocsFormView({
             <button
               type="button"
               onClick={() => setDeleteConfirmOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground text-xs font-semibold transition-all shadow-xs"
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground text-xs font-semibold transition-all shadow-xs disabled:pointer-events-none disabled:opacity-60"
               title="Hapus Dokumen"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              {isDeleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
               Delete
             </button>
           )}
@@ -234,9 +260,14 @@ export function DocsFormView({
           <button
             type="button"
             onClick={handleSaveForm}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20 disabled:pointer-events-none disabled:opacity-70"
           >
-            <Save className="h-3.5 w-3.5" />
+            {isSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
             Save Document
           </button>
         </div>
@@ -270,7 +301,7 @@ export function DocsFormView({
                     >
                       {renderLucideIcon(
                         selectedIcon,
-                        "h-5 w-5 text-primary group-hover:scale-110 transition-transform"
+                        "h-5 w-5 text-primary group-hover:scale-110 transition-transform",
                       )}
                       <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
@@ -285,6 +316,21 @@ export function DocsFormView({
                       className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
                     />
                   </div>
+                </div>
+
+                {/* Slug Dokumen */}
+                <div className="space-y-1.5 md:col-span-3">
+                  <label className="text-xs font-semibold text-foreground">Slug Dokumen</label>
+                  <input
+                    type="text"
+                    value={slug}
+                    onChange={(e) => {
+                      setHasEditedSlug(true);
+                      setSlug(createSlug(e.target.value));
+                    }}
+                    placeholder="getting-started"
+                    className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-mono"
+                  />
                 </div>
 
                 {/* Deskripsi Dokumen */}
@@ -358,7 +404,7 @@ export function DocsFormView({
 
               {/* Toolbar Dasar */}
               <DocsEditorToolbar editor={editor} />
-              
+
               {/* Bubble Menu Khusus Media (Image, Video, Youtube) */}
               <DocsMediaBubbleMenu editor={editor} />
 
@@ -392,8 +438,9 @@ export function DocsFormView({
 
             <p className="text-sm text-muted-foreground leading-relaxed">
               Apakah Anda yakin ingin menghapus dokumen{" "}
-              <strong className="text-foreground">&quot;{initialDoc.title}&quot;</strong>? Dokumen yang
-              dihapus tidak akan lagi muncul di portal <span className="font-mono text-xs">docs.postmatic.id</span>.
+              <strong className="text-foreground">&quot;{initialDoc.title}&quot;</strong>? Dokumen
+              yang dihapus tidak akan lagi muncul di portal{" "}
+              <span className="font-mono text-xs">docs.postmatic.id</span>.
             </p>
 
             <div className="flex justify-end gap-3 pt-2">
@@ -410,7 +457,8 @@ export function DocsFormView({
                   setDeleteConfirmOpen(false);
                   onDelete(initialDoc.id);
                 }}
-                className="px-5 py-2 text-xs font-semibold rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all"
+                disabled={isDeleting}
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all disabled:pointer-events-none disabled:opacity-70"
               >
                 Ya, Hapus Dokumen
               </button>

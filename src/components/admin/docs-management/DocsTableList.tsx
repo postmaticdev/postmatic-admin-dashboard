@@ -8,11 +8,7 @@ import {
   useSensors,
   DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   Plus,
@@ -26,15 +22,23 @@ import {
   Clock,
   Filter,
   X,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { renderLucideIcon } from "./LucideIconPickerModal";
 
 interface DocsTableListProps {
   docs: DocItem[];
+  isLoading?: boolean;
+  errorMessage?: string;
+  loadingDetailId?: string | null;
+  togglingStatusId?: string | null;
   onReorder: (newDocs: DocItem[]) => void;
   onCreateNew: () => void;
   onEdit: (doc: DocItem) => void;
   onToggleStatus: (docId: string) => void;
+  onRetry?: () => void;
 }
 
 // Helper function to strip HTML tags for preview snippet
@@ -50,8 +54,9 @@ function stripHtml(html: string): string {
 // Menu Badge color mapping
 const menuColorMap: Record<string, string> = {
   "Getting Started": "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-  "Authentication": "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-  "Messaging Guides": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+  Authentication: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+  "Messaging Guides":
+    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
   "Webhooks & Events": "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
   "Rate Limits": "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
 };
@@ -59,23 +64,22 @@ const menuColorMap: Record<string, string> = {
 // Sortable Row Component
 function SortableRow({
   doc,
+  isLoadingDetail,
+  isTogglingStatus,
   onEdit,
   onToggleStatus,
   onRowClick,
 }: {
   doc: DocItem;
+  isLoadingDetail?: boolean;
+  isTogglingStatus?: boolean;
   onEdit: (doc: DocItem) => void;
   onToggleStatus: (docId: string) => void;
   onRowClick: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: doc.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: doc.id,
+  });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -95,9 +99,7 @@ function SortableRow({
       style={style}
       onClick={onRowClick}
       className={`group transition-colors border-b border-border/60 cursor-pointer ${
-        isDragging
-          ? "bg-primary/5 shadow-lg scale-[1.006]"
-          : "hover:bg-muted/40 bg-card"
+        isDragging ? "bg-primary/5 shadow-lg scale-[1.006]" : "hover:bg-muted/40 bg-card"
       }`}
     >
       {/* Drag Handle */}
@@ -169,24 +171,36 @@ function SortableRow({
       </td>
 
       {/* Action */}
-      <td className="py-4 pr-4 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+      <td
+        className="py-4 pr-4 pl-3 text-right whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={() => onEdit(doc)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
+            disabled={isLoadingDetail}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60"
           >
-            <Edit3 className="h-3.5 w-3.5" />
+            {isLoadingDetail ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Edit3 className="h-3.5 w-3.5" />
+            )}
             Edit
           </button>
 
-          <div className="flex items-center gap-2" title={doc.status === "Published" ? "Ubah status ke Draft" : "Ubah status ke Published"}>
+          <div
+            className="flex items-center gap-2"
+            title={doc.status === "Published" ? "Ubah status ke Draft" : "Ubah status ke Published"}
+          >
             <button
               type="button"
               onClick={() => onToggleStatus(doc.id)}
+              disabled={isTogglingStatus}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                 doc.status === "Published" ? "bg-emerald-500" : "bg-muted-foreground/30"
-              }`}
+              } disabled:opacity-70`}
             >
               <span
                 className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
@@ -203,10 +217,15 @@ function SortableRow({
 
 export function DocsTableList({
   docs,
+  isLoading = false,
+  errorMessage,
+  loadingDetailId,
+  togglingStatusId,
   onReorder,
   onCreateNew,
   onEdit,
   onToggleStatus,
+  onRetry,
 }: DocsTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMenuFilter, setSelectedMenuFilter] = useState("ALL");
@@ -217,7 +236,7 @@ export function DocsTableList({
       activationConstraint: {
         distance: 5,
       },
-    })
+    }),
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -251,8 +270,7 @@ export function DocsTableList({
       doc.menuLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.content.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory =
-      selectedMenuFilter === "ALL" || doc.menuLabel === selectedMenuFilter;
+    const matchesCategory = selectedMenuFilter === "ALL" || doc.menuLabel === selectedMenuFilter;
 
     return matchesSearch && matchesCategory;
   });
@@ -268,15 +286,14 @@ export function DocsTableList({
                 <BookOpen className="h-3.5 w-3.5" />
                 docs.postmatic.id
               </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                CMS / Knowledge Base
-              </span>
+              <span className="text-xs text-muted-foreground font-mono">CMS / Knowledge Base</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
               Documentation Content Manager
             </h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              Kelola struktur menu, topik panduan, dan referensi API publik untuk portal dokumentasi Postmatic. Urutkan posisi menu secara visual menggunakan fitur drag-and-drop.
+              Kelola struktur menu, topik panduan, dan referensi API publik untuk portal dokumentasi
+              Postmatic. Urutkan posisi menu secara visual menggunakan fitur drag-and-drop.
             </p>
           </div>
 
@@ -341,11 +358,7 @@ export function DocsTableList({
 
       {/* Table Container */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-xs font-semibold text-muted-foreground">
@@ -362,14 +375,46 @@ export function DocsTableList({
               strategy={verticalListSortingStrategy}
             >
               <tbody>
-                {filteredDocs.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Memuat dokumentasi...
+                      </div>
+                    </td>
+                  </tr>
+                ) : errorMessage ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
+                        <div className="inline-flex items-center gap-2 font-semibold text-destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          Gagal memuat dokumentasi.
+                        </div>
+                        <p className="text-xs">{errorMessage}</p>
+                        {onRetry && (
+                          <button
+                            type="button"
+                            onClick={onRetry}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Coba lagi
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredDocs.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <BookOpen className="h-8 w-8 text-muted-foreground/50" />
                         <p className="text-sm font-medium">Tidak ada dokumen yang ditemukan.</p>
                         <p className="text-xs text-muted-foreground/80">
-                          Coba sesuaikan filter pencarian Anda atau klik tombol &quot;Create New Docs&quot;.
+                          Coba sesuaikan filter pencarian Anda atau klik tombol &quot;Create New
+                          Docs&quot;.
                         </p>
                       </div>
                     </td>
@@ -379,6 +424,8 @@ export function DocsTableList({
                     <SortableRow
                       key={doc.id}
                       doc={doc}
+                      isLoadingDetail={loadingDetailId === doc.id}
+                      isTogglingStatus={togglingStatusId === doc.id}
                       onEdit={onEdit}
                       onToggleStatus={onToggleStatus}
                       onRowClick={() => setSelectedDoc(doc)}
@@ -391,11 +438,13 @@ export function DocsTableList({
         </DndContext>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            Menampilkan <strong>{filteredDocs.length}</strong> dari <strong>{docs.length}</strong> dokumen
+            Menampilkan <strong>{filteredDocs.length}</strong> dari <strong>{docs.length}</strong>{" "}
+            dokumen
           </span>
           <span className="flex items-center gap-1.5">
             <GripVertical className="h-3.5 w-3.5" />
-            Tips: Drag & drop ikon grip di kolom kiri untuk mengubah urutan menu navigasi di portal docs.postmatic.id
+            Tips: Drag & drop ikon grip di kolom kiri untuk mengubah urutan menu navigasi di portal
+            docs.postmatic.id
           </span>
         </div>
       </div>
@@ -404,7 +453,10 @@ export function DocsTableList({
         <DocDetailModal
           doc={selectedDoc}
           onClose={() => setSelectedDoc(null)}
-          onEdit={() => { onEdit(selectedDoc); setSelectedDoc(null); }}
+          onEdit={() => {
+            onEdit(selectedDoc);
+            setSelectedDoc(null);
+          }}
         />
       )}
     </div>
@@ -421,7 +473,10 @@ function DocDetailModal({
   onEdit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -439,9 +494,13 @@ function DocDetailModal({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {renderLucideIcon(doc.icon, "h-5 w-5 text-primary shrink-0")}
-              <h3 className="text-base font-bold text-foreground truncate max-w-[280px]">{doc.title}</h3>
+              <h3 className="text-base font-bold text-foreground truncate max-w-[280px]">
+                {doc.title}
+              </h3>
             </div>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${menuColorMap[doc.menuLabel] || "bg-slate-500/10 border-slate-500/20 text-slate-600"}`}>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${menuColorMap[doc.menuLabel] || "bg-slate-500/10 border-slate-500/20 text-slate-600"}`}
+            >
               {doc.menuLabel}
             </span>
           </div>
@@ -455,8 +514,13 @@ function DocDetailModal({
           </div>
 
           <div className="flex items-center justify-between text-xs border-t border-border/40 pt-3 text-muted-foreground">
-            <span>Dibuat oleh: <span className="font-semibold text-foreground">{doc.author}</span></span>
-            <span>Terakhir update: <span className="font-semibold text-foreground">{doc.updatedAt}</span></span>
+            <span>
+              Dibuat oleh: <span className="font-semibold text-foreground">{doc.author}</span>
+            </span>
+            <span>
+              Terakhir update:{" "}
+              <span className="font-semibold text-foreground">{doc.updatedAt}</span>
+            </span>
           </div>
 
           <div className="flex gap-2 pt-2 border-t border-border/40">
@@ -465,7 +529,8 @@ function DocDetailModal({
               onClick={onEdit}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
             >
-              <Edit3 className="h-3.5 w-3.5" />Edit Dokumen
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Dokumen
             </button>
             <button
               type="button"

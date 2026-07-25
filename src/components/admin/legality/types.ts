@@ -1,15 +1,19 @@
-import { DocItem } from "../docs-management/types";
-
 export interface LegalityItem {
   id: string;
   title: string;
+  slug: string;
   menuLabel: string;
+  categoryId?: string;
+  categorySlug?: string;
+  description?: string;
+  icon?: string;
   content: string;
   order: number;
   status: "Published" | "Draft";
   updatedAt: string;
   author: string;
   link: string;
+  createdAt?: string;
 }
 
 export type LegalityViewMode = "list" | "create" | "edit";
@@ -18,7 +22,10 @@ export const initialLegalityData: LegalityItem[] = [
   {
     id: "legal-1",
     title: "Syarat dan Ketentuan Pengguna",
+    slug: "terms-and-conditions",
     menuLabel: "Terms & Conditions",
+    description: "Syarat dan ketentuan pengguna Postmatic.",
+    icon: "ShieldCheck",
     order: 1,
     status: "Published",
     updatedAt: "10 Juli 2026",
@@ -29,7 +36,10 @@ export const initialLegalityData: LegalityItem[] = [
   {
     id: "legal-2",
     title: "Kebijakan Privasi",
+    slug: "privacy-policy",
     menuLabel: "Privacy Policy",
+    description: "Kebijakan privasi data pengguna Postmatic.",
+    icon: "Lock",
     order: 2,
     status: "Published",
     updatedAt: "09 Juli 2026",
@@ -40,7 +50,10 @@ export const initialLegalityData: LegalityItem[] = [
   {
     id: "legal-3",
     title: "Kebijakan Penggunaan yang Diizinkan",
+    slug: "acceptable-use",
     menuLabel: "Acceptable Use",
+    description: "Penggunaan layanan yang diizinkan dan dilarang.",
+    icon: "FileText",
     order: 3,
     status: "Draft",
     updatedAt: "05 Juli 2026",

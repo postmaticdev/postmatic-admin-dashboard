@@ -164,12 +164,17 @@ export const LUCIDE_ICONS_LIST: LucideIconOption[] = [
 
 export function renderLucideIcon(
   iconName?: string,
-  className = "h-4 w-4 text-primary"
+  className = "h-4 w-4 text-primary",
 ): React.ReactNode {
   if (!iconName) {
     return <FileText className={className} />;
   }
-  const found = LUCIDE_ICONS_LIST.find((item) => item.name === iconName);
+  const normalizedIconName = iconName
+    .replace(/[-_\s]+([a-zA-Z0-9])/g, (_, char: string) => char.toUpperCase())
+    .replace(/^[a-z]/, (char) => char.toUpperCase());
+  const found = LUCIDE_ICONS_LIST.find(
+    (item) => item.name === iconName || item.name === normalizedIconName,
+  );
   if (found) {
     const IconComp = found.icon;
     return <IconComp className={className} />;
@@ -209,8 +214,7 @@ export function LucideIconPickerModal({
   ];
 
   const filteredIcons = LUCIDE_ICONS_LIST.filter((item) => {
-    const matchCategory =
-      selectedCategory === "Semua" || item.category === selectedCategory;
+    const matchCategory = selectedCategory === "Semua" || item.category === selectedCategory;
     const matchSearch =
       item.label.toLowerCase().includes(search.toLowerCase()) ||
       item.name.toLowerCase().includes(search.toLowerCase());
@@ -291,12 +295,12 @@ export function LucideIconPickerModal({
               >
                 <IconComp
                   className={`h-6 w-6 mb-1.5 transition-transform group-hover:scale-110 ${
-                    isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                    isSelected
+                      ? "text-primary"
+                      : "text-muted-foreground group-hover:text-foreground"
                   }`}
                 />
-                <span className="text-[10px] font-medium truncate w-full">
-                  {item.name}
-                </span>
+                <span className="text-[10px] font-medium truncate w-full">{item.name}</span>
               </button>
             );
           })}

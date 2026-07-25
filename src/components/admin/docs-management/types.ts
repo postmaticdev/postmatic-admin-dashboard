@@ -3,6 +3,8 @@ export interface DocItem {
   title: string;
   slug: string;
   menuLabel: string;
+  categoryId?: string;
+  categorySlug?: string;
   description?: string;
   content: string;
   order: number;
@@ -10,6 +12,7 @@ export interface DocItem {
   updatedAt: string;
   author: string;
   icon?: string;
+  createdAt?: string;
 }
 
 export type DocsViewMode = "list" | "create" | "edit";

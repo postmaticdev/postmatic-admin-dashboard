@@ -20,6 +20,7 @@ import {
 import { DocsMediaBubbleMenu } from "../docs-management/DocsMediaBubbleMenu";
 import { DocsEditorToolbar } from "../docs-management/DocsEditorToolbar";
 import { DocsEditorSidebarTools } from "../docs-management/DocsEditorSidebarTools";
+import { LucideIconPickerModal, renderLucideIcon } from "../docs-management/LucideIconPickerModal";
 
 import {
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
   Tag,
   FileText,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 
 interface LegalityFormViewProps {
@@ -37,10 +39,12 @@ interface LegalityFormViewProps {
   existingMenuLabels: string[];
   onSave: (
     data: Omit<LegalityItem, "id" | "order" | "updatedAt">,
-    id?: string
-  ) => void;
+    id?: string,
+  ) => void | Promise<void>;
   onCancel: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void | Promise<void>;
+  isSaving?: boolean;
+  isDeleting?: boolean;
 }
 
 export function LegalityFormView({
@@ -49,20 +53,39 @@ export function LegalityFormView({
   onSave,
   onCancel,
   onDelete,
+  isSaving = false,
+  isDeleting = false,
 }: LegalityFormViewProps) {
   const isEditMode = Boolean(initialItem);
 
   const [title, setTitle] = useState(initialItem?.title || "");
+  const [slug, setSlug] = useState(initialItem?.slug || "");
+  const [hasEditedSlug, setHasEditedSlug] = useState(Boolean(initialItem?.slug));
   const [menuLabel, setMenuLabel] = useState(
-    initialItem?.menuLabel || (existingMenuLabels[0] ?? "Terms & Conditions")
+    initialItem?.menuLabel || (existingMenuLabels[0] ?? "Terms & Conditions"),
   );
   const [customMenuInput, setCustomMenuInput] = useState("");
   const [isCustomMenu, setIsCustomMenu] = useState(false);
-  const [status, setStatus] = useState<"Published" | "Draft">(
-    initialItem?.status || "Published"
-  );
-  const [link, setLink] = useState(initialItem?.link || "");
+  const [status, setStatus] = useState<"Published" | "Draft">(initialItem?.status || "Published");
+  const [description, setDescription] = useState(initialItem?.description || "");
+  const [selectedIcon, setSelectedIcon] = useState(initialItem?.icon || "ShieldCheck");
+  const [iconModalOpen, setIconModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const createSlug = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const handleTitleChange = (val: string) => {
+    setTitle(val);
+    if (!isEditMode && !hasEditedSlug) {
+      setSlug(createSlug(val));
+    }
+  };
 
   const editor = useEditor({
     extensions: [
@@ -96,14 +119,12 @@ export function LegalityFormView({
     },
   });
 
-  // Sync editor content when initialItem changes
   useEffect(() => {
     if (editor && initialItem) {
       editor.commands.setContent(initialItem.content);
     }
   }, [editor, initialItem]);
 
-  // Handle copy button click in code snippets
   useEffect(() => {
     const handleCopyClick = (e: MouseEvent) => {
       const btn = (e.target as HTMLElement).closest(".copy-code-icon-btn");
@@ -140,19 +161,24 @@ export function LegalityFormView({
     onSave(
       {
         title,
+        slug: slug.trim() || createSlug(title) || "legal-document",
         menuLabel: finalMenuLabel,
+        categoryId: initialItem?.menuLabel === finalMenuLabel ? initialItem?.categoryId : undefined,
+        categorySlug:
+          initialItem?.menuLabel === finalMenuLabel ? initialItem?.categorySlug : undefined,
+        description,
+        icon: selectedIcon,
         content: contentHtml,
         status,
         author: "Legal Team",
-        link,
+        link: initialItem?.link || "",
       },
-      initialItem?.id
+      initialItem?.id,
     );
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Navigation Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card p-4 rounded-2xl border border-border/80 shadow-sm">
         <div className="flex items-center gap-3">
           <button
@@ -168,10 +194,8 @@ export function LegalityFormView({
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">
                 {isEditMode ? "Edit Dokumen Legal" : "Buat Dokumen Legal Baru"}
               </span>
-              <span className="text-muted-foreground text-xs">•</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                Legality
-              </span>
+              <span className="text-muted-foreground text-xs">/</span>
+              <span className="text-xs font-mono text-muted-foreground">Legality</span>
             </div>
             <h1 className="text-lg font-bold text-foreground">
               {isEditMode ? title || "Edit Dokumen" : "Buat Konten Dokumen Legal"}
@@ -179,21 +203,14 @@ export function LegalityFormView({
           </div>
         </div>
 
-        {/* Top Right Action Buttons */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-2.5 mr-2">
-            <span className="text-xs font-semibold text-muted-foreground">
-              Status:
-            </span>
+            <span className="text-xs font-semibold text-muted-foreground">Status:</span>
             <button
               type="button"
-              onClick={() =>
-                setStatus(status === "Published" ? "Draft" : "Published")
-              }
+              onClick={() => setStatus(status === "Published" ? "Draft" : "Published")}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors p-0.5 ${
-                status === "Published"
-                  ? "bg-primary"
-                  : "bg-muted-foreground/30"
+                status === "Published" ? "bg-primary" : "bg-muted-foreground/30"
               }`}
             >
               <span
@@ -204,9 +221,7 @@ export function LegalityFormView({
             </button>
             <span
               className={`text-xs font-bold ${
-                status === "Published"
-                  ? "text-primary"
-                  : "text-muted-foreground"
+                status === "Published" ? "text-primary" : "text-muted-foreground"
               }`}
             >
               {status}
@@ -217,10 +232,15 @@ export function LegalityFormView({
             <button
               type="button"
               onClick={() => setDeleteConfirmOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground text-xs font-semibold transition-all shadow-xs"
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground text-xs font-semibold transition-all shadow-xs disabled:pointer-events-none disabled:opacity-60"
               title="Hapus Dokumen Legal"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              {isDeleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
               Delete
             </button>
           )}
@@ -228,46 +248,58 @@ export function LegalityFormView({
           <button
             type="button"
             onClick={handleSaveForm}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20 disabled:pointer-events-none disabled:opacity-70"
           >
-            <Save className="h-3.5 w-3.5" />
+            {isSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
             Save Document
           </button>
         </div>
       </div>
 
-      {/* Main Form 2-Column Layout */}
       <form onSubmit={handleSaveForm}>
         <div className="grid grid-cols-12 gap-6 items-start">
-          {/* KOLOM KIRI: 75% */}
           <div className="col-span-12 lg:col-span-9 space-y-6">
-            {/* Section Input Dasar */}
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
               <div className="flex items-center gap-2 border-b border-border/60 pb-3">
                 <Scale className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-bold text-foreground">
-                  Informasi Dasar Dokumen Legal
-                </h2>
+                <h2 className="text-sm font-bold text-foreground">Informasi Dasar Dokumen Legal</h2>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Judul Dokumen */}
                 <div className="space-y-1.5 md:col-span-1">
                   <label className="text-xs font-semibold text-foreground flex items-center gap-1">
                     <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                    Judul Dokumen <span className="text-destructive">*</span>
+                    Judul & Ikon <span className="text-destructive">*</span>
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Misal: Syarat dan Ketentuan Pengguna"
-                    className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
-                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIconModalOpen(true)}
+                      className="flex items-center justify-center gap-1.5 h-[42px] px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground transition-all shadow-2xs shrink-0 group"
+                      title="Pilih ikon dokumen legal"
+                    >
+                      {renderLucideIcon(
+                        selectedIcon,
+                        "h-5 w-5 text-primary group-hover:scale-110 transition-transform",
+                      )}
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                    <input
+                      type="text"
+                      required
+                      value={title}
+                      onChange={(e) => handleTitleChange(e.target.value)}
+                      placeholder="Misal: Syarat dan Ketentuan Pengguna"
+                      className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
+                    />
+                  </div>
                 </div>
 
-                {/* Nama Menu (Dropdown / Custom Input) */}
                 <div className="space-y-1.5 md:col-span-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-foreground flex items-center gap-1">
@@ -306,24 +338,36 @@ export function LegalityFormView({
                   )}
                 </div>
 
-                {/* Link */}
                 <div className="space-y-1.5 md:col-span-1">
                   <label className="text-xs font-semibold text-foreground flex items-center gap-1">
-                    <span className="text-muted-foreground font-mono">🔗</span>
-                    Link
+                    <span className="text-muted-foreground font-mono">/</span>
+                    Slug
                   </label>
                   <input
                     type="text"
-                    value={link}
-                    onChange={(e) => setLink(e.target.value)}
-                    placeholder="Misal: https://postmatic.id/privacy"
+                    value={slug}
+                    onChange={(e) => {
+                      setHasEditedSlug(true);
+                      setSlug(createSlug(e.target.value));
+                    }}
+                    placeholder="privacy-policy"
+                    className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-3">
+                  <label className="text-xs font-semibold text-foreground">Deskripsi Singkat</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Ringkasan pendek dokumen legal..."
                     className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Section Editor */}
             <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
               <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-muted/20">
                 <div className="flex items-center gap-2">
@@ -333,32 +377,25 @@ export function LegalityFormView({
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  Gunakan toolbar di bawah atau sisipkan elemen dari sidebar
-                  kanan
+                  Gunakan toolbar di bawah atau sisipkan elemen dari sidebar kanan
                 </span>
               </div>
 
-              {/* Toolbar */}
               <DocsEditorToolbar editor={editor} />
-
-              {/* Bubble Menu Khusus Media */}
               <DocsMediaBubbleMenu editor={editor} />
 
-              {/* Editor Content Area */}
               <div className="bg-white text-slate-900 min-h-[460px] rounded-b-2xl px-8 md:px-16 py-6">
                 <EditorContent editor={editor} />
               </div>
             </div>
           </div>
 
-          {/* KOLOM KANAN: 25% */}
           <div className="col-span-12 lg:col-span-3 sticky top-6">
             <DocsEditorSidebarTools editor={editor} />
           </div>
         </div>
       </form>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirmOpen && initialItem && onDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
@@ -370,18 +407,14 @@ export function LegalityFormView({
                 <h3 className="font-bold text-base text-foreground">
                   Konfirmasi Hapus Dokumen Legal
                 </h3>
-                <p className="text-xs text-muted-foreground">
-                  Tindakan ini tidak dapat dibatalkan
-                </p>
+                <p className="text-xs text-muted-foreground">Tindakan ini tidak dapat dibatalkan</p>
               </div>
             </div>
 
             <p className="text-sm text-muted-foreground leading-relaxed">
               Apakah Anda yakin ingin menghapus dokumen{" "}
-              <strong className="text-foreground">
-                &quot;{initialItem.title}&quot;
-              </strong>
-              ? Dokumen yang dihapus tidak akan lagi tampil di platform.
+              <strong className="text-foreground">&quot;{initialItem.title}&quot;</strong>? Dokumen
+              yang dihapus tidak akan lagi tampil di platform.
             </p>
 
             <div className="flex justify-end gap-3 pt-2">
@@ -398,7 +431,8 @@ export function LegalityFormView({
                   setDeleteConfirmOpen(false);
                   onDelete(initialItem.id);
                 }}
-                className="px-5 py-2 text-xs font-semibold rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all"
+                disabled={isDeleting}
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all disabled:pointer-events-none disabled:opacity-70"
               >
                 Ya, Hapus Dokumen
               </button>
@@ -406,6 +440,13 @@ export function LegalityFormView({
           </div>
         </div>
       )}
+
+      <LucideIconPickerModal
+        open={iconModalOpen}
+        selectedIcon={selectedIcon}
+        onSelect={(iconName) => setSelectedIcon(iconName)}
+        onClose={() => setIconModalOpen(false)}
+      />
     </div>
   );
 }

@@ -10,13 +10,21 @@ import {
   Filter,
   X,
   ExternalLink,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 interface LegalityTableListProps {
   items: LegalityItem[];
+  isLoading?: boolean;
+  errorMessage?: string;
+  loadingDetailId?: string | null;
+  togglingStatusId?: string | null;
   onCreateNew: () => void;
   onEdit: (item: LegalityItem) => void;
   onToggleStatus: (id: string) => void;
+  onRetry?: () => void;
 }
 
 // Helper function to strip HTML tags for preview snippet
@@ -40,11 +48,15 @@ const menuColorMap: Record<string, string> = {
 
 function TableRow({
   item,
+  isLoadingDetail,
+  isTogglingStatus,
   onEdit,
   onToggleStatus,
   onRowClick,
 }: {
   item: LegalityItem;
+  isLoadingDetail?: boolean;
+  isTogglingStatus?: boolean;
   onEdit: (item: LegalityItem) => void;
   onToggleStatus: (id: string) => void;
   onRowClick: () => void;
@@ -91,10 +103,7 @@ function TableRow({
 
       {/* Isi Docs (Cuplikan) */}
       <td className="py-4 px-4 max-w-[320px]">
-        <p
-          className="text-xs text-muted-foreground truncate leading-relaxed"
-          title={cleanSnippet}
-        >
+        <p className="text-xs text-muted-foreground truncate leading-relaxed" title={cleanSnippet}>
           {cleanSnippet || "Belum ada cuplikan konten..."}
         </p>
       </td>
@@ -122,39 +131,42 @@ function TableRow({
       </td>
 
       {/* Action */}
-      <td className="py-4 pr-4 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+      <td
+        className="py-4 pr-4 pl-3 text-right whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={() => onEdit(item)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
+            disabled={isLoadingDetail}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60"
           >
-            <Edit3 className="h-3.5 w-3.5" />
+            {isLoadingDetail ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Edit3 className="h-3.5 w-3.5" />
+            )}
             Edit
           </button>
 
           <div
             className="flex items-center gap-2"
             title={
-              item.status === "Published"
-                ? "Ubah status ke Draft"
-                : "Ubah status ke Published"
+              item.status === "Published" ? "Ubah status ke Draft" : "Ubah status ke Published"
             }
           >
             <button
               type="button"
               onClick={() => onToggleStatus(item.id)}
+              disabled={isTogglingStatus}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                item.status === "Published"
-                  ? "bg-emerald-500"
-                  : "bg-muted-foreground/30"
-              }`}
+                item.status === "Published" ? "bg-emerald-500" : "bg-muted-foreground/30"
+              } disabled:opacity-70`}
             >
               <span
                 className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  item.status === "Published"
-                    ? "translate-x-4"
-                    : "translate-x-0.5"
+                  item.status === "Published" ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
             </button>
@@ -175,7 +187,10 @@ function LegalityDetailModal({
   onEdit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -191,15 +206,27 @@ function LegalityDetailModal({
 
         <div className="px-6 pb-6 pt-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-foreground truncate max-w-[280px]">{item.title}</h3>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${menuColorMap[item.menuLabel] || "bg-slate-500/10 border-slate-500/20 text-slate-600"}`}>
+            <h3 className="text-base font-bold text-foreground truncate max-w-[280px]">
+              {item.title}
+            </h3>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${menuColorMap[item.menuLabel] || "bg-slate-500/10 border-slate-500/20 text-slate-600"}`}
+            >
               {item.menuLabel}
             </span>
           </div>
 
           {item.link && (
             <div className="text-xs text-muted-foreground">
-              Link Dokumen: <a href={item.link} target="_blank" rel="noreferrer" className="text-primary hover:underline font-medium ml-1 inline-flex items-center gap-0.5">{item.link} <ExternalLink className="h-3 w-3" /></a>
+              Link Dokumen:{" "}
+              <a
+                href={item.link}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline font-medium ml-1 inline-flex items-center gap-0.5"
+              >
+                {item.link} <ExternalLink className="h-3 w-3" />
+              </a>
             </div>
           )}
 
@@ -208,8 +235,13 @@ function LegalityDetailModal({
           </div>
 
           <div className="flex items-center justify-between text-xs border-t border-border/40 pt-3 text-muted-foreground">
-            <span>Dibuat oleh: <span className="font-semibold text-foreground">{item.author}</span></span>
-            <span>Terakhir update: <span className="font-semibold text-foreground">{item.updatedAt}</span></span>
+            <span>
+              Dibuat oleh: <span className="font-semibold text-foreground">{item.author}</span>
+            </span>
+            <span>
+              Terakhir update:{" "}
+              <span className="font-semibold text-foreground">{item.updatedAt}</span>
+            </span>
           </div>
 
           <div className="flex gap-2 pt-2 border-t border-border/40">
@@ -218,7 +250,8 @@ function LegalityDetailModal({
               onClick={onEdit}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
             >
-              <Edit3 className="h-3.5 w-3.5" />Edit Dokumen
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Dokumen
             </button>
             <button
               type="button"
@@ -236,19 +269,21 @@ function LegalityDetailModal({
 
 export function LegalityTableList({
   items,
+  isLoading = false,
+  errorMessage,
+  loadingDetailId,
+  togglingStatusId,
   onCreateNew,
   onEdit,
   onToggleStatus,
+  onRetry,
 }: LegalityTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMenuFilter, setSelectedMenuFilter] = useState("ALL");
   const [selectedItem, setSelectedItem] = useState<LegalityItem | null>(null);
 
   // Get distinct menu labels for filter
-  const menuCategories = [
-    "ALL",
-    ...Array.from(new Set(items.map((d) => d.menuLabel))),
-  ];
+  const menuCategories = ["ALL", ...Array.from(new Set(items.map((d) => d.menuLabel)))];
 
   // Filter items
   const filteredItems = items.filter((item) => {
@@ -257,8 +292,7 @@ export function LegalityTableList({
       item.menuLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.content.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory =
-      selectedMenuFilter === "ALL" || item.menuLabel === selectedMenuFilter;
+    const matchesCategory = selectedMenuFilter === "ALL" || item.menuLabel === selectedMenuFilter;
 
     return matchesSearch && matchesCategory;
   });
@@ -282,8 +316,8 @@ export function LegalityTableList({
               Legality Content Manager
             </h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              Kelola dokumen hukum, syarat & ketentuan, kebijakan privasi, dan
-              dokumen kepatuhan lainnya untuk platform Postmatic.
+              Kelola dokumen hukum, syarat & ketentuan, kebijakan privasi, dan dokumen kepatuhan
+              lainnya untuk platform Postmatic.
             </p>
           </div>
 
@@ -345,17 +379,45 @@ export function LegalityTableList({
             </tr>
           </thead>
           <tbody>
-            {filteredItems.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={5} className="py-12 text-center">
+                  <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memuat dokumen legal...
+                  </div>
+                </td>
+              </tr>
+            ) : errorMessage ? (
+              <tr>
+                <td colSpan={5} className="py-12 text-center">
+                  <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
+                    <div className="inline-flex items-center gap-2 font-semibold text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      Gagal memuat dokumen legal.
+                    </div>
+                    <p className="text-xs">{errorMessage}</p>
+                    {onRetry && (
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Coba lagi
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : filteredItems.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Scale className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-sm font-medium">
-                      Tidak ada dokumen legal yang ditemukan.
-                    </p>
+                    <p className="text-sm font-medium">Tidak ada dokumen legal yang ditemukan.</p>
                     <p className="text-xs text-muted-foreground/80">
-                      Coba sesuaikan filter atau klik &quot;Create New
-                      Legality&quot;.
+                      Coba sesuaikan filter atau klik &quot;Create New Legality&quot;.
                     </p>
                   </div>
                 </td>
@@ -365,6 +427,8 @@ export function LegalityTableList({
                 <TableRow
                   key={item.id}
                   item={item}
+                  isLoadingDetail={loadingDetailId === item.id}
+                  isTogglingStatus={togglingStatusId === item.id}
                   onEdit={onEdit}
                   onToggleStatus={onToggleStatus}
                   onRowClick={() => setSelectedItem(item)}
@@ -375,8 +439,8 @@ export function LegalityTableList({
         </table>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            Menampilkan <strong>{filteredItems.length}</strong> dari{" "}
-            <strong>{items.length}</strong> dokumen legal
+            Menampilkan <strong>{filteredItems.length}</strong> dari <strong>{items.length}</strong>{" "}
+            dokumen legal
           </span>
         </div>
       </div>
@@ -386,7 +450,10 @@ export function LegalityTableList({
         <LegalityDetailModal
           item={selectedItem}
           onClose={() => setSelectedItem(null)}
-          onEdit={() => { onEdit(selectedItem); setSelectedItem(null); }}
+          onEdit={() => {
+            onEdit(selectedItem);
+            setSelectedItem(null);
+          }}
         />
       )}
     </div>

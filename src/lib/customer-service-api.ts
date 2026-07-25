@@ -297,9 +297,19 @@ function authHeaders(hasBody: boolean) {
 
 async function apiRequest<T>(path: string, init: RequestInit = {}) {
   const hasBody = init.body != null;
+  const headers = authHeaders(hasBody);
+
+  new Headers(init.headers).forEach((value, key) => {
+    headers.set(key, value);
+  });
+
+  headers.set("Cache-Control", "no-store");
+  headers.set("Pragma", "no-cache");
+
   const response = await fetch(buildUrl(path), {
     ...init,
-    headers: authHeaders(hasBody),
+    cache: "no-store",
+    headers,
   });
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
 
@@ -821,7 +831,7 @@ const getWhatsappBlastContactsServer = createServerFn({ method: "GET" }).handler
   return contacts;
 });
 
-const getChatBlastHistoriesServer = createServerFn({ method: "GET" }).handler(async () => {
+const getChatBlastHistoriesServer = createServerFn({ method: "POST" }).handler(async () => {
   return apiRequestAllPages<RemoteChatBlastHistory>(
     "/api/chat/blast",
     {
