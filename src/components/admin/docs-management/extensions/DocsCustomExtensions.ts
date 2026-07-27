@@ -496,6 +496,13 @@ export const CustomVideoNode = Node.create({
 });
 
 export const CustomImageNode = Image.extend({
+  addOptions() {
+    return {
+      ...this.parent?.(),
+      allowBase64: true,
+    };
+  },
+
   addAttributes() {
     return {
       ...this.parent?.(),
