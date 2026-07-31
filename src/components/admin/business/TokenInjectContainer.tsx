@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getBusinessDashboardData,
-  getImageTokenInjectionHistoriesForBusinesses,
+  getImageTokenInjectionDashboardData,
   injectImageToken,
 } from "@/lib/business-api";
 import { InjectHistoryItem } from "./types";
@@ -37,6 +37,10 @@ const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
 // Detail Modal for selected row
 function InjectDetailModal({ item, onClose }: { item: InjectHistoryItem; onClose: () => void }) {
   const formatNumber = (num: number) => num.toLocaleString("id-ID");
+  const formatCurrency = (amount: number, currency: string) =>
+    currency.toUpperCase() === "IDR"
+      ? `Rp ${formatNumber(amount)}`
+      : `${currency} ${formatNumber(amount)}`;
 
   const formatDateTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -99,7 +103,7 @@ function InjectDetailModal({ item, onClose }: { item: InjectHistoryItem; onClose
                   Price (Harga)
                 </span>
                 <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-0.5">
-                  Rp {formatNumber(item.price)}
+                  {formatCurrency(item.price, item.priceCurrency)}
                 </span>
               </div>
             </div>
@@ -151,21 +155,22 @@ export function TokenInjectContainer() {
     () => (businessQuery.data?.businesses ?? []).map(mapBusinessTokenOverviewToAccount),
     [businessQuery.data],
   );
-  const businessIds = useMemo(() => businesses.map((business) => business.id), [businesses]);
   const businessById = useMemo(
     () => new Map(businesses.map((business) => [business.id, business])),
     [businesses],
   );
 
   const historyQuery = useQuery({
-    queryKey: [...TOKEN_INJECTION_HISTORY_QUERY_KEY, businessIds.join(",")],
-    queryFn: () => getImageTokenInjectionHistoriesForBusinesses(businessIds),
-    enabled: businessQuery.isSuccess,
+    queryKey: TOKEN_INJECTION_HISTORY_QUERY_KEY,
+    queryFn: getImageTokenInjectionDashboardData,
     staleTime: 30_000,
   });
 
   const history = useMemo(
-    () => (historyQuery.data ?? []).map((item) => mapInjectionHistoryToItem(item, businessById)),
+    () =>
+      (historyQuery.data?.histories ?? []).map((item) =>
+        mapInjectionHistoryToItem(item, businessById),
+      ),
     [historyQuery.data, businessById],
   );
 
@@ -206,19 +211,27 @@ export function TokenInjectContainer() {
   );
 
   // Scorecard calculations
-  const totalTokensInjected = history.reduce((sum, item) => sum + item.totalTokens, 0);
-  const totalInjectTransactions = history.length;
-  const uniqueBusinessesFunded = new Set(history.map((item) => item.businessId)).size;
+  const injectionOverview = historyQuery.data?.overview;
+  const totalTokensInjected =
+    injectionOverview?.totalInjectedTokenAmount ??
+    history.reduce((sum, item) => sum + item.totalTokens, 0);
+  const totalInjectTransactions =
+    injectionOverview?.totalInjectedTokenTransaction ?? history.length;
+  const uniqueBusinessesFunded =
+    injectionOverview?.totalBusinessInjectedToken ??
+    new Set(history.map((item) => item.businessId)).size;
 
-  const isLoading = businessQuery.isLoading || (businessQuery.isSuccess && historyQuery.isLoading);
-  const errorMessage = businessQuery.isError
-    ? getErrorMessage(businessQuery.error, "Gagal memuat business.")
-    : historyQuery.isError
-      ? getErrorMessage(historyQuery.error, "Gagal memuat riwayat token injection.")
-      : undefined;
+  const isLoading = historyQuery.isLoading;
+  const errorMessage = historyQuery.isError
+    ? getErrorMessage(historyQuery.error, "Gagal memuat riwayat token injection.")
+    : undefined;
 
   const canOpenInject = !businessQuery.isLoading && !businessQuery.isError && businesses.length > 0;
   const formatNumber = (num: number) => num.toLocaleString("id-ID");
+  const formatCurrency = (amount: number, currency: string) =>
+    currency.toUpperCase() === "IDR"
+      ? `Rp ${formatNumber(amount)}`
+      : `${currency} ${formatNumber(amount)}`;
 
   const handleRetry = () => {
     void businessQuery.refetch();
@@ -408,7 +421,7 @@ export function TokenInjectContainer() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                      Rp {formatNumber(item.price)}
+                      {formatCurrency(item.price, item.priceCurrency)}
                     </td>
                     <td className="py-3 pr-4 pl-3 text-right whitespace-nowrap">
                       <span className="text-xs text-muted-foreground">

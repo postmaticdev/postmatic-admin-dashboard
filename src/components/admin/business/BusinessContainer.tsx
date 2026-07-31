@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getBusinessDashboardData } from "@/lib/business-api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getBusinessDashboardData,
+  upsertManagedBusinessKnowledge,
+  type BusinessKnowledgePayload,
+} from "@/lib/business-api";
 import { BusinessAccount } from "./types";
 import { BusinessTableList } from "./BusinessTableList";
 import { BusinessFormView } from "./BusinessFormView";
@@ -10,7 +14,18 @@ import { Building2, Plus } from "lucide-react";
 
 const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
 
+function toBusinessKnowledgePayload(data: Omit<BusinessAccount, "id">): BusinessKnowledgePayload {
+  return {
+    name: data.name.trim(),
+    category: data.category.trim(),
+    primaryLogoUrl: data.logoUrl.trim() || undefined,
+    description: data.description?.trim() || undefined,
+    websiteUrl: data.websiteUrl?.trim() || undefined,
+  };
+}
+
 export function BusinessContainer() {
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list");
   const [editingItem, setEditingItem] = useState<BusinessAccount | null>(null);
 
@@ -25,12 +40,28 @@ export function BusinessContainer() {
     [businessQuery.data],
   );
 
-  const handleSave = (data: Omit<BusinessAccount, "id">, id?: string) => {
-    toast.error(
-      id
-        ? `Endpoint edit business untuk form sederhana "${data.name}" belum tersedia.`
-        : `Endpoint create business untuk form sederhana "${data.name}" belum tersedia.`,
-    );
+  const updateKnowledgeMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Omit<BusinessAccount, "id"> }) =>
+      upsertManagedBusinessKnowledge(id, toBusinessKnowledgePayload(data)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: BUSINESS_QUERY_KEY }),
+  });
+
+  const handleSave = async (data: Omit<BusinessAccount, "id">, id?: string) => {
+    if (!id) {
+      toast.error(
+        `Endpoint create business sederhana untuk "${data.name}" belum tersedia di koleksi Postman terbaru.`,
+      );
+      return;
+    }
+
+    try {
+      await updateKnowledgeMutation.mutateAsync({ id, data });
+      toast.success(`Business "${data.name}" berhasil diperbarui!`);
+      setViewMode("list");
+      setEditingItem(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Gagal memperbarui business."));
+    }
   };
 
   const handleEdit = (item: BusinessAccount) => {
@@ -39,8 +70,7 @@ export function BusinessContainer() {
   };
 
   const handleCreateNew = () => {
-    setEditingItem(null);
-    setViewMode("create");
+    toast.error("Endpoint create business sederhana belum tersedia di koleksi Postman terbaru.");
   };
 
   return (
@@ -101,6 +131,7 @@ export function BusinessContainer() {
             setViewMode("list");
             setEditingItem(null);
           }}
+          isSaving={updateKnowledgeMutation.isPending}
         />
       )}
     </div>

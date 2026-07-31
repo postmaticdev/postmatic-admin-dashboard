@@ -15,7 +15,9 @@ import {
   BookmarkPlus,
   History,
   LocateFixed,
+  RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { StatusBadge } from "../StatusBadge";
 import { TicketStatusSelector } from "../TicketStatusSelector";
 import { TicketConfirmationDialog } from "../TicketConfirmationDialog";
@@ -167,6 +169,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
     getDraft,
     markAsTicket,
     openWhatsappTicketReference,
+    refreshWhatsappRoomDisplayInfo,
     setDraft,
     tickets: allTickets,
   } = useTickets();
@@ -176,6 +179,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [replyingTo, setReplyingTo] = useState<TicketMessage | null>(null);
   const [ticketMessageTarget, setTicketMessageTarget] = useState<TicketMessageTarget | null>(null);
+  const [isRefreshingDisplayInfo, setIsRefreshingDisplayInfo] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -309,7 +313,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
             authorName: replyingTo.authorName,
             content:
               replyingTo.content ||
-              (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media"),
+              (replyingTo.attachments?.length ? "Lampiran file" : "Pesan media"),
           }
         : undefined,
       quotedExternalId: replyingTo?.externalId,
@@ -366,6 +370,21 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
     jumpToMessage(reference.messageExternalId);
   };
 
+  const handleRefreshDisplayInfo = useCallback(async () => {
+    if (!roomChatId || isRefreshingDisplayInfo) return;
+
+    setIsRefreshingDisplayInfo(true);
+    try {
+      await refreshWhatsappRoomDisplayInfo(ticket.id);
+    } catch (error) {
+      toast.error("Gagal refresh info WhatsApp", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsRefreshingDisplayInfo(false);
+    }
+  }, [isRefreshingDisplayInfo, refreshWhatsappRoomDisplayInfo, roomChatId, ticket.id]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3 shrink-0">
@@ -386,6 +405,17 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
           {isTicketView && <StatusBadge status={ticket.status} />}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={!roomChatId || isRefreshingDisplayInfo}
+            onClick={handleRefreshDisplayInfo}
+            title="Refresh nama dan foto profil WhatsApp"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefreshingDisplayInfo && "animate-spin")} />
+          </Button>
           {isTicketView ? (
             <TicketStatusSelector ticketId={ticket.id} currentStatus={ticket.status} />
           ) : null}
@@ -667,7 +697,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
                 <p className="text-xs font-bold text-foreground">{replyingTo.authorName}</p>
                 <p className="text-xs text-muted-foreground truncate max-w-[500px]">
                   {replyingTo.content ||
-                    (replyingTo.attachments?.length ? "📎 Lampiran file" : "Pesan media")}
+                    (replyingTo.attachments?.length ? "Lampiran file" : "Pesan media")}
                 </p>
               </div>
               <Button

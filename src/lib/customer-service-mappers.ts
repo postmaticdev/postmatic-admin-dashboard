@@ -140,7 +140,8 @@ function isLidHandle(value?: string | null) {
 }
 
 function getWhatsappRoomPhoneHandle(room: RemoteWhatsappRoom) {
-  const phone = compactText(room.phone);
+  const chatIdPhone = compactText(room.chatId).split("@")[0];
+  const phone = compactText(room.phone) || (/^\d+$/.test(chatIdPhone) ? chatIdPhone : "");
   if (!phone) return "";
 
   const countryCode = compactText(room.countryCode, "62").replace(/\D/g, "") || "62";
@@ -157,6 +158,9 @@ function getWhatsappRoomPhoneHandle(room: RemoteWhatsappRoom) {
 }
 
 function getWhatsappRoomDisplayName(room: RemoteWhatsappRoom, phoneHandle: string, roomId: number) {
+  const displayName = compactText(room.displayName);
+  if (displayName && !isLidHandle(displayName)) return displayName;
+
   const roomName = compactText(room.roomName);
   if (roomName && !isLidHandle(roomName)) return roomName;
 
@@ -166,6 +170,10 @@ function getWhatsappRoomDisplayName(room: RemoteWhatsappRoom, phoneHandle: strin
   if (chatId && !isLidHandle(chatId)) return chatId;
 
   return `WhatsApp Room ${roomId}`;
+}
+
+function getWhatsappRoomAvatar(room?: RemoteWhatsappRoom) {
+  return compactText(room?.displayPicture) || undefined;
 }
 
 export function mapWebsiteTicket(ticket: RemoteTicket, messages?: RemoteWebsiteMessage[]): Ticket {
@@ -279,6 +287,7 @@ export function mapWhatsappRoom(
     senderName: displayName,
     senderHandle:
       phoneHandle || (isLidHandle(room.chatId) ? "WhatsApp" : compactText(room.chatId, "WhatsApp")),
+    senderAvatar: getWhatsappRoomAvatar(room),
     updatedAt: roomUpdatedAt,
     lastMessageAt: roomUpdatedAt,
     unread: unreadCount > 0,
@@ -327,6 +336,7 @@ export function mapWhatsappTicket(
     senderHandle:
       phoneHandle ||
       (room && isLidHandle(room.chatId) ? "WhatsApp" : compactText(room?.chatId, "WhatsApp")),
+    senderAvatar: getWhatsappRoomAvatar(room),
     updatedAt: ticketUpdatedAt,
     lastMessageAt,
     status: remoteStatusToTicketStatus(ticket.slaStatus),

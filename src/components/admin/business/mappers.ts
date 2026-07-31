@@ -1,5 +1,6 @@
 import type {
   RemoteBusinessMember,
+  RemoteBusinessProfile,
   RemoteBusinessTokenOverview,
   RemoteImageTokenInjection,
 } from "@/lib/business-api";
@@ -20,10 +21,12 @@ function fallbackLogoUrl(name: string, id: string) {
 }
 
 function profileName(member?: RemoteBusinessMember | null) {
+  return profileDisplayName(member?.profile);
+}
+
+function profileDisplayName(profile?: RemoteBusinessProfile | null) {
   return (
-    getDisplayText(member?.profile?.name) ||
-    getDisplayText(member?.profile?.email) ||
-    getDisplayText(member?.profile?.id)
+    getDisplayText(profile?.name) || getDisplayText(profile?.email) || getDisplayText(profile?.id)
   );
 }
 
@@ -38,11 +41,28 @@ function getOwnerName(overview: RemoteBusinessTokenOverview) {
     ) ?? members.find((member) => member.role?.toLowerCase() === "owner");
 
   return (
+    profileDisplayName(root.ownerProfile) ||
+    profileDisplayName(root.owner) ||
     profileName(owner) ||
     profileName(root.userPosition) ||
     getDisplayText(root.ownerName) ||
     "Belum tersedia"
   );
+}
+
+function getPlanStatus(
+  root: RemoteBusinessTokenOverview["business"],
+  tokenStatus: RemoteBusinessTokenOverview["tokenStatus"],
+): BusinessAccount["status"] {
+  const plan = getDisplayText(root.plan) || getDisplayText(root.status);
+  const normalizedPlan = plan?.toLowerCase();
+
+  if (normalizedPlan?.includes("paid") || normalizedPlan?.includes("premium")) return "Paid";
+  if (normalizedPlan?.includes("free")) return "Free";
+
+  return tokenStatus?.hasEverTopUp || normalizeNumber(tokenStatus?.totalToken) > 0
+    ? "Paid"
+    : "Free";
 }
 
 export function mapBusinessTokenOverviewToAccount(
@@ -52,14 +72,14 @@ export function mapBusinessTokenOverviewToAccount(
   const knowledge = overview.detail?.knowledge;
   const id = String(root.id ?? overview.business.id);
   const name = getDisplayText(knowledge?.name) || getDisplayText(root.name) || `Business #${id}`;
+  const tokenStatus = overview.tokenStatus ?? root.tokenStatus ?? null;
   const logoUrl =
     getDisplayText(knowledge?.primaryLogoUrl) ||
     getDisplayText(root.primaryLogoUrl) ||
     getDisplayText(root.logoUrl) ||
     getDisplayText(root.imageUrl) ||
     fallbackLogoUrl(name, id);
-  const totalToken = normalizeNumber(overview.tokenStatus?.totalToken);
-  const balance = normalizeNumber(overview.tokenStatus?.availableToken);
+  const balance = normalizeNumber(tokenStatus?.availableToken);
 
   return {
     id,
@@ -68,7 +88,11 @@ export function mapBusinessTokenOverviewToAccount(
     owner: getOwnerName(overview),
     category:
       getDisplayText(knowledge?.category) || getDisplayText(root.category) || "Tanpa kategori",
-    status: overview.tokenStatus?.hasEverTopUp || totalToken > 0 ? "Paid" : "Free",
+    description:
+      getDisplayText(knowledge?.description) || getDisplayText(root.description) || undefined,
+    websiteUrl:
+      getDisplayText(knowledge?.websiteUrl) || getDisplayText(root.websiteUrl) || undefined,
+    status: getPlanStatus(root, tokenStatus),
     balance,
     joinedAt: root.createdAt || overview.business.createdAt || new Date().toISOString(),
   };
@@ -85,20 +109,30 @@ export function mapInjectionHistoryToItem(
   item: RemoteImageTokenInjection,
   businessById: Map<string, BusinessAccount>,
 ): InjectHistoryItem {
-  const businessId = String(item.businessRootId ?? "");
+  const remoteBusiness = item.businessRoot;
+  const businessId = String(item.businessRootId ?? remoteBusiness?.id ?? "");
   const business = businessById.get(businessId);
-  const businessName = business?.name ?? `Business #${businessId || item.id}`;
+  const businessName =
+    business?.name || getDisplayText(remoteBusiness?.name) || `Business #${businessId || item.id}`;
+  const businessLogoUrl =
+    business?.logoUrl ||
+    getDisplayText(remoteBusiness?.primaryLogoUrl) ||
+    getDisplayText(remoteBusiness?.logoUrl) ||
+    getDisplayText(remoteBusiness?.imageUrl) ||
+    fallbackLogoUrl(businessName, businessId);
 
   return {
     id: String(item.id),
     businessId,
     businessName,
-    businessLogoUrl: business?.logoUrl ?? fallbackLogoUrl(businessName, businessId),
-    businessCategory: business?.category ?? "Tanpa kategori",
+    businessLogoUrl,
+    businessCategory:
+      business?.category || getDisplayText(remoteBusiness?.category) || "Tanpa kategori",
     totalTokens: normalizeNumber(item.amount),
-    price: 0,
+    price: normalizeNumber(item.priceAmount),
+    priceCurrency: getDisplayText(item.priceCurrency) || "IDR",
     dateTime: item.createdAt || new Date().toISOString(),
-    adminName: formatAdminName(item.injectedBy),
+    adminName: profileDisplayName(item.injectedByProfile) || formatAdminName(item.injectedBy),
   };
 }
 

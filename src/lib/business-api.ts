@@ -48,6 +48,11 @@ export interface RemoteManagedBusiness {
   ownerName?: string | null;
   businessPhone?: string | null;
   countryCode?: string | null;
+  owner?: RemoteBusinessProfile | null;
+  ownerProfile?: RemoteBusinessProfile | null;
+  plan?: string | null;
+  status?: string | null;
+  tokenStatus?: RemoteImageTokenStatus | null;
   members?: RemoteBusinessMember[] | null;
   userPosition?: RemoteBusinessMember | null;
 }
@@ -123,8 +128,12 @@ export interface RemoteImageTokenInjection {
   id: number | string;
   businessRootId?: number | string | null;
   amount?: number | null;
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
   bonusType?: string | null;
   injectedBy?: string | null;
+  injectedByProfile?: RemoteBusinessProfile | null;
+  businessRoot?: RemoteManagedBusiness | null;
   createdAt?: string | null;
 }
 
@@ -137,6 +146,28 @@ export interface RemoteBusinessTokenOverview {
 export interface RemoteBusinessDashboardData {
   businesses: RemoteBusinessTokenOverview[];
   overview: RemoteBusinessManageOverview | null;
+}
+
+export interface RemoteImageTokenInjectionOverview {
+  totalInjectedTokenAmount?: number | null;
+  totalInjectedTokenTransaction?: number | null;
+  totalBusinessInjectedToken?: number | null;
+}
+
+export interface RemoteImageTokenInjectionDashboardData {
+  histories: RemoteImageTokenInjection[];
+  overview: RemoteImageTokenInjectionOverview | null;
+}
+
+export interface BusinessKnowledgePayload {
+  name: string;
+  category: string;
+  primaryLogoUrl?: string;
+  description?: string;
+  websiteUrl?: string;
+  colorTone?: string;
+  businessPhone?: string;
+  countryCode?: string;
 }
 
 export interface ImageTokenHistoryQuery {
@@ -319,30 +350,34 @@ async function getImageTokenInjectionHistoriesInternal(
   );
 }
 
+async function getImageTokenInjectionOverviewInternal() {
+  const response = await apiRequest<RemoteImageTokenInjectionOverview>(
+    "/api/generative-token/image-token/injection/overview",
+  );
+
+  return response.data;
+}
+
 async function getBusinessTokenOverviewsInternal() {
   const businesses = (await getManagedBusinessesInternal()).filter(
     (business) => business.id != null,
   );
+  const missingStatusBusinesses = businesses.filter((business) => !business.tokenStatus);
+  const statusResults = await Promise.allSettled(
+    missingStatusBusinesses.map((business) => getImageTokenStatusInternal(String(business.id))),
+  );
+  const statusByBusinessId = new Map(
+    missingStatusBusinesses.map((business, index) => {
+      const result = statusResults[index];
+      return [String(business.id), result?.status === "fulfilled" ? result.value : null] as const;
+    }),
+  );
 
-  const [detailResults, statusResults] = await Promise.all([
-    Promise.allSettled(
-      businesses.map((business) => getManagedBusinessByIdInternal(String(business.id))),
-    ),
-    Promise.allSettled(
-      businesses.map((business) => getImageTokenStatusInternal(String(business.id))),
-    ),
-  ]);
-
-  return businesses.map<RemoteBusinessTokenOverview>((business, index) => {
-    const detailResult = detailResults[index];
-    const statusResult = statusResults[index];
-
-    return {
-      business,
-      detail: detailResult?.status === "fulfilled" ? detailResult.value : null,
-      tokenStatus: statusResult?.status === "fulfilled" ? statusResult.value : null,
-    };
-  });
+  return businesses.map<RemoteBusinessTokenOverview>((business) => ({
+    business,
+    detail: null,
+    tokenStatus: business.tokenStatus ?? statusByBusinessId.get(String(business.id)) ?? null,
+  }));
 }
 
 const getBusinessDashboardDataServer = createServerFn({ method: "GET" }).handler(async () => {
@@ -431,6 +466,24 @@ const getImageTokenInjectionHistoriesForBusinessesServer = createServerFn({ meth
     return uniqueHistories.sort(sortByLatestCreatedAt);
   });
 
+const getImageTokenInjectionDashboardDataServer = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const [historiesResult, overviewResult] = await Promise.allSettled([
+      getImageTokenInjectionHistoriesInternal(),
+      getImageTokenInjectionOverviewInternal(),
+    ]);
+
+    if (historiesResult.status === "rejected") {
+      throw historiesResult.reason;
+    }
+
+    return {
+      histories: historiesResult.value.sort(sortByLatestCreatedAt),
+      overview: overviewResult.status === "fulfilled" ? overviewResult.value : null,
+    } satisfies RemoteImageTokenInjectionDashboardData;
+  },
+);
+
 const injectImageTokenServer = createServerFn({ method: "POST" })
   .validator((data: ImageTokenInjectionPayload) => data)
   .handler(async ({ data }) => {
@@ -439,6 +492,20 @@ const injectImageTokenServer = createServerFn({ method: "POST" })
       {
         method: "POST",
         body: JSON.stringify(data),
+      },
+    );
+
+    return response.data;
+  });
+
+const upsertManagedBusinessKnowledgeServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: BusinessKnowledgePayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessKnowledge>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/knowledge`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
       },
     );
 
@@ -473,6 +540,14 @@ export function getImageTokenInjectionHistoriesForBusinesses(businessRootIds: st
   return getImageTokenInjectionHistoriesForBusinessesServer({ data: { businessRootIds } });
 }
 
+export function getImageTokenInjectionDashboardData() {
+  return getImageTokenInjectionDashboardDataServer();
+}
+
 export function injectImageToken(payload: ImageTokenInjectionPayload) {
   return injectImageTokenServer({ data: payload });
+}
+
+export function upsertManagedBusinessKnowledge(id: string, payload: BusinessKnowledgePayload) {
+  return upsertManagedBusinessKnowledgeServer({ data: { id, payload } });
 }

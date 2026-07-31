@@ -4,6 +4,8 @@ export interface BusinessAccount {
   logoUrl: string;
   owner: string;
   category: string;
+  description?: string;
+  websiteUrl?: string;
   status: "Paid" | "Free";
   balance: number; // Token balance
   joinedAt: string;
@@ -17,6 +19,7 @@ export interface InjectHistoryItem {
   businessCategory: string;
   totalTokens: number;
   price: number;
+  priceCurrency: string;
   dateTime: string;
   adminName: string;
 }

@@ -73,10 +73,18 @@ export interface RemoteWhatsappRoom {
   id: number;
   chatId?: string | null;
   roomName?: string | null;
+  displayName?: string | null;
+  displayPicture?: string | null;
   countryCode?: string | null;
   phone?: string | null;
   isPinned?: boolean | null;
   unreadMessage?: number | null;
+  displayInfoRefresh?: {
+    performed?: boolean | null;
+    skipped?: boolean | null;
+    reason?: string | null;
+    retryAfterSeconds?: number | null;
+  } | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -508,6 +516,15 @@ const getWhatsappMessagesServer = createServerFn({ method: "GET" })
     return response.data ?? [];
   });
 
+const refreshWhatsappRoomDisplayInfoServer = createServerFn({ method: "GET" })
+  .validator((data: { roomChatId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteWhatsappRoom>(
+      `/api/chat/whatsapp/${data.roomChatId}/display-info`,
+    );
+    return response.data;
+  });
+
 const createWhatsappRoomServer = createServerFn({ method: "POST" })
   .validator((data: CreateWhatsappRoomPayload) => data)
   .handler(async ({ data }) => {
@@ -923,6 +940,10 @@ export function getWhatsappRooms() {
 
 export function getWhatsappMessages(roomChatId: number, limit = 50) {
   return getWhatsappMessagesServer({ data: { roomChatId, limit } });
+}
+
+export function refreshWhatsappRoomDisplayInfo(roomChatId: number) {
+  return refreshWhatsappRoomDisplayInfoServer({ data: { roomChatId } });
 }
 
 export function createWhatsappRoom(payload: CreateWhatsappRoomPayload) {

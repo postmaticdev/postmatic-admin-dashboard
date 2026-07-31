@@ -26,6 +26,9 @@ import {
   Send,
   Upload,
   Paperclip,
+  FileText,
+  Image as ImageIcon,
+  Video as VideoIcon,
   AlertCircle,
   Loader2,
   RefreshCw,
@@ -39,8 +42,10 @@ import {
   getWhatsappBlastContacts,
   getChatBlastHistories,
   sendChatBlast,
+  uploadCustomerServiceAttachment,
   type WhatsappBlastContact,
   type RemoteChatBlastHistory,
+  type UploadedAttachment,
 } from "@/lib/customer-service-api";
 import type { Ticket } from "@/lib/types/ticket";
 import { whatsappPhonesMatch } from "@/lib/whatsapp-room-aliases";
@@ -129,6 +134,17 @@ function toCampaignStatus(status?: string | null): BlastCampaign["status"] {
   return "queued";
 }
 
+function shouldPollBlastHistory(history: RemoteChatBlastHistory) {
+  const broadcastType = history.broadcastType?.toLowerCase();
+  const status = toCampaignStatus(history.status);
+
+  return broadcastType !== "scheduled" && (status === "queued" || status === "processing");
+}
+
+function shouldPollBlastHistories(histories?: RemoteChatBlastHistory[]) {
+  return (histories ?? []).some(shouldPollBlastHistory);
+}
+
 function formatBlastDate(value?: string | null) {
   const date = value ? new Date(value) : new Date();
 
@@ -147,13 +163,14 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
       ? history.channelType
       : "whatsapp";
   const targets = (history.targets ?? []).filter(Boolean);
+  const totalAssign = Number(history.totalAssign ?? 0);
 
   return {
     id: `remote-${history.id}`,
     campaignName: history.subject?.trim() || `Blast #${history.id}`,
     platform,
     status: toCampaignStatus(history.status),
-    assign: Number(history.totalAssign ?? targets.length) || 0,
+    assign: totalAssign > 0 ? totalAssign : targets.length,
     succeedAssign: Number(history.succeedAssign ?? 0) || undefined,
     dateTime: formatBlastDate(history.scheduledFor ?? history.createdAt),
     message: history.body ?? "",
@@ -208,6 +225,18 @@ function findExistingWhatsappTicket(target: string, tickets: Ticket[]) {
   );
 }
 
+function isImageAttachment(attachment: UploadedAttachment) {
+  if (attachment.type?.startsWith("image/")) return true;
+  return /\.(apng|avif|gif|jpe?g|png|svg|webp)(\?|#|$)/i.test(
+    `${attachment.name} ${attachment.url}`,
+  );
+}
+
+function isVideoAttachment(attachment: UploadedAttachment) {
+  if (attachment.type?.startsWith("video/")) return true;
+  return /\.(mp4|ogg|ogv|webm|mov)(\?|#|$)/i.test(`${attachment.name} ${attachment.url}`);
+}
+
 function CrmBlastPage() {
   const { getBySource, refreshTickets } = useTickets();
   const [searchQuery, setSearchQuery] = useState("");
@@ -238,6 +267,8 @@ function CrmBlastPage() {
   const [scheduleTime, setScheduleTime] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeMessage, setComposeMessage] = useState("");
+  const [blastAttachments, setBlastAttachments] = useState<UploadedAttachment[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSendingBlast, setIsSendingBlast] = useState(false);
   const [sendBlastError, setSendBlastError] = useState("");
 
@@ -262,6 +293,7 @@ function CrmBlastPage() {
     queryFn: getChatBlastHistories,
     staleTime: 0,
     refetchOnMount: "always",
+    refetchInterval: (query) => (shouldPollBlastHistories(query.state.data) ? 5_000 : false),
   });
 
   const remoteBlasts = useMemo(
@@ -289,6 +321,8 @@ function CrmBlastPage() {
     setScheduleTime("");
     setComposeSubject("");
     setComposeMessage("");
+    setBlastAttachments([]);
+    setIsUploadingAttachment(false);
     setSendBlastError("");
     setSelectedUserIds([]);
     setImportSearch("");
@@ -299,6 +333,16 @@ function CrmBlastPage() {
     setViewMode("create");
   };
 
+  const queueBlastHistoryRefetches = () => {
+    if (typeof window === "undefined") return;
+
+    [1_500, 5_000, 12_000].forEach((delay) => {
+      window.setTimeout(() => {
+        void blastHistoriesQuery.refetch();
+      }, delay);
+    });
+  };
+
   const handleSaveBlast = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -307,7 +351,10 @@ function CrmBlastPage() {
       activePlatform === "website" ? "" : manualInput,
     );
 
-    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length) return;
+    const hasMessageContent =
+      composeMessage.trim() || (activePlatform === "whatsapp" && blastAttachments.length > 0);
+
+    if (!campaignName.trim() || !hasMessageContent || !targetList.length) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
 
     setSendBlastError("");
@@ -397,8 +444,8 @@ function CrmBlastPage() {
 
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
-        body: composeMessage,
-        attachments: [],
+        body: composeMessage.trim(),
+        attachments: activePlatform === "whatsapp" ? blastAttachments.map((att) => att.url) : [],
         channelType: activePlatform,
         broadcastType: "direct",
         schedule: null,
@@ -408,9 +455,12 @@ function CrmBlastPage() {
       await blastHistoriesQuery.refetch();
 
       setViewMode("list");
+      setBlastAttachments([]);
       refreshTickets();
 
       if (activePlatform === "whatsapp") {
+        queueBlastHistoryRefetches();
+
         if (typeof window !== "undefined") {
           window.setTimeout(refreshTickets, 1_500);
           window.setTimeout(refreshTickets, 5_000);
@@ -455,11 +505,39 @@ function CrmBlastPage() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach((file) => {
+    const selectedFiles = Array.from(files);
+
+    if (activePlatform === "whatsapp") {
+      setSendBlastError("");
+      setIsUploadingAttachment(true);
+
+      try {
+        const uploadedAttachments = await Promise.all(
+          selectedFiles.map((file) => uploadCustomerServiceAttachment(file)),
+        );
+
+        setBlastAttachments((currentAttachments) => [
+          ...currentAttachments,
+          ...uploadedAttachments,
+        ]);
+      } catch (error) {
+        setSendBlastError(
+          error instanceof Error ? error.message : "Gagal mengunggah lampiran WhatsApp.",
+        );
+      } finally {
+        setIsUploadingAttachment(false);
+
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+
+      return;
+    }
+
+    selectedFiles.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
@@ -473,14 +551,7 @@ function CrmBlastPage() {
           } else {
             htmlToInsert = `<a href="${dataUrl}" download="${file.name}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; text-decoration: underline; font-weight: 500; font-size: 12px; margin: 4px 0; color: inherit;">📎 ${file.name}</a>`;
           }
-
-          if (activePlatform === "whatsapp") {
-            setComposeMessage((prev) =>
-              prev ? `${prev}\n[File: ${file.name}]` : `[File: ${file.name}]`,
-            );
-          } else {
-            insertHtmlAtCursor(htmlToInsert);
-          }
+          insertHtmlAtCursor(htmlToInsert);
         }
       };
       reader.readAsDataURL(file);
@@ -489,14 +560,22 @@ function CrmBlastPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleRemoveBlastAttachment = (index: number) => {
+    setBlastAttachments((currentAttachments) =>
+      currentAttachments.filter((_, itemIndex) => itemIndex !== index),
+    );
+  };
+
   const handleConfirmSchedule = async () => {
     const targetList = parseTargetList(
       targetGroup,
       activePlatform === "website" ? "" : manualInput,
     );
 
-    if (!campaignName.trim() || !composeMessage.trim() || !targetList.length || !scheduleTime)
-      return;
+    const hasMessageContent =
+      composeMessage.trim() || (activePlatform === "whatsapp" && blastAttachments.length > 0);
+
+    if (!campaignName.trim() || !hasMessageContent || !targetList.length || !scheduleTime) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
 
     setSendBlastError("");
@@ -586,8 +665,8 @@ function CrmBlastPage() {
 
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
-        body: composeMessage,
-        attachments: [],
+        body: composeMessage.trim(),
+        attachments: activePlatform === "whatsapp" ? blastAttachments.map((att) => att.url) : [],
         channelType: activePlatform,
         broadcastType: "scheduled",
         schedule: new Date(scheduleTime).toISOString(),
@@ -597,6 +676,10 @@ function CrmBlastPage() {
       await blastHistoriesQuery.refetch();
       setIsScheduleModalOpen(false);
       setViewMode("list");
+      setBlastAttachments([]);
+      if (activePlatform === "whatsapp") {
+        queueBlastHistoryRefetches();
+      }
     } catch (error) {
       setSendBlastError(error instanceof Error ? error.message : "Gagal menjadwalkan blast.");
       setIsScheduleModalOpen(false);
@@ -700,11 +783,15 @@ function CrmBlastPage() {
   const hasInvalidTargets = parsedTargets.some((t) => !isValidHandle(t));
 
   const hasTargets = parsedTargets.length > 0;
+  const hasMessageContent =
+    Boolean(composeMessage.trim()) ||
+    (activePlatform === "whatsapp" && blastAttachments.length > 0);
   const isFormValid =
     campaignName.trim() &&
-    composeMessage.trim() &&
+    hasMessageContent &&
     hasTargets &&
     !hasInvalidTargets &&
+    !isUploadingAttachment &&
     !isSendingBlast &&
     (activePlatform === "whatsapp" || composeSubject.trim());
 
@@ -928,7 +1015,7 @@ function CrmBlastPage() {
               </div>
 
               {/* Dari Row */}
-              <div className="flex items-center justify-between border-b border-border/70 py-3.5 px-5 bg-card shrink-0">
+              {/* <div className="flex items-center justify-between border-b border-border/70 py-3.5 px-5 bg-card shrink-0">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-semibold text-muted-foreground w-12">Dari</span>
                   <span className="text-xs font-bold text-foreground">
@@ -936,7 +1023,7 @@ function CrmBlastPage() {
                   </span>
                 </div>
                 <ChevronDown className="h-4 w-4 text-muted-foreground cursor-pointer opacity-60" />
-              </div>
+              </div> */}
 
               {/* Kepada Row (Contains Chip Tags + Import Button - Max Height scrollbar applied) */}
               <div className="flex items-start justify-between border-b border-border/70 py-3 px-5 bg-card gap-4 shrink-0">
@@ -1069,22 +1156,70 @@ function CrmBlastPage() {
                 {activePlatform === "whatsapp" ? (
                   <div className="flex flex-col flex-1 min-h-[300px]">
                     <textarea
-                      required
+                      required={blastAttachments.length === 0}
                       placeholder="Tulis pesan broadcast Anda..."
                       value={composeMessage}
                       onChange={(e) => setComposeMessage(e.target.value)}
                       className="w-full flex-1 bg-transparent border-0 outline-none p-5 text-sm resize-none focus:ring-0 focus:outline-none placeholder:text-muted-foreground/50"
                     />
+                    {(blastAttachments.length > 0 || isUploadingAttachment) && (
+                      <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto border-t border-border/60 bg-muted/10 px-5 py-2.5">
+                        {blastAttachments.map((attachment, index) => {
+                          const AttachmentIcon = isImageAttachment(attachment)
+                            ? ImageIcon
+                            : isVideoAttachment(attachment)
+                              ? VideoIcon
+                              : FileText;
+
+                          return (
+                            <div
+                              key={`${attachment.url}-${index}`}
+                              className="flex max-w-[240px] items-center gap-2 rounded border border-border bg-background px-2.5 py-1.5 text-xs shadow-sm"
+                            >
+                              <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                              <a
+                                href={attachment.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="min-w-0 flex-1 truncate font-semibold text-foreground hover:underline"
+                                title={attachment.name}
+                              >
+                                {attachment.name}
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBlastAttachment(index)}
+                                className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label={`Hapus ${attachment.name}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {isUploadingAttachment && (
+                          <div className="flex items-center gap-2 rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5 text-xs font-semibold text-blue-600">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Mengunggah lampiran...
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex justify-end p-2 bg-muted/20 border-t border-border/60">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
+                        disabled={isUploadingAttachment}
                         onClick={() => fileInputRef.current?.click()}
                         className="h-8 gap-1.5 px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
                       >
-                        <Paperclip className="h-3.5 w-3.5" />
-                        Lampirkan File/Foto/Video
+                        {isUploadingAttachment ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Paperclip className="h-3.5 w-3.5" />
+                        )}
+                        {isUploadingAttachment ? "Mengunggah..." : "Lampirkan File/Foto/Video"}
                       </Button>
                     </div>
                   </div>
