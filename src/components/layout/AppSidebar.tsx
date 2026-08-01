@@ -27,6 +27,8 @@ import {
   GalleryHorizontal,
   Shield,
   Coins,
+  Activity,
+  BellRing,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -98,6 +100,11 @@ const NAV: NavItem[] = [
       { label: "Payment", to: "/workspace/payment", icon: CreditCard },
       { label: "RSS", to: "/workspace/rss", icon: Rss },
     ],
+  },
+  {
+    label: "Monitoring",
+    icon: Activity,
+    children: [{ label: "System Alert", to: "/monitoring/system", icon: BellRing }],
   },
   { label: "Financing", icon: Wallet, to: "/financing" },
   {
@@ -260,11 +267,13 @@ function SidebarItem({
   pathname: string;
 }) {
   const hasChildren = !!item.children?.length;
-  const isChildActive = hasChildren && item.children!.some((c) => {
-    if (c.to && pathname.startsWith(c.to)) return true;
-    if (c.children?.some((sc) => pathname.startsWith(sc.to))) return true;
-    return false;
-  });
+  const isChildActive =
+    hasChildren &&
+    item.children!.some((c) => {
+      if (c.to && pathname.startsWith(c.to)) return true;
+      if (c.children?.some((sc) => pathname.startsWith(sc.to))) return true;
+      return false;
+    });
   const [open, setOpen] = useState(isChildActive);
   const Icon = item.icon;
 
@@ -344,15 +353,10 @@ function SidebarItem({
   );
 }
 
-function SidebarChildItem({
-  child,
-  pathname,
-}: {
-  child: NavChild;
-  pathname: string;
-}) {
+function SidebarChildItem({ child, pathname }: { child: NavChild; pathname: string }) {
   const hasSubChildren = !!child.children?.length;
-  const isSubChildActive = hasSubChildren && child.children!.some((sc) => pathname.startsWith(sc.to));
+  const isSubChildActive =
+    hasSubChildren && child.children!.some((sc) => pathname.startsWith(sc.to));
   const [open, setOpen] = useState(isSubChildActive);
   const ChildIcon = child.icon;
 

@@ -219,10 +219,45 @@ export interface ChatAttachmentPayload {
   attachmentType: ChatAttachmentType;
 }
 
-interface UploadCustomerServiceAttachmentPayload {
-  name: string;
-  type: string;
+interface RemoteAssetUploadInstruction {
+  method?: string | null;
+  url?: string | null;
+  headers?: Record<string, string> | null;
+  expiresAt?: string | null;
+}
+
+interface RemoteUploadedAsset {
+  id?: number | string | null;
+  contentHash?: string | null;
+  isDuplicate?: boolean | null;
+  provider?: string | null;
+  status?: "pending" | "ready" | "failed" | string | null;
+  assetUrl?: string | null;
+  size?: number | null;
+  mimeType?: string | null;
+  extension?: string | null;
+  assetKind?: ChatAttachmentType | string | null;
+  originalFilename?: string | null;
+  upload?: RemoteAssetUploadInstruction | null;
+}
+
+interface AssetPresignPayload {
+  contentHash: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+interface AssetConfirmPayload {
+  assetId: number | string;
+  contentHash: string;
+}
+
+interface AssetServerUploadPayload {
+  asset: RemoteUploadedAsset;
   dataUrl: string;
+  mimeType: string;
+  size: number;
 }
 
 export interface WhatsappBlastContact {
@@ -354,6 +389,60 @@ async function apiRequest<T>(path: string, init: RequestInit = {}) {
   return payload;
 }
 
+function getExtension(value: string) {
+  return value.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+}
+
+const SUPPORTED_ASSETS = [
+  { mimeType: "image/jpeg", extensions: ["jpg", "jpeg"], maxSize: 10 * 1024 * 1024 },
+  { mimeType: "image/png", extensions: ["png"], maxSize: 10 * 1024 * 1024 },
+  { mimeType: "image/webp", extensions: ["webp"], maxSize: 10 * 1024 * 1024 },
+  { mimeType: "application/pdf", extensions: ["pdf"], maxSize: 25 * 1024 * 1024 },
+  { mimeType: "audio/mpeg", extensions: ["mp3"], maxSize: 25 * 1024 * 1024 },
+  { mimeType: "application/ogg", extensions: ["ogg"], maxSize: 25 * 1024 * 1024 },
+  { mimeType: "audio/wave", extensions: ["wav"], maxSize: 25 * 1024 * 1024 },
+  { mimeType: "video/mp4", extensions: ["mp4"], maxSize: 16 * 1024 * 1024 },
+] as const;
+
+function normalizeAttachmentMimeType(file: File) {
+  const extension = getExtension(file.name);
+  const browserMime = file.type.toLowerCase().trim();
+  const normalizedMime =
+    browserMime === "image/jpg"
+      ? "image/jpeg"
+      : browserMime === "audio/wav" || browserMime === "audio/x-wav"
+        ? "audio/wave"
+        : browserMime;
+
+  const byExtension = SUPPORTED_ASSETS.find((asset) => asset.extensions.includes(extension ?? ""));
+  const byMime = SUPPORTED_ASSETS.find((asset) => asset.mimeType === normalizedMime);
+  const asset = byExtension ?? byMime;
+
+  if (!asset) {
+    throw new Error("Tipe lampiran belum didukung oleh Asset Uploader.");
+  }
+
+  if (file.size > asset.maxSize) {
+    const maxMiB = Math.floor(asset.maxSize / 1024 / 1024);
+    throw new Error(`Ukuran lampiran melebihi batas ${maxMiB} MiB.`);
+  }
+
+  return asset.mimeType;
+}
+
+async function sha256Hex(file: File) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Browser tidak mendukung SHA-256 untuk upload asset.");
+  }
+
+  const bytes = await file.arrayBuffer();
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -389,8 +478,138 @@ function dataUrlToBlob(dataUrl: string, fallbackType: string) {
   return new Blob([bytes], { type: mimeType });
 }
 
-function getExtension(value: string) {
-  return value.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+function uploadHeaders(headers?: Record<string, string> | null) {
+  const nextHeaders = new Headers();
+
+  Object.entries(headers ?? {}).forEach(([key, value]) => {
+    if (key.toLowerCase() === "host") return;
+    nextHeaders.set(key, value);
+  });
+
+  return nextHeaders;
+}
+
+const presignAssetServer = createServerFn({ method: "POST" })
+  .validator((data: AssetPresignPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteUploadedAsset>("/api/app/asset-uploader/presign", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const confirmAssetServer = createServerFn({ method: "POST" })
+  .validator((data: AssetConfirmPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteUploadedAsset>("/api/app/asset-uploader/confirm", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const uploadPresignedAssetServer = createServerFn({ method: "POST" })
+  .validator((data: AssetServerUploadPayload) => data)
+  .handler(async ({ data }) => {
+    const upload = data.asset.upload;
+    if (data.asset.id == null || !data.asset.contentHash || !upload?.url) {
+      throw new Error("Response presign asset tidak lengkap.");
+    }
+
+    const fileBlob = dataUrlToBlob(data.dataUrl, data.mimeType);
+    if (fileBlob.size !== data.size) {
+      throw new Error("Ukuran lampiran berubah sebelum upload R2.");
+    }
+
+    const uploadResponse = await fetch(upload.url, {
+      method: upload.method || "PUT",
+      headers: uploadHeaders(upload.headers),
+      body: fileBlob,
+    });
+
+    if (!uploadResponse.ok && uploadResponse.status !== 412) {
+      throw new Error(`Upload R2 gagal dengan status ${uploadResponse.status}.`);
+    }
+
+    const response = await apiRequest<RemoteUploadedAsset>("/api/app/asset-uploader/confirm", {
+      method: "POST",
+      body: JSON.stringify({
+        assetId: data.asset.id,
+        contentHash: data.asset.contentHash,
+      }),
+    });
+
+    return response.data;
+  });
+
+function presignAsset(payload: AssetPresignPayload) {
+  return presignAssetServer({ data: payload });
+}
+
+function confirmAsset(asset: RemoteUploadedAsset) {
+  if (asset.id == null || !asset.contentHash) {
+    throw new Error("Response presign asset tidak lengkap.");
+  }
+
+  return confirmAssetServer({
+    data: {
+      assetId: asset.id,
+      contentHash: asset.contentHash,
+    },
+  });
+}
+
+function uploadPresignedAsset(
+  asset: RemoteUploadedAsset,
+  payload: Omit<AssetServerUploadPayload, "asset">,
+) {
+  return uploadPresignedAssetServer({
+    data: {
+      asset,
+      ...payload,
+    },
+  });
+}
+
+async function uploadAssetToR2(file: File) {
+  const mimeType = normalizeAttachmentMimeType(file);
+  const contentHash = await sha256Hex(file);
+  const presignedAsset = await presignAsset({
+    contentHash,
+    filename: file.name || "attachment",
+    mimeType,
+    size: file.size,
+  });
+
+  if (presignedAsset.status === "ready" && presignedAsset.upload == null) {
+    const cachedUrl = presignedAsset.assetUrl?.trim();
+    if (!cachedUrl) throw new Error("Asset siap tetapi URL tidak tersedia.");
+    return { url: cachedUrl, mimeType: presignedAsset.mimeType ?? mimeType };
+  }
+
+  const upload = presignedAsset.upload;
+  if (presignedAsset.status !== "pending" || !upload?.url) {
+    throw new Error("State upload asset dari backend tidak valid.");
+  }
+
+  const confirmedAsset = await uploadPresignedAsset(presignedAsset, {
+    dataUrl: await readFileAsDataUrl(file),
+    mimeType,
+    size: file.size,
+  });
+  if (confirmedAsset.status !== "ready") {
+    throw new Error("Asset belum ready setelah confirm.");
+  }
+
+  const assetUrl = confirmedAsset.assetUrl?.trim();
+  if (!assetUrl) {
+    throw new Error("Confirm asset berhasil tetapi URL tidak tersedia.");
+  }
+
+  return { url: assetUrl, mimeType: confirmedAsset.mimeType ?? mimeType };
 }
 
 export function getAttachmentType(name: string, mimeType?: string | null): ChatAttachmentType {
@@ -526,48 +745,6 @@ const replyWebsiteTicketServer = createServerFn({ method: "POST" })
       },
     );
     return response.data;
-  });
-
-const uploadCustomerServiceAttachmentServer = createServerFn({ method: "POST" })
-  .validator((data: UploadCustomerServiceAttachmentPayload) => data)
-  .handler(async ({ data }) => {
-    const fileBlob = dataUrlToBlob(data.dataUrl, data.type);
-    const formData = new FormData();
-
-    formData.append("image", fileBlob, data.name || "attachment");
-
-    const response = await fetch(buildUrl("/api/app/image-uploader/upload-single-image"), {
-      method: "POST",
-      headers: authHeaders(false),
-      body: formData,
-    });
-    const payload = (await response.json().catch(() => null)) as ApiResponse<
-      string | { imageUrl?: string | null; url?: string | null }
-    > | null;
-
-    const responseData = payload?.data;
-    const url =
-      typeof responseData === "string"
-        ? responseData
-        : typeof responseData?.imageUrl === "string"
-          ? responseData.imageUrl
-          : typeof responseData?.url === "string"
-            ? responseData.url
-            : "";
-
-    if (!response.ok || !url) {
-      throw new Error(
-        payload?.metaData?.message ||
-          payload?.responseMessage ||
-          `Upload lampiran gagal dengan status ${response.status}.`,
-      );
-    }
-
-    return {
-      name: data.name || "attachment",
-      url,
-      type: data.type || fileBlob.type,
-    } satisfies UploadedAttachment;
   });
 
 const updateWebsiteTicketStatusServer = createServerFn({ method: "POST" })
@@ -1033,15 +1210,13 @@ export function replyWebsiteTicket(ticketId: number, payload: ReplyWebsitePayloa
 }
 
 export async function uploadCustomerServiceAttachment(file: File): Promise<UploadedAttachment> {
-  const dataUrl = await readFileAsDataUrl(file);
+  const asset = await uploadAssetToR2(file);
 
-  return uploadCustomerServiceAttachmentServer({
-    data: {
-      name: file.name,
-      type: file.type,
-      dataUrl,
-    },
-  });
+  return {
+    name: file.name || "attachment",
+    url: asset.url,
+    type: asset.mimeType,
+  };
 }
 
 export function updateWebsiteTicketStatus(ticketId: number, status: RemoteTicketStatus) {

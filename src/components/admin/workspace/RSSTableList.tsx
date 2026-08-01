@@ -1,115 +1,111 @@
-import React, { useState } from "react";
-import { RSSItem } from "./types";
+import React, { useMemo, useState } from "react";
 import {
-  Plus,
-  Edit3,
-  Search,
-  Rss,
-  CheckCircle2,
-  Clock,
-  X,
-  ExternalLink,
-  Timer,
   AlertCircle,
+  Edit3,
+  ExternalLink,
+  FolderTree,
   Loader2,
+  Plus,
   RefreshCw,
+  Rss,
+  Search,
+  X,
 } from "lucide-react";
+
+import type { RSSCategoryItem, RSSItem } from "./types";
 
 interface RSSTableListProps {
   items: RSSItem[];
+  categories?: RSSCategoryItem[];
+  selectedCategoryId?: string;
   isLoading?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
   onCreateNew?: () => void;
   onEdit?: (item: RSSItem) => void;
-  onToggleStatus?: (id: string) => void;
   onRetry?: () => void;
+  onCategoryChange?: (categoryId: string) => void;
+}
+
+function formatDate(value?: string) {
+  if (!value) return "-";
+
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return "-";
+  }
 }
 
 function TableRow({
   item,
   isReadOnly,
   onEdit,
-  onToggleStatus,
   onRowClick,
 }: {
   item: RSSItem;
   isReadOnly?: boolean;
   onEdit?: (item: RSSItem) => void;
-  onToggleStatus?: (id: string) => void;
   onRowClick: () => void;
 }) {
   return (
     <tr
       onClick={onRowClick}
-      className="group transition-colors border-b border-border/60 hover:bg-muted/40 bg-card cursor-pointer"
+      className="group cursor-pointer border-b border-border/60 bg-card transition-colors hover:bg-muted/40"
     >
-      <td className="py-4 px-4">
+      <td className="px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl border border-border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
             {item.logoUrl ? (
               <img
                 src={item.logoUrl}
                 alt={item.name}
                 className="h-7 w-7 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
+                onError={(event) => {
+                  (event.target as HTMLImageElement).style.display = "none";
                 }}
               />
             ) : (
               <Rss className="h-4 w-4 text-muted-foreground" />
             )}
           </div>
-          <span className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
-            {item.name}
-          </span>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+              {item.name}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">{item.publisher}</span>
+          </div>
         </div>
       </td>
-      <td className="py-4 px-4 max-w-[200px]">
-        <span className="text-xs text-primary hover:underline truncate block">
-          {item.sourceUrl}
+      <td className="px-4 py-4">
+        <span className="inline-flex max-w-[180px] items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+          <FolderTree className="h-3 w-3 shrink-0" />
+          <span className="truncate">{item.categoryName || "-"}</span>
         </span>
       </td>
-      <td className="py-4 px-4 whitespace-nowrap">
-        <span className="text-xs text-muted-foreground">{item.updateInterval}</span>
+      <td className="max-w-[280px] px-4 py-4">
+        <span className="block truncate text-xs font-medium text-primary">{item.sourceUrl}</span>
       </td>
-      <td className="py-4 px-4 whitespace-nowrap">
-        {item.status === "Active" ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-            <CheckCircle2 className="h-3 w-3" />
-            Active
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-            <Clock className="h-3 w-3" />
-            Inactive
-          </span>
-        )}
+      <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">
+        {formatDate(item.updatedAt ?? item.createdAt)}
       </td>
-      {!isReadOnly && onEdit && onToggleStatus && (
+      {!isReadOnly && onEdit && (
         <td
-          className="py-4 pr-4 pl-3 text-right whitespace-nowrap"
+          className="whitespace-nowrap py-4 pl-3 pr-4 text-right"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => onEdit(item)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
-            >
-              <Edit3 className="h-3.5 w-3.5" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => onToggleStatus(item.id)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${item.status === "Active" ? "bg-emerald-500" : "bg-muted-foreground/30"}`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${item.status === "Active" ? "translate-x-4" : "translate-x-0.5"}`}
-              />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => onEdit(item)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            Edit
+          </button>
         </td>
       )}
     </tr>
@@ -129,87 +125,82 @@ function RSSDetailModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
       >
-        <div className="h-20 bg-gradient-to-br from-orange-500/20 via-orange-500/10 to-transparent" />
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/10 hover:bg-black/25 text-white transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="px-6 pb-6 pt-6 space-y-4">
-          <div className="text-center pt-2">
-            <div className="h-16 w-16 rounded-2xl border-4 border-card shadow-md overflow-hidden bg-muted mx-auto flex items-center justify-center">
+        <div className="border-b border-border/70 bg-muted/30 px-6 py-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 rounded-lg bg-background/80 p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
               {item.logoUrl ? (
-                <img src={item.logoUrl} alt={item.name} className="h-12 w-12 object-contain" />
+                <img src={item.logoUrl} alt={item.name} className="h-9 w-9 object-contain" />
               ) : (
-                <Rss className="h-6 w-6 text-muted-foreground" />
+                <Rss className="h-5 w-5 text-muted-foreground" />
               )}
             </div>
-            <h3 className="text-base font-bold text-foreground mt-3">{item.name}</h3>
-            <p className="text-xs text-muted-foreground">RSS Feed Source</p>
-          </div>
-
-          <div className="border-t border-border/60 pt-4 space-y-3 text-left">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
-                URL RSS Feed
-              </span>
-              <a
-                href={item.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-primary hover:underline font-medium break-all flex items-center gap-1"
-              >
-                {item.sourceUrl} <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            </div>
-
-            <div className="flex items-center justify-between text-xs border-t border-border/40 pt-3 text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Timer className="h-3.5 w-3.5" /> Interval Sinkronisasi
-              </span>
-              <span className="font-semibold text-foreground">{item.updateInterval}</span>
-            </div>
-
-            <div className="flex items-center justify-between text-xs border-t border-border/40 pt-2 text-muted-foreground">
-              <span>Status</span>
-              {item.status === "Active" ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-                  Active
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-                  Inactive
-                </span>
-              )}
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-bold text-foreground">{item.name}</h3>
+              <p className="truncate text-xs text-muted-foreground">{item.publisher}</p>
             </div>
           </div>
+        </div>
 
-          <div className="flex gap-2 pt-2 border-t border-border/40">
+        <div className="space-y-4 px-6 py-5 text-left">
+          <div className="space-y-1">
+            <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              URL RSS Feed
+            </span>
+            <a
+              href={item.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 break-all text-xs font-medium text-primary hover:underline"
+            >
+              {item.sourceUrl}
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </a>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+              <span className="block text-muted-foreground">Category</span>
+              <span className="mt-1 block font-semibold text-foreground">
+                {item.categoryName || "-"}
+              </span>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+              <span className="block text-muted-foreground">Updated</span>
+              <span className="mt-1 block font-semibold text-foreground">
+                {formatDate(item.updatedAt ?? item.createdAt)}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-2 border-t border-border/40 pt-2">
             {!isReadOnly && onEdit && (
               <button
                 type="button"
                 onClick={onEdit}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90"
               >
                 <Edit3 className="h-3.5 w-3.5" />
-                Edit RSS
+                Edit
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className={`${isReadOnly ? "flex-1" : "px-4"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
+              className={`${isReadOnly ? "flex-1" : "px-4"} rounded-lg border border-border bg-muted py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground`}
             >
               Tutup
             </button>
@@ -222,76 +213,100 @@ function RSSDetailModal({
 
 export function RSSTableList({
   items,
+  categories = [],
+  selectedCategoryId = "",
   isLoading = false,
   errorMessage,
   isReadOnly = false,
   onCreateNew,
   onEdit,
-  onToggleStatus,
   onRetry,
+  onCategoryChange,
 }: RSSTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRss, setSelectedRss] = useState<RSSItem | null>(null);
 
-  const filtered = items.filter(
-    (item) =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.sourceUrl.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filtered = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.publisher.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.categoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.sourceUrl.toLowerCase().includes(searchQuery.toLowerCase()),
+      ),
+    [items, searchQuery],
   );
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-orange-500/5 p-6 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs font-semibold text-orange-600 dark:text-orange-400">
+              <span className="inline-flex items-center gap-1 rounded-md bg-orange-500/10 px-2.5 py-0.5 text-xs font-semibold text-orange-600 dark:text-orange-400">
                 <Rss className="h-3.5 w-3.5" />
                 RSS
               </span>
-              <span className="text-xs text-muted-foreground font-mono">Workspace / RSS</span>
+              <span className="text-xs font-mono text-muted-foreground">Workspace / RSS</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">RSS Feed Manager</h1>
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              Kelola sumber RSS feed untuk konten platform Postmatic.
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              RSS Source Manager
+            </h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Kelola source dan category RSS yang tersedia untuk seluruh workspace.
             </p>
           </div>
           {!isReadOnly && onCreateNew && (
             <button
               type="button"
               onClick={onCreateNew}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" />
-              Create New RSS
+              New Source
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex items-center gap-3 bg-card p-4 rounded-xl border border-border/60 shadow-sm">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm md:flex-row md:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Cari nama atau URL RSS feed..."
+            placeholder="Cari title, publisher, category, atau URL..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
+        {onCategoryChange && (
+          <select
+            value={selectedCategoryId}
+            onChange={(event) => onCategoryChange(event.target.value)}
+            className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 md:w-56"
+          >
+            <option value="">Semua category</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="max-h-[520px] overflow-auto md:max-h-[calc(100vh-22rem)]">
-          <table className="w-full min-w-[760px] text-left border-collapse">
+          <table className="w-full min-w-[860px] border-collapse text-left">
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-border bg-muted text-xs font-semibold text-muted-foreground shadow-sm">
-                <th className="py-3 px-4">Logo & Nama</th>
-                <th className="py-3 px-4">Sumber RSS</th>
-                <th className="py-3 px-4">Interval Update</th>
-                <th className="py-3 px-4">Status</th>
-                {!isReadOnly && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Category</th>
+                <th className="px-4 py-3">URL</th>
+                <th className="px-4 py-3">Updated</th>
+                {!isReadOnly && <th className="py-3 pl-3 pr-4 text-right">Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -300,7 +315,7 @@ export function RSSTableList({
                   <td colSpan={isReadOnly ? 4 : 5} className="py-12 text-center">
                     <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Memuat RSS feed...
+                      Memuat RSS source...
                     </div>
                   </td>
                 </tr>
@@ -310,14 +325,14 @@ export function RSSTableList({
                     <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
                       <div className="inline-flex items-center gap-2 font-semibold text-destructive">
                         <AlertCircle className="h-4 w-4" />
-                        Gagal memuat RSS feed.
+                        Gagal memuat RSS source.
                       </div>
                       <p className="text-xs">{errorMessage}</p>
                       {onRetry && (
                         <button
                           type="button"
                           onClick={onRetry}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
                           Coba lagi
@@ -334,7 +349,7 @@ export function RSSTableList({
                   >
                     <div className="flex flex-col items-center gap-2">
                       <Rss className="h-8 w-8 text-muted-foreground/50" />
-                      <p className="text-sm font-medium">Tidak ada RSS feed yang ditemukan.</p>
+                      <p className="text-sm font-medium">Tidak ada RSS source yang ditemukan.</p>
                     </div>
                   </td>
                 </tr>
@@ -345,7 +360,6 @@ export function RSSTableList({
                     item={item}
                     isReadOnly={isReadOnly}
                     onEdit={onEdit}
-                    onToggleStatus={onToggleStatus}
                     onRowClick={() => setSelectedRss(item)}
                   />
                 ))
@@ -353,13 +367,12 @@ export function RSSTableList({
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
+        <div className="border-t border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
           Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong> RSS
-          feed
+          source
         </div>
       </div>
 
-      {/* Detail Modal */}
       {selectedRss && (
         <RSSDetailModal
           item={selectedRss}

@@ -24,8 +24,36 @@ export interface RemoteRssFeed {
   url?: string | null;
   publisher?: string | null;
   masterRssCategoryId?: number | string | null;
+  appRssCategoryId?: number | string | null;
+  categoryId?: number | string | null;
+  category?: RemoteRssCategory | null;
+  masterRssCategory?: RemoteRssCategory | null;
+  rssCategory?: RemoteRssCategory | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export interface RemoteRssCategory {
+  id: number | string;
+  name?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RssFeedQuery {
+  category?: string;
+  search?: string;
+}
+
+export interface RssFeedPayload {
+  title: string;
+  url: string;
+  publisher: string;
+  appRssCategoryId: number;
+}
+
+export interface RssCategoryPayload {
+  name: string;
 }
 
 export type GenerativeModelType = "image" | "text";
@@ -174,13 +202,101 @@ function generativeModelPath(type: GenerativeModelType) {
   return type === "image" ? "/api/app/generative-image-model" : "/api/app/generative-text-model";
 }
 
-const getRssFeedsServer = createServerFn({ method: "GET" }).handler(async () => {
-  return apiRequestAllPages<RemoteRssFeed>("/api/app/rss", {
+const getRssCategoriesServer = createServerFn({ method: "GET" }).handler(async () => {
+  return apiRequestAllPages<RemoteRssCategory>("/api/app/rss/category", {
     limit: 100,
     sort: "asc",
-    sortBy: "title",
+    sortBy: "name",
   });
 });
+
+const getRssFeedsServer = createServerFn({ method: "GET" })
+  .validator((data: RssFeedQuery = {}) => data)
+  .handler(async ({ data }) => {
+    return apiRequestAllPages<RemoteRssFeed>("/api/app/rss", {
+      limit: 100,
+      sort: "asc",
+      sortBy: "title",
+      category: data.category,
+      search: data.search,
+    });
+  });
+
+const createRssCategoryServer = createServerFn({ method: "POST" })
+  .validator((data: RssCategoryPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssCategory>("/api/app/rss/category", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const updateRssCategoryServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: RssCategoryPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssCategory>(
+      `/api/app/rss/category/${encodeURIComponent(data.id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteRssCategoryServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssCategory>(
+      `/api/app/rss/category/${encodeURIComponent(data.id)}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    return response.data;
+  });
+
+const createRssFeedServer = createServerFn({ method: "POST" })
+  .validator((data: RssFeedPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssFeed>("/api/app/rss", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const updateRssFeedServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: RssFeedPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssFeed>(
+      `/api/app/rss/${encodeURIComponent(data.id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteRssFeedServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteRssFeed>(
+      `/api/app/rss/${encodeURIComponent(data.id)}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    return response.data;
+  });
 
 const getGenerativeModelsServer = createServerFn({ method: "GET" })
   .validator((data: { type: GenerativeModelType }) => data)
@@ -258,8 +374,36 @@ const upsertReferralRuleServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
-export function getRssFeeds() {
-  return getRssFeedsServer();
+export function getRssCategories() {
+  return getRssCategoriesServer();
+}
+
+export function getRssFeeds(query: RssFeedQuery = {}) {
+  return getRssFeedsServer({ data: query });
+}
+
+export function createRssCategory(payload: RssCategoryPayload) {
+  return createRssCategoryServer({ data: payload });
+}
+
+export function updateRssCategory(id: string, payload: RssCategoryPayload) {
+  return updateRssCategoryServer({ data: { id, payload } });
+}
+
+export function deleteRssCategory(id: string) {
+  return deleteRssCategoryServer({ data: { id } });
+}
+
+export function createRssFeed(payload: RssFeedPayload) {
+  return createRssFeedServer({ data: payload });
+}
+
+export function updateRssFeed(id: string, payload: RssFeedPayload) {
+  return updateRssFeedServer({ data: { id, payload } });
+}
+
+export function deleteRssFeed(id: string) {
+  return deleteRssFeedServer({ data: { id } });
 }
 
 export function getGenerativeModels(type: GenerativeModelType) {

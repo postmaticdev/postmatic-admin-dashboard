@@ -32,8 +32,26 @@ export interface RSSItem {
   name: string;
   logoUrl: string;
   sourceUrl: string;
-  updateInterval: string;
+  publisher: string;
+  categoryId: string;
+  categoryName: string;
+  createdAt?: string;
+  updatedAt?: string;
   status: "Active" | "Inactive";
+}
+
+export interface RSSCategoryItem {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RSSFormValues {
+  name: string;
+  sourceUrl: string;
+  publisher: string;
+  categoryId: string;
 }
 
 export const initialImageModels: AIModelItem[] = [
@@ -129,7 +147,9 @@ export const initialRSSFeeds: RSSItem[] = [
     name: "TechCrunch",
     logoUrl: "https://techcrunch.com/favicon.ico",
     sourceUrl: "https://techcrunch.com/feed/",
-    updateInterval: "30 menit",
+    publisher: "TechCrunch",
+    categoryId: "1",
+    categoryName: "Technology",
     status: "Active",
   },
   {
@@ -137,7 +157,9 @@ export const initialRSSFeeds: RSSItem[] = [
     name: "The Verge",
     logoUrl: "https://www.theverge.com/favicon.ico",
     sourceUrl: "https://www.theverge.com/rss/index.xml",
-    updateInterval: "1 jam",
+    publisher: "The Verge",
+    categoryId: "1",
+    categoryName: "Technology",
     status: "Active",
   },
 ];
