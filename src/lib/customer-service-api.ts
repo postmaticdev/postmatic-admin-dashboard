@@ -181,6 +181,9 @@ export interface ReplyWhatsappPayload {
   body: string;
   quotedWhatsappMessageId?: number;
   attachment?: string;
+  attachmentFilename?: string;
+  attachmentMimeType?: string;
+  attachmentType?: ChatAttachmentType;
 }
 
 export interface ReplyWebsitePayload {
@@ -193,6 +196,27 @@ export interface UploadedAttachment {
   name: string;
   url: string;
   type: string;
+}
+
+export type ChatAttachmentType = "image" | "video" | "audio" | "document";
+
+export interface RemoteChatAttachment {
+  id?: number | null;
+  position?: number | null;
+  url?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  attachmentType?: ChatAttachmentType | string | null;
+  sizeBytes?: number | null;
+}
+
+export type RemoteChatAttachmentValue = string | RemoteChatAttachment;
+
+export interface ChatAttachmentPayload {
+  url: string;
+  filename: string;
+  mimeType: string;
+  attachmentType: ChatAttachmentType;
 }
 
 interface UploadCustomerServiceAttachmentPayload {
@@ -223,7 +247,7 @@ export interface ChatBlastTargetsPayload {
 export interface ChatBlastPayload {
   subject: string;
   body: string;
-  attachments?: string[];
+  attachments?: ChatAttachmentPayload[];
   channelType: "whatsapp" | "gmail" | "website";
   broadcastType: "direct" | "scheduled";
   schedule: string | null;
@@ -234,7 +258,7 @@ export interface RemoteChatBlastHistory {
   id: number;
   subject?: string | null;
   body?: string | null;
-  attachments?: string[] | null;
+  attachments?: RemoteChatAttachmentValue[] | null;
   channelType?: "whatsapp" | "gmail" | "website" | string | null;
   totalAssign?: number | null;
   succeedAssign?: number | null;
@@ -250,7 +274,7 @@ export interface RemoteNotificationChatBlast {
   id?: number | null;
   subject?: string | null;
   body?: string | null;
-  attachments?: string[] | null;
+  attachments?: RemoteChatAttachmentValue[] | null;
   channelType?: "whatsapp" | "gmail" | "website" | string | null;
   broadcastType?: string | null;
   status?: string | null;
@@ -271,6 +295,8 @@ export interface RemoteNotification {
 
 export interface RemoteNotificationUnreadCount {
   totalUnread?: number | null;
+  blastMessages?: number | null;
+  ticketRepliesForCustomer?: number | null;
 }
 
 export type RemoteTicketStatus = "open" | "pending" | "in_progress" | "resolved";
@@ -361,6 +387,95 @@ function dataUrlToBlob(dataUrl: string, fallbackType: string) {
     : new TextEncoder().encode(decodeURIComponent(data));
 
   return new Blob([bytes], { type: mimeType });
+}
+
+function getExtension(value: string) {
+  return value.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+}
+
+export function getAttachmentType(name: string, mimeType?: string | null): ChatAttachmentType {
+  const normalizedMime = mimeType?.toLowerCase() ?? "";
+  const extension = getExtension(name);
+
+  if (normalizedMime.startsWith("image/")) return "image";
+  if (normalizedMime.startsWith("video/")) return "video";
+  if (normalizedMime.startsWith("audio/")) return "audio";
+
+  if (["apng", "avif", "gif", "jpg", "jpeg", "png", "svg", "webp"].includes(extension ?? "")) {
+    return "image";
+  }
+
+  if (["mp4", "m4v", "mov", "ogg", "ogv", "webm"].includes(extension ?? "")) {
+    return "video";
+  }
+
+  if (["aac", "m4a", "mp3", "oga", "opus", "wav", "weba"].includes(extension ?? "")) {
+    return "audio";
+  }
+
+  return "document";
+}
+
+export function toChatAttachmentPayload(attachment: UploadedAttachment): ChatAttachmentPayload {
+  const filename = attachment.name || "attachment";
+  const mimeType = attachment.type || "application/octet-stream";
+
+  return {
+    url: attachment.url,
+    filename,
+    mimeType,
+    attachmentType: getAttachmentType(filename, mimeType),
+  };
+}
+
+function getAttachmentNameFromUrl(url: string, fallback: string) {
+  const rawName = url.split(/[?#]/)[0].split("/").filter(Boolean).at(-1) ?? fallback;
+
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
+export function normalizeRemoteChatAttachment(
+  attachment: RemoteChatAttachmentValue,
+  fallbackName: string,
+): ChatAttachmentPayload | null {
+  if (typeof attachment === "string") {
+    const url = attachment.trim();
+    if (!url) return null;
+
+    const filename = getAttachmentNameFromUrl(url, fallbackName);
+
+    return {
+      url,
+      filename,
+      mimeType: "application/octet-stream",
+      attachmentType: getAttachmentType(filename),
+    };
+  }
+
+  const url = attachment.url?.trim();
+  if (!url) return null;
+
+  const filename =
+    attachment.filename?.trim() || getAttachmentNameFromUrl(url, fallbackName) || fallbackName;
+  const mimeType = attachment.mimeType?.trim() || "application/octet-stream";
+  const attachmentType = attachment.attachmentType?.trim() as ChatAttachmentType | undefined;
+
+  return {
+    url,
+    filename,
+    mimeType,
+    attachmentType:
+      attachmentType === "image" ||
+      attachmentType === "video" ||
+      attachmentType === "audio" ||
+      attachmentType === "document"
+        ? attachmentType
+        : getAttachmentType(filename, mimeType),
+  };
 }
 
 const getWebsiteTicketsServer = createServerFn({ method: "GET" }).handler(async () => {
@@ -547,6 +662,21 @@ const replyWhatsappRoomServer = createServerFn({ method: "POST" })
       {
         method: "POST",
         body: JSON.stringify(data.payload),
+      },
+    );
+    return response.data;
+  });
+
+const resendWhatsappMessageServer = createServerFn({ method: "POST" })
+  .validator((data: { roomChatId: number; whatsappMessageChatId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteWhatsappMessage>(
+      `/api/chat/whatsapp/${data.roomChatId}/resend`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          whatsappMessageChatId: data.whatsappMessageChatId,
+        }),
       },
     );
     return response.data;
@@ -952,6 +1082,10 @@ export function createWhatsappRoom(payload: CreateWhatsappRoomPayload) {
 
 export function replyWhatsappRoom(roomChatId: number, payload: ReplyWhatsappPayload) {
   return replyWhatsappRoomServer({ data: { roomChatId, payload } });
+}
+
+export function resendWhatsappMessage(roomChatId: number, whatsappMessageChatId: number) {
+  return resendWhatsappMessageServer({ data: { roomChatId, whatsappMessageChatId } });
 }
 
 export function createWhatsappTicket(payload: CreateWhatsappTicketPayload) {

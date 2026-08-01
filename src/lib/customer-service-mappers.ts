@@ -378,6 +378,7 @@ export function mapWhatsappMessage(
             attachmentName(message.mediaUrl, `media-${message.id}`),
           ),
           url: message.mediaUrl,
+          type: message.mediaMimeType ?? undefined,
         },
       ]
     : undefined;

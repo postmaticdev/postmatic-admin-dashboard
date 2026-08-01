@@ -29,7 +29,7 @@ export interface TicketMessage {
   sentAt?: string | null;
   deliveredAt?: string | null;
   readAt?: string | null;
-  attachments?: { name: string; url: string }[];
+  attachments?: { name: string; url: string; type?: string }[];
   replies?: TicketMessage[];
   quotedExternalId?: number | string | null;
   quotedMessage?: { authorName: string; content: string };

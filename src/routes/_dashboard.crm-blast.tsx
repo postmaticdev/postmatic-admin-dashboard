@@ -41,7 +41,9 @@ import { useTickets } from "@/contexts/TicketsContext";
 import {
   getWhatsappBlastContacts,
   getChatBlastHistories,
+  normalizeRemoteChatAttachment,
   sendChatBlast,
+  toChatAttachmentPayload,
   uploadCustomerServiceAttachment,
   type WhatsappBlastContact,
   type RemoteChatBlastHistory,
@@ -64,6 +66,7 @@ interface BlastCampaign {
   dateTime: string;
   message: string;
   subject?: string;
+  attachments?: UploadedAttachment[];
   targets: string;
 }
 
@@ -164,6 +167,16 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
       : "whatsapp";
   const targets = (history.targets ?? []).filter(Boolean);
   const totalAssign = Number(history.totalAssign ?? 0);
+  const attachments = (history.attachments ?? [])
+    .map((attachment, index) =>
+      normalizeRemoteChatAttachment(attachment, `blast-${history.id}-${index + 1}`),
+    )
+    .filter((attachment): attachment is NonNullable<typeof attachment> => Boolean(attachment))
+    .map((attachment) => ({
+      name: attachment.filename,
+      url: attachment.url,
+      type: attachment.mimeType,
+    }));
 
   return {
     id: `remote-${history.id}`,
@@ -175,6 +188,7 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
     dateTime: formatBlastDate(history.scheduledFor ?? history.createdAt),
     message: history.body ?? "",
     subject: history.subject ?? undefined,
+    attachments: attachments.length ? attachments : undefined,
     targets: targets.join(", "),
   };
 }
@@ -445,7 +459,8 @@ function CrmBlastPage() {
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
         body: composeMessage.trim(),
-        attachments: activePlatform === "whatsapp" ? blastAttachments.map((att) => att.url) : [],
+        attachments:
+          activePlatform === "whatsapp" ? blastAttachments.map(toChatAttachmentPayload) : [],
         channelType: activePlatform,
         broadcastType: "direct",
         schedule: null,
@@ -666,7 +681,8 @@ function CrmBlastPage() {
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
         body: composeMessage.trim(),
-        attachments: activePlatform === "whatsapp" ? blastAttachments.map((att) => att.url) : [],
+        attachments:
+          activePlatform === "whatsapp" ? blastAttachments.map(toChatAttachmentPayload) : [],
         channelType: activePlatform,
         broadcastType: "scheduled",
         schedule: new Date(scheduleTime).toISOString(),
@@ -1567,6 +1583,37 @@ function CrmBlastPage() {
                     />
                   )}
                 </div>
+
+                {selectedBlast.attachments && selectedBlast.attachments.length > 0 && (
+                  <div>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Lampiran
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedBlast.attachments.map((attachment, index) => {
+                        const AttachmentIcon = isImageAttachment(attachment)
+                          ? ImageIcon
+                          : isVideoAttachment(attachment)
+                            ? VideoIcon
+                            : FileText;
+
+                        return (
+                          <a
+                            key={`${attachment.url}-${index}`}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-[220px] items-center gap-2 rounded border border-border bg-muted/35 px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                            title={attachment.name}
+                          >
+                            <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                            <span className="truncate">{attachment.name}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </ScrollArea>
 

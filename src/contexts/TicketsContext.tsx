@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import {
   createWhatsappRoom,
   createWhatsappTicket,
+  getAttachmentType,
   getChatBlastHistories,
   getRealtimeWebsocketUrl,
   getWebsiteTicketDetail,
@@ -21,7 +22,9 @@ import {
   getWhatsappMessages,
   getWhatsappRooms,
   getWhatsappTickets,
+  normalizeRemoteChatAttachment,
   refreshWhatsappRoomDisplayInfo as refreshWhatsappRoomDisplayInfoApi,
+  resendWhatsappMessage as resendWhatsappMessageApi,
   replyWebsiteTicket,
   replyWhatsappRoom,
   setTicketPinned,
@@ -33,6 +36,7 @@ import {
   type RemoteWebsiteMessage,
   type RemoteWhatsappMessage,
   type RemoteWhatsappRoom,
+  type ReplyWhatsappPayload,
   type WhatsappRoomCreateResult,
 } from "@/lib/customer-service-api";
 import {
@@ -162,11 +166,14 @@ function mapWhatsappBlastHistoryMessage(history: RemoteChatBlastHistory): Ticket
   const content =
     htmlToMessageText(history.body) || htmlToMessageText(history.subject) || `Blast #${history.id}`;
   const attachments = (history.attachments ?? [])
-    .map((url) => url?.trim())
-    .filter((url): url is string => Boolean(url))
-    .map((url, index) => ({
-      name: getAttachmentName(url, `blast-${history.id}-${index + 1}`),
-      url,
+    .map((attachment, index) =>
+      normalizeRemoteChatAttachment(attachment, `blast-${history.id}-${index + 1}`),
+    )
+    .filter((attachment): attachment is NonNullable<typeof attachment> => Boolean(attachment))
+    .map((attachment) => ({
+      name: attachment.filename,
+      url: attachment.url,
+      type: attachment.mimeType,
     }));
 
   return {
@@ -231,6 +238,7 @@ interface TicketsContextValue {
   ) => Ticket;
   updateTicketStatus: (id: string, status?: TicketStatus) => void;
   addMessage: (ticketId: string, message: Omit<TicketMessage, "id" | "createdAt">) => void;
+  resendWhatsappMessage: (ticketId: string, messageId: string) => Promise<void>;
   markAsRead: (id: string) => void;
   getDraft: <T = unknown>(key: string) => T | undefined;
   setDraft: (key: string, val: unknown) => void;
@@ -489,6 +497,56 @@ function toExternalAttachmentUrls(message: Omit<TicketMessage, "id" | "createdAt
   return (message.attachments ?? [])
     .map((attachment) => attachment.url)
     .filter((url) => url && !url.startsWith("data:"));
+}
+
+function toWhatsappAttachmentPayloads(message: Omit<TicketMessage, "id" | "createdAt">) {
+  return (message.attachments ?? [])
+    .filter((attachment) => attachment.url && !attachment.url.startsWith("data:"))
+    .map((attachment) => {
+      const filename = attachment.name || getAttachmentName(attachment.url, "attachment");
+      const mimeType = attachment.type || "application/octet-stream";
+
+      return {
+        attachment: attachment.url,
+        attachmentFilename: filename,
+        attachmentMimeType: mimeType,
+        attachmentType: getAttachmentType(filename, mimeType),
+      };
+    });
+}
+
+function buildWhatsappReplyPayloads(
+  message: Omit<TicketMessage, "id" | "createdAt">,
+): ReplyWhatsappPayload[] {
+  const body = message.content.trim();
+  const quotedWhatsappMessageId = Number(message.quotedExternalId);
+  const quotedPayload = Number.isFinite(quotedWhatsappMessageId) ? { quotedWhatsappMessageId } : {};
+  const attachments = toWhatsappAttachmentPayloads(message);
+
+  if (!attachments.length) {
+    return [
+      {
+        body,
+        ...quotedPayload,
+      },
+    ];
+  }
+
+  return attachments.map((attachment, index) => ({
+    body: index === 0 ? body : "",
+    ...attachment,
+    ...(index === 0 ? quotedPayload : {}),
+  }));
+}
+
+async function sendWhatsappReplyPayloads(roomChatId: number, payloads: ReplyWhatsappPayload[]) {
+  const remoteMessages: RemoteWhatsappMessage[] = [];
+
+  for (const payload of payloads) {
+    remoteMessages.push(await replyWhatsappRoom(roomChatId, payload));
+  }
+
+  return remoteMessages;
 }
 
 function formatWhatsappHandle(value: string) {
@@ -2060,33 +2118,34 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         ),
       );
 
+      const markOptimisticMessageFailed = (reason: string) => {
+        setTickets((previous) =>
+          previous.map((item) =>
+            item.id === ticketId
+              ? {
+                  ...item,
+                  messages: item.messages.map((message) =>
+                    message.id === optimisticMessage.id
+                      ? {
+                          ...message,
+                          sentStatus: "failed",
+                          errorMessage: reason,
+                          pendingAt: undefined,
+                        }
+                      : message,
+                  ),
+                }
+              : item,
+          ),
+        );
+        toast.error("Pesan WhatsApp gagal dikirim", {
+          description: reason,
+        });
+      };
+
       if (ticket?.source === "whatsapp" && !ticket.externalIds?.whatsappRoomChatId) {
         const target = normalizeWhatsappDigits(ticket.senderHandle || ticket.senderName);
         const body = messageData.content.trim();
-        const markOptimisticMessageFailed = (reason: string) => {
-          setTickets((previous) =>
-            previous.map((item) =>
-              item.id === ticketId
-                ? {
-                    ...item,
-                    messages: item.messages.map((message) =>
-                      message.id === optimisticMessage.id
-                        ? {
-                            ...message,
-                            sentStatus: "failed",
-                            errorMessage: reason,
-                            pendingAt: undefined,
-                          }
-                        : message,
-                    ),
-                  }
-                : item,
-            ),
-          );
-          toast.error("Pesan WhatsApp gagal dikirim", {
-            description: reason,
-          });
-        };
 
         if (!target) {
           markOptimisticMessageFailed("Nomor WhatsApp belum valid.");
@@ -2100,22 +2159,31 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const syncWhatsappRoomMessage = ({
+        const syncWhatsappRoomMessages = ({
           roomChatId,
-          remoteMessage,
+          remoteMessages,
           duplicateTicket,
           responseMessage,
           toastTitle,
         }: {
           roomChatId: number;
-          remoteMessage: RemoteWhatsappMessage;
+          remoteMessages: RemoteWhatsappMessage[];
           duplicateTicket?: Ticket;
           responseMessage?: string;
           toastTitle: string;
         }) => {
-          const mappedMessage = mapWhatsappMessage(remoteMessage, ticket.senderName);
-          const messageExternalId = Number(remoteMessage.id);
+          const mappedMessages = remoteMessages.map((remoteMessage) =>
+            mapWhatsappMessage(remoteMessage, ticket.senderName),
+          );
+          const mappedMessage = mappedMessages[0];
+          const lastMappedMessage = mappedMessages.at(-1) ?? mappedMessage;
+          const messageExternalId = Number(remoteMessages.at(-1)?.id);
           const senderHandle = formatWhatsappHandle(target);
+
+          if (!mappedMessage) {
+            markOptimisticMessageFailed("Endpoint WhatsApp belum mengembalikan pesan terkirim.");
+            return;
+          }
 
           rememberWhatsappRoomAlias({
             roomChatId,
@@ -2124,9 +2192,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
             senderHandle,
             senderAvatar: ticket.senderAvatar,
             subject: ticket.subject,
-            snippet: getMessageSnippet(mappedMessage, ticket.snippet),
-            updatedAt: mappedMessage.createdAt,
-            lastMessage: mappedMessage,
+            snippet: getMessageSnippet(lastMappedMessage, ticket.snippet),
+            updatedAt: lastMappedMessage.createdAt,
+            lastMessage: lastMappedMessage,
           });
 
           setTickets((previous) => {
@@ -2142,11 +2210,11 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                 const localMessages = item.messages.map((message) =>
                   message.id === optimisticMessage.id ? mappedMessage : message,
                 );
-                const messages = localMessages.reduce(
+                const messages = [...localMessages, ...mappedMessages.slice(1)].reduce(
                   (mergedMessages, message) => upsertTicketMessage(mergedMessages, message),
                   duplicateFromState?.messages ?? [],
                 );
-                const lastMessage = messages.at(-1) ?? mappedMessage;
+                const lastMessage = messages.at(-1) ?? lastMappedMessage;
 
                 return {
                   ...item,
@@ -2191,13 +2259,21 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           );
         });
 
+        const whatsappReplyPayloads = buildWhatsappReplyPayloads(messageData);
+        const attachmentReplyPayloads = toWhatsappAttachmentPayloads(messageData).map(
+          (attachment) => ({
+            body: "",
+            ...attachment,
+          }),
+        );
+
         if (existingWhatsappTicket?.externalIds?.whatsappRoomChatId) {
           const roomChatId = existingWhatsappTicket.externalIds.whatsappRoomChatId;
-          replyWhatsappRoom(roomChatId, { body })
-            .then((remoteMessage) => {
-              syncWhatsappRoomMessage({
+          sendWhatsappReplyPayloads(roomChatId, whatsappReplyPayloads)
+            .then((remoteMessages) => {
+              syncWhatsappRoomMessages({
                 roomChatId,
-                remoteMessage,
+                remoteMessages,
                 duplicateTicket: existingWhatsappTicket,
                 toastTitle: "Pesan WhatsApp dikirim ke room yang sudah ada",
               });
@@ -2223,9 +2299,13 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
 
             const remoteMessage =
               createResult.message ?? (await replyWhatsappRoom(roomChatId, { body }));
-            syncWhatsappRoomMessage({
+            const attachmentMessages = attachmentReplyPayloads.length
+              ? await sendWhatsappReplyPayloads(roomChatId, attachmentReplyPayloads)
+              : [];
+
+            syncWhatsappRoomMessages({
               roomChatId,
-              remoteMessage,
+              remoteMessages: [remoteMessage, ...attachmentMessages],
               responseMessage: createResult.responseMessage,
               toastTitle: "Room chat WhatsApp berhasil dibuat",
             });
@@ -2238,7 +2318,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                 matchedRoom?.id != null ? Number(matchedRoom.id) : undefined;
 
               if (fallbackRoomChatId) {
-                const remoteMessage = await replyWhatsappRoom(fallbackRoomChatId, { body });
+                const remoteMessages = await sendWhatsappReplyPayloads(
+                  fallbackRoomChatId,
+                  whatsappReplyPayloads,
+                );
                 const duplicateTicket = ticketsRef.current.find(
                   (item) =>
                     item.id !== ticketId &&
@@ -2246,9 +2329,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                     item.externalIds?.whatsappRoomChatId === fallbackRoomChatId,
                 );
 
-                syncWhatsappRoomMessage({
+                syncWhatsappRoomMessages({
                   roomChatId: fallbackRoomChatId,
-                  remoteMessage,
+                  remoteMessages,
                   duplicateTicket,
                   responseMessage: "Room sudah ada, pesan dikirim lewat endpoint reply.",
                   toastTitle: "Pesan WhatsApp dikirim",
@@ -2302,17 +2385,20 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       }
 
       if (ticket.source === "whatsapp" && ticket.externalIds?.whatsappRoomChatId) {
-        const attachment = toExternalAttachmentUrls(messageData)[0];
-        const quotedWhatsappMessageId = Number(messageData.quotedExternalId);
-        replyWhatsappRoom(ticket.externalIds.whatsappRoomChatId, {
-          body: messageData.content,
-          attachment,
-          quotedWhatsappMessageId: Number.isFinite(quotedWhatsappMessageId)
-            ? quotedWhatsappMessageId
-            : undefined,
-        })
-          .then((remoteMessage) => {
-            const remoteMappedMessage = mapWhatsappMessage(remoteMessage, ticket.senderName);
+        const roomChatId = ticket.externalIds.whatsappRoomChatId;
+        sendWhatsappReplyPayloads(roomChatId, buildWhatsappReplyPayloads(messageData))
+          .then((remoteMessages) => {
+            const remoteMappedMessages = remoteMessages.map((remoteMessage) =>
+              mapWhatsappMessage(remoteMessage, ticket.senderName),
+            );
+            const remoteMappedMessage = remoteMappedMessages[0];
+            const lastRemoteMessage = remoteMessages.at(-1);
+
+            if (!remoteMappedMessage || !lastRemoteMessage) {
+              markOptimisticMessageFailed("Endpoint WhatsApp belum mengembalikan pesan terkirim.");
+              return;
+            }
+
             const mappedMessage = {
               ...remoteMappedMessage,
               quotedExternalId:
@@ -2324,18 +2410,19 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
               previous.map((item) => {
                 if (item.id !== ticketId) return item;
 
-                const messages = sortTicketMessages(
-                  item.messages.map((message) =>
+                const messages = sortTicketMessages([
+                  ...item.messages.map((message) =>
                     message.id === optimisticMessage.id ? mappedMessage : message,
                   ),
-                );
+                  ...remoteMappedMessages.slice(1),
+                ]);
                 const lastMessage = messages.at(-1) ?? mappedMessage;
 
                 return {
                   ...item,
                   externalIds: {
                     ...item.externalIds,
-                    whatsappMessageChatId: Number(remoteMessage.id),
+                    whatsappMessageChatId: Number(lastRemoteMessage.id),
                   },
                   snippet: getMessageSnippet(lastMessage, item.snippet),
                   updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
@@ -2347,15 +2434,115 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                 };
               }),
             );
-            const roomChatId = ticket.externalIds?.whatsappRoomChatId;
-            if (roomChatId != null) {
-              scheduleWhatsappMessagesRefresh(ticketId, roomChatId);
-            }
+            scheduleWhatsappMessagesRefresh(ticketId, roomChatId);
           })
-          .catch(() => queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }));
+          .catch((error) => {
+            markOptimisticMessageFailed(getWhatsappBlastFailureMessage(error));
+            queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+          });
       }
     },
     [queryClient, scheduleWhatsappMessagesRefresh],
+  );
+
+  const resendWhatsappMessage = useCallback(
+    async (ticketId: string, messageId: string) => {
+      const ticket = ticketsRef.current.find((item) => item.id === ticketId);
+      const roomChatId = ticket?.externalIds?.whatsappRoomChatId;
+      const message = ticket?.messages.find((item) => item.id === messageId);
+      const whatsappMessageChatId = Number(message?.externalId);
+
+      if (!ticket || ticket.source !== "whatsapp" || roomChatId == null) {
+        throw new Error("Room WhatsApp belum tersedia untuk resend.");
+      }
+
+      if (!message || !Number.isFinite(whatsappMessageChatId)) {
+        throw new Error("Pesan ini belum punya ID remote untuk resend.");
+      }
+
+      setTickets((previous) =>
+        previous.map((item) =>
+          item.id === ticketId
+            ? {
+                ...item,
+                messages: item.messages.map((currentMessage) =>
+                  currentMessage.id === messageId
+                    ? {
+                        ...currentMessage,
+                        sentStatus: "pending",
+                        pendingAt: new Date().toISOString(),
+                        errorMessage: undefined,
+                      }
+                    : currentMessage,
+                ),
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const remoteMessage = await resendWhatsappMessageApi(roomChatId, whatsappMessageChatId);
+        const mappedMessage = mapWhatsappMessage(remoteMessage, ticket.senderName);
+
+        setTickets((previous) =>
+          previous.map((item) => {
+            if (item.id !== ticketId) return item;
+
+            const messages = sortTicketMessages(
+              item.messages.map((currentMessage) =>
+                currentMessage.id === messageId ? mappedMessage : currentMessage,
+              ),
+            );
+            const lastMessage = messages.at(-1) ?? mappedMessage;
+
+            return {
+              ...item,
+              externalIds: {
+                ...item.externalIds,
+                whatsappMessageChatId: Number(remoteMessage.id),
+              },
+              snippet: getMessageSnippet(lastMessage, item.snippet),
+              updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+              lastMessageAt: getNewerTimestamp(
+                item.lastMessageAt ?? item.updatedAt,
+                lastMessage.createdAt,
+              ),
+              messages,
+            };
+          }),
+        );
+
+        scheduleWhatsappMessagesRefresh(ticketId, roomChatId);
+        toast.success("Pesan WhatsApp dikirim ulang");
+      } catch (error) {
+        const reason = getWhatsappBlastFailureMessage(error);
+
+        setTickets((previous) =>
+          previous.map((item) =>
+            item.id === ticketId
+              ? {
+                  ...item,
+                  messages: item.messages.map((currentMessage) =>
+                    currentMessage.id === messageId
+                      ? {
+                          ...currentMessage,
+                          sentStatus: "failed",
+                          pendingAt: undefined,
+                          errorMessage: reason,
+                        }
+                      : currentMessage,
+                  ),
+                }
+              : item,
+          ),
+        );
+        toast.error("Resend WhatsApp gagal", {
+          description: reason,
+        });
+        throw error;
+      }
+    },
+    [scheduleWhatsappMessagesRefresh],
   );
 
   const markAsRead = useCallback((id: string) => {
@@ -2396,6 +2583,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       createTicket,
       updateTicketStatus,
       addMessage,
+      resendWhatsappMessage,
       markAsRead,
       getDraft,
       setDraft,
@@ -2413,6 +2601,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       overviewQuery.isLoading,
       refreshWhatsappRoomDisplayInfo,
       refreshTickets,
+      resendWhatsappMessage,
       setDraft,
       tickets,
       togglePinTicket,

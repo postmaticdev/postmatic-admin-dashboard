@@ -15,6 +15,7 @@ import {
   BookmarkPlus,
   History,
   LocateFixed,
+  Loader2,
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ import { TicketConfirmationDialog } from "../TicketConfirmationDialog";
 import { useTickets } from "@/contexts/TicketsContext";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/utils/date";
+import { uploadCustomerServiceAttachment } from "@/lib/customer-service-api";
 import type { Ticket, TicketMessage, TicketReference } from "@/lib/types/ticket";
 
 interface AttachedFile {
@@ -170,6 +172,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
     markAsTicket,
     openWhatsappTicketReference,
     refreshWhatsappRoomDisplayInfo,
+    resendWhatsappMessage,
     setDraft,
     tickets: allTickets,
   } = useTickets();
@@ -179,7 +182,9 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [replyingTo, setReplyingTo] = useState<TicketMessage | null>(null);
   const [ticketMessageTarget, setTicketMessageTarget] = useState<TicketMessageTarget | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isRefreshingDisplayInfo, setIsRefreshingDisplayInfo] = useState(false);
+  const [resendingMessageIds, setResendingMessageIds] = useState<Set<string>>(() => new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -266,30 +271,36 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
     }
   }, [ticket.messages, replyingTo]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
+    const selectedFiles = Array.from(files);
 
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const newAtts = [
-            ...attachments,
-            {
-              name: file.name,
-              url: event.target!.result as string,
-              type: file.type,
-            },
-          ];
-          setAttachments(newAtts);
-          saveDraft(inputText, newAtts);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsUploadingAttachment(true);
+    try {
+      const uploadedAttachments = await Promise.all(
+        selectedFiles.map((file) => uploadCustomerServiceAttachment(file)),
+      );
+      const newAtts = [
+        ...attachments,
+        ...uploadedAttachments.map((attachment) => ({
+          name: attachment.name,
+          url: attachment.url,
+          type: attachment.type,
+        })),
+      ];
 
-    if (fileInputRef.current) fileInputRef.current.value = "";
+      setAttachments(newAtts);
+      saveDraft(inputText, newAtts);
+    } catch (error) {
+      toast.error("Gagal mengunggah lampiran WhatsApp", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsUploadingAttachment(false);
+
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleRemoveAttachment = (index: number) => {
@@ -301,13 +312,23 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() && attachments.length === 0) return;
+    if (isUploadingAttachment) {
+      toast.info("Tunggu lampiran selesai diunggah.");
+      return;
+    }
+    if (attachments.some((attachment) => attachment.url.startsWith("data:"))) {
+      toast.error("Lampiran WhatsApp belum siap dikirim", {
+        description: "Unggah ulang lampiran agar backend menerima URL file yang valid.",
+      });
+      return;
+    }
 
     addMessage(ticket.id, {
       authorId: "cs-agent",
       authorName: "CS Postmatic",
       content: inputText.trim(),
       direction: "out",
-      attachments: attachments.map((att) => ({ name: att.name, url: att.url })),
+      attachments: attachments.map((att) => ({ name: att.name, url: att.url, type: att.type })),
       quotedMessage: replyingTo
         ? {
             authorName: replyingTo.authorName,
@@ -328,7 +349,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputText.trim() || attachments.length > 0) {
+      if (!isUploadingAttachment && (inputText.trim() || attachments.length > 0)) {
         handleSend(e);
       }
     }
@@ -384,6 +405,38 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
       setIsRefreshingDisplayInfo(false);
     }
   }, [isRefreshingDisplayInfo, refreshWhatsappRoomDisplayInfo, roomChatId, ticket.id]);
+
+  const handleResendMessage = async (message: TicketMessage) => {
+    if (resendingMessageIds.has(message.id)) return;
+
+    const remoteMessageId = Number(message.externalId);
+    if (!Number.isFinite(remoteMessageId)) {
+      addMessage(ticket.id, {
+        authorId: "cs-agent",
+        authorName: "CS Postmatic",
+        content: message.content,
+        direction: "out",
+        attachments: message.attachments,
+        quotedExternalId: message.quotedExternalId,
+        quotedMessage: message.quotedMessage,
+      });
+      toast.info("Pesan dikirim ulang sebagai pesan baru.");
+      return;
+    }
+
+    setResendingMessageIds((currentIds) => new Set(currentIds).add(message.id));
+    try {
+      await resendWhatsappMessage(ticket.id, message.id);
+    } catch {
+      // Context already surfaces the resend error.
+    } finally {
+      setResendingMessageIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(message.id);
+        return nextIds;
+      });
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -505,6 +558,11 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
             }
             const out = m.direction === "out";
             const deliveryLabel = out ? getDeliveryLabel(m) : "";
+            const isFailedOutgoing =
+              out &&
+              (Boolean(m.errorMessage) ||
+                ["failed", "error"].includes(m.sentStatus?.toLowerCase() ?? ""));
+            const isResending = resendingMessageIds.has(m.id);
             return (
               <Fragment key={m.id}>
                 {showDateSeparator && (
@@ -668,6 +726,23 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
                         {m.errorMessage}
                       </p>
                     )}
+                    {isFailedOutgoing && (
+                      <button
+                        type="button"
+                        onClick={() => handleResendMessage(m)}
+                        disabled={isResending}
+                        className={cn(
+                          "ml-auto inline-flex h-6 items-center gap-1 rounded border px-2 text-[10px] font-semibold transition-colors",
+                          out
+                            ? "border-primary-foreground/25 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20"
+                            : "border-border bg-background text-foreground hover:bg-muted",
+                          isResending && "opacity-70",
+                        )}
+                      >
+                        <RefreshCw className={cn("h-3 w-3", isResending && "animate-spin")} />
+                        Resend
+                      </button>
+                    )}
                   </div>
 
                   {!out && (
@@ -753,10 +828,15 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
               type="button"
               variant="ghost"
               size="icon"
+              disabled={isUploadingAttachment}
               className="h-9 w-9 text-muted-foreground hover:text-foreground rounded-full"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Paperclip className="h-4 w-4" />
+              {isUploadingAttachment ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Paperclip className="h-4 w-4" />
+              )}
             </Button>
             <Textarea
               value={inputText}
@@ -769,7 +849,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
             <Button
               type="submit"
               size="icon"
-              disabled={!inputText.trim() && attachments.length === 0}
+              disabled={isUploadingAttachment || (!inputText.trim() && attachments.length === 0)}
               className="h-9 w-9 rounded-full shrink-0"
             >
               <Send className="h-4 w-4" />
