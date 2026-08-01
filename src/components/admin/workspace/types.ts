@@ -6,6 +6,10 @@ export interface AIModelItem {
   temperature: number;
   preprompt: string;
   status: "Active" | "Inactive";
+  modelCode?: string;
+  premiumModel?: boolean;
+  validRatios?: string[];
+  imageSizes?: string[] | null;
 }
 
 export type FeeType = "Percentage" | "Fixed";

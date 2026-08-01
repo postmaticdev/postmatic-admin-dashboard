@@ -1,98 +1,112 @@
-import React, { useState } from "react";
-import { AdminAccount, initialAdmins } from "./types";
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getManagedProfiles, type RemoteManagedProfile } from "@/lib/account-management-api";
+import { AdminAccount } from "./types";
 import { AdminTableList } from "./AdminTableList";
-import { AdminFormView } from "./AdminFormView";
-import { AdminCreateForm } from "./AdminCreateForm";
-import { initialRoles } from "./RoleContainer";
-import { toast } from "sonner";
-import { ShieldCheck, Plus } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+
+const ADMIN_QUERY_KEY = ["account-management", "profiles", "admin"] as const;
+
+function formatDate(value?: string | null) {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
+}
+
+function getPhone(profile: RemoteManagedProfile) {
+  const phone = profile.phone?.trim();
+  if (!phone) return "-";
+
+  const countryCode = profile.countryCode?.trim();
+  return countryCode ? `${countryCode}${phone}` : phone;
+}
+
+function getProfilePhoto(profile: RemoteManagedProfile) {
+  return (
+    profile.imageUrl?.trim() ||
+    profile.image?.trim() ||
+    profile.avatarUrl?.trim() ||
+    profile.profilePictureUrl?.trim() ||
+    profile.photoUrl?.trim() ||
+    profile.picture?.trim() ||
+    ""
+  );
+}
+
+function mapRemoteAdmin(profile: RemoteManagedProfile): AdminAccount {
+  const fullName = profile.name?.trim() || profile.email?.trim() || `Admin ${profile.id}`;
+
+  return {
+    id: profile.id,
+    fullName,
+    email: profile.email?.trim() || "-",
+    phone: getPhone(profile),
+    avatarUrl: getProfilePhoto(profile),
+    role: "Admin",
+    joinedAt: formatDate(profile.createdAt),
+    status: profile.isBanned ? "Inactive" : "Active",
+    lastActive: formatDate(profile.updatedAt ?? profile.createdAt),
+  };
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
 
 export function AdminContainer() {
-  const [admins, setAdmins] = useState<AdminAccount[]>(initialAdmins);
-  const [viewMode, setViewMode] = useState<"list" | "edit" | "create">("list");
-  const [editingAdmin, setEditingAdmin] = useState<AdminAccount | null>(null);
+  const adminsQuery = useQuery({
+    queryKey: ADMIN_QUERY_KEY,
+    queryFn: () => getManagedProfiles({ role: "admin" }),
+    staleTime: 30_000,
+  });
 
-  const handleEdit = (admin: AdminAccount) => {
-    setEditingAdmin(admin);
-    setViewMode("edit");
-  };
-
-  const handleSave = (data: Omit<AdminAccount, "id">, id: string) => {
-    setAdmins((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, ...data } : a))
-    );
-    toast.success(`Data "${data.fullName}" berhasil diperbarui!`);
-    setViewMode("list");
-    setEditingAdmin(null);
-  };
-
-  const handleCreate = (data: Omit<AdminAccount, "id">) => {
-    const newAdmin: AdminAccount = {
-      ...data,
-      id: `a-${Date.now()}`,
-    };
-    setAdmins((prev) => [newAdmin, ...prev]);
-    toast.success(`Admin "${data.fullName}" berhasil ditambahkan!`);
-    setViewMode("list");
-  };
-
-  const handleDelete = (id: string) => {
-    const target = admins.find((a) => a.id === id);
-    setAdmins((prev) => prev.filter((a) => a.id !== id));
-    toast.success(`Admin "${target?.fullName}" berhasil dihapus.`);
-    setViewMode("list");
-    setEditingAdmin(null);
-  };
+  const admins = useMemo(
+    () =>
+      (adminsQuery.data ?? [])
+        .filter((profile) => (profile.role ?? "").toLowerCase() === "admin")
+        .map(mapRemoteAdmin),
+    [adminsQuery.data],
+  );
 
   return (
     <div className="space-y-6">
-      {viewMode === "list" && (
-        <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-violet-500/5 p-6 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                <ShieldCheck className="h-5 w-5 text-violet-500" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
-                    Account Management
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">/ Admin</span>
-                </div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">Manajemen Admin</h1>
-                <p className="text-sm text-muted-foreground">Kelola semua akun administrator platform Postmatic.</p>
-              </div>
+      <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-violet-500/5 p-6 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+              <ShieldCheck className="h-5 w-5 text-violet-500" />
             </div>
-            <button
-              type="button"
-              onClick={() => setViewMode("create")}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all shrink-0 self-start md:self-auto"
-            >
-              <Plus className="h-4 w-4" />Create Admin
-            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
+                  Account Management
+                </span>
+                <span className="text-xs text-muted-foreground font-mono">/ Admin</span>
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">
+                Manajemen Admin
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Kelola semua akun administrator platform Postmatic.
+              </p>
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {viewMode === "list" ? (
-        <AdminTableList items={admins} onEdit={handleEdit} />
-      ) : viewMode === "edit" ? (
-        editingAdmin && (
-          <AdminFormView
-            admin={editingAdmin}
-            onSave={handleSave}
-            onDelete={handleDelete}
-            onCancel={() => { setViewMode("list"); setEditingAdmin(null); }}
-          />
-        )
-      ) : (
-        <AdminCreateForm
-          roles={initialRoles}
-          onSave={handleCreate}
-          onCancel={() => setViewMode("list")}
-        />
-      )}
+      <AdminTableList
+        items={admins}
+        isLoading={adminsQuery.isLoading}
+        errorMessage={
+          adminsQuery.isError
+            ? getErrorMessage(adminsQuery.error, "Gagal memuat data admin.")
+            : undefined
+        }
+        isReadOnly
+        onRetry={() => adminsQuery.refetch()}
+      />
     </div>
   );
 }

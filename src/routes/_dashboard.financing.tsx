@@ -1,5 +1,6 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
   TrendingDown,
@@ -30,9 +31,17 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from "recharts";
 import * as XLSX from "xlsx";
+import {
+  getBusinessDashboardData,
+  getImageTokenInjectionDashboardData,
+  type RemoteImageTokenInjection,
+} from "@/lib/business-api";
+import {
+  getErrorMessage,
+  mapBusinessTokenOverviewToAccount,
+} from "@/components/admin/business/mappers";
 
 export const Route = createFileRoute("/_dashboard/financing")({
   component: FinancingPage,
@@ -43,7 +52,16 @@ type FilterPeriod = "daily" | "weekly" | "monthly" | "yearly";
 type TxCategory = "Income" | "Expense";
 type TxType = "manual" | "system";
 type TxStatus = "Success" | "Pending" | "Failed";
-type TxMethod = "GoPay" | "BCA VA" | "OVO" | "Transfer Bank" | "DANA" | "Stripe" | "Midtrans" | "Cash";
+type TxMethod =
+  | "GoPay"
+  | "BCA VA"
+  | "OVO"
+  | "Transfer Bank"
+  | "DANA"
+  | "Stripe"
+  | "Midtrans"
+  | "Cash"
+  | "Token Inject";
 
 interface Transaction {
   id: string;
@@ -113,6 +131,79 @@ const YEARLY_TREND = [
 ];
 
 const DONUT_COLORS = ["#22c55e", "#ef4444", "#2563eb"];
+const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
+const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
+  "workspace",
+  "businesses",
+  "image-token-injection-history",
+] as const;
+
+function normalizeNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatTransactionDateTime(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const pad = (number: number) => String(number).padStart(2, "0");
+
+  return (
+    [
+      safeDate.getFullYear(),
+      pad(safeDate.getMonth() + 1),
+      pad(safeDate.getDate()),
+    ].join("-") + ` ${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}`
+  );
+}
+
+function getProfileName(profile: RemoteImageTokenInjection["injectedByProfile"]) {
+  return profile?.name?.trim() || profile?.email?.trim() || profile?.id?.trim() || null;
+}
+
+function getTokenInjectionExpenseAmount(item: RemoteImageTokenInjection) {
+  const priceAmount = normalizeNumber(item.priceAmount);
+  if (priceAmount > 0) return priceAmount;
+
+  return normalizeNumber(item.amount);
+}
+
+function mapTokenInjectionToTransaction(
+  item: RemoteImageTokenInjection,
+  businessNamesById: Map<string, string>,
+): Transaction {
+  const businessId = String(item.businessRootId ?? item.businessRoot?.id ?? "");
+  const businessName =
+    item.businessRoot?.name?.trim() ||
+    businessNamesById.get(businessId) ||
+    `Business #${businessId || item.id}`;
+  const tokenAmount = normalizeNumber(item.amount);
+  const bonusType = item.bonusType?.trim().toLowerCase() ?? "";
+  const isFreeToken = bonusType.includes("free");
+  const expenseAmount = getTokenInjectionExpenseAmount(item);
+
+  return {
+    id: `token-injection:${item.id}`,
+    datetime: formatTransactionDateTime(item.createdAt),
+    txId: `TOKEN-INJ-${item.id}`,
+    description: `${isFreeToken ? "Free token" : "Inject token"} ${tokenAmount.toLocaleString(
+      "id-ID",
+    )} ke ${businessName}`,
+    category: "Expense",
+    type: "system",
+    method: "Token Inject",
+    status: "Success",
+    amount: -Math.abs(expenseAmount),
+    user: getProfileName(item.injectedByProfile) || item.injectedBy || "Admin",
+  };
+}
+
+function sortTransactionsByDateDesc(left: Transaction, right: Transaction) {
+  return (
+    new Date(right.datetime.replace(" ", "T")).getTime() -
+    new Date(left.datetime.replace(" ", "T")).getTime()
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const formatRp = (n: number) =>
@@ -193,7 +284,7 @@ function FinancingPage() {
   const [chartPeriod, setChartPeriod] = useState<FilterPeriod>("monthly");
   const [chartDropOpen, setChartDropOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [txList, setTxList] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [localTxList, setLocalTxList] = useState<Transaction[]>(MOCK_TRANSACTIONS);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -201,6 +292,49 @@ function FinancingPage() {
   const [formData, setFormData] = useState<Omit<Transaction, "id" | "txId">>(EMPTY_TX);
   const [amountInput, setAmountInput] = useState("");
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
+
+  const businessQuery = useQuery({
+    queryKey: BUSINESS_QUERY_KEY,
+    queryFn: getBusinessDashboardData,
+    staleTime: 30_000,
+  });
+
+  const tokenInjectionQuery = useQuery({
+    queryKey: TOKEN_INJECTION_HISTORY_QUERY_KEY,
+    queryFn: getImageTokenInjectionDashboardData,
+    staleTime: 30_000,
+  });
+
+  const businessNamesById = useMemo(() => {
+    const businesses = (businessQuery.data?.businesses ?? []).map(mapBusinessTokenOverviewToAccount);
+
+    return new Map(businesses.map((business) => [business.id, business.name]));
+  }, [businessQuery.data]);
+
+  const tokenInjectionTransactions = useMemo(
+    () =>
+      (tokenInjectionQuery.data?.histories ?? []).map((item) =>
+        mapTokenInjectionToTransaction(item, businessNamesById),
+      ),
+    [businessNamesById, tokenInjectionQuery.data],
+  );
+
+  const txList = useMemo(() => {
+    const tokenTransactionIds = new Set(tokenInjectionTransactions.map((tx) => tx.id));
+
+    return [
+      ...tokenInjectionTransactions,
+      ...localTxList.filter((tx) => !tokenTransactionIds.has(tx.id)),
+    ].sort(sortTransactionsByDateDesc);
+  }, [localTxList, tokenInjectionTransactions]);
+
+  const tokenExpenseError =
+    tokenInjectionQuery.isError || businessQuery.isError
+      ? getErrorMessage(
+          tokenInjectionQuery.error ?? businessQuery.error,
+          "Gagal memuat pengeluaran token inject.",
+        )
+      : null;
 
   // Helper formatting for rupiah input
   const formatNumberString = (val: number | string) => {
@@ -296,18 +430,18 @@ function FinancingPage() {
       user: formData.user?.trim() || (editingTx ? "System" : "Admin (hayhasan)"),
     };
     if (editingTx) {
-      setTxList(prev => prev.map(t => t.id === editingTx.id ? { ...editingTx, ...updatedData } : t));
+      setLocalTxList(prev => prev.map(t => t.id === editingTx.id ? { ...editingTx, ...updatedData } : t));
     } else {
       const newId = String(Date.now());
       const newTxId = `TRX-${49224 + txList.length}`;
       const newTx: Transaction = { id: newId, txId: newTxId, ...updatedData };
-      setTxList(prev => [newTx, ...prev]);
+      setLocalTxList(prev => [newTx, ...prev]);
     }
     setIsModalOpen(false);
   };
   const handleDelete = () => {
     if (editingTx) {
-      setTxList(prev => prev.filter(t => t.id !== editingTx.id));
+      setLocalTxList(prev => prev.filter(t => t.id !== editingTx.id));
       setIsModalOpen(false);
     }
   };
@@ -559,6 +693,11 @@ function FinancingPage() {
                 Mutasi Transaksi
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} transaksi tersedia</p>
+              {tokenExpenseError && (
+                <p className="mt-1 text-[11px] font-medium text-destructive">
+                  {tokenExpenseError}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {/* Search */}

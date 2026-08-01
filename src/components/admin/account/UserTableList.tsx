@@ -15,16 +15,68 @@ import {
   Activity,
   Heart,
   Image as ImageIcon,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 interface UserTableListProps {
   items: UserAccount[];
-  onEdit: (item: UserAccount) => void;
+  onEdit?: (item: UserAccount) => void;
+  isLoading?: boolean;
+  errorMessage?: string;
+  isReadOnly?: boolean;
+  onRetry?: () => void;
 }
 
-function UserInfoModal({ user, onClose, onEdit }: { user: UserAccount; onClose: () => void; onEdit: () => void }) {
+function getInitials(name: string) {
+  const cleanName = name.trim();
+  if (!cleanName) return "U";
+
+  const words = cleanName.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+
+  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
+}
+
+function UserAvatar({ name, src, className }: { name: string; src?: string; className: string }) {
+  const [hasImageError, setHasImageError] = useState(false);
+  const canShowImage = Boolean(src?.trim()) && !hasImageError;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className={`${className} overflow-hidden bg-primary/10 text-primary flex items-center justify-center`}
+    >
+      {canShowImage ? (
+        <img
+          src={src}
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => setHasImageError(true)}
+        />
+      ) : (
+        <span className="font-bold tracking-normal">{getInitials(name)}</span>
+      )}
+    </div>
+  );
+}
+
+function UserInfoModal({
+  user,
+  onClose,
+  onEdit,
+  isReadOnly,
+}: {
+  user: UserAccount;
+  onClose: () => void;
+  onEdit?: () => void;
+  isReadOnly?: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -34,9 +86,11 @@ function UserInfoModal({ user, onClose, onEdit }: { user: UserAccount; onClose: 
 
         {/* Avatar */}
         <div className="absolute top-10 left-6">
-          <div className="h-16 w-16 rounded-2xl border-4 border-card shadow-lg overflow-hidden bg-muted">
-            <img src={user.avatarUrl} alt={user.fullName} className="h-full w-full object-cover" />
-          </div>
+          <UserAvatar
+            name={user.fullName}
+            src={user.avatarUrl}
+            className="h-16 w-16 rounded-2xl border-4 border-card shadow-lg text-base"
+          />
         </div>
 
         {/* Close button */}
@@ -63,15 +117,31 @@ function UserInfoModal({ user, onClose, onEdit }: { user: UserAccount; onClose: 
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-muted/60 rounded-xl p-3 text-center">
               <p className="text-lg font-bold text-foreground">{user.postsCount}</p>
-              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5"><ImageIcon className="h-2.5 w-2.5" />Posts</p>
+              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5">
+                <ImageIcon className="h-2.5 w-2.5" />
+                Posts
+              </p>
             </div>
             <div className="bg-muted/60 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-foreground">{user.followersCount.toLocaleString("id-ID")}</p>
-              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5"><Heart className="h-2.5 w-2.5" />Followers</p>
+              <p className="text-lg font-bold text-foreground">
+                {user.followersCount.toLocaleString("id-ID")}
+              </p>
+              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5">
+                <Heart className="h-2.5 w-2.5" />
+                Followers
+              </p>
             </div>
             <div className="bg-muted/60 rounded-xl p-3 text-center">
-              <p className="text-[10px] font-bold text-foreground">{new Date(user.lastActive).toLocaleDateString("id-ID", { day:"numeric", month:"short" })}</p>
-              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5"><Activity className="h-2.5 w-2.5" />Terakhir</p>
+              <p className="text-[10px] font-bold text-foreground">
+                {new Date(user.lastActive).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                })}
+              </p>
+              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-0.5">
+                <Activity className="h-2.5 w-2.5" />
+                Terakhir
+              </p>
             </div>
           </div>
 
@@ -86,22 +156,32 @@ function UserInfoModal({ user, onClose, onEdit }: { user: UserAccount; onClose: 
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
-              <span>Bergabung {new Date(user.joinedAt).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</span>
+              <span>
+                Bergabung{" "}
+                {new Date(user.joinedAt).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onEdit}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
-            >
-              <Edit3 className="h-3.5 w-3.5" />Edit Pengguna
-            </button>
+            {!isReadOnly && onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                Edit Pengguna
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
+              className={`${isReadOnly ? "flex-1" : "px-4"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
             >
               Tutup
             </button>
@@ -113,36 +193,50 @@ function UserInfoModal({ user, onClose, onEdit }: { user: UserAccount; onClose: 
 }
 
 function StatusBadge({ status }: { status: UserAccount["status"] }) {
-  if (status === "Active") return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-      <CheckCircle2 className="h-3 w-3" />Active
-    </span>
-  );
-  if (status === "Inactive") return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-      <Clock className="h-3 w-3" />Inactive
-    </span>
-  );
+  if (status === "Active")
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+        <CheckCircle2 className="h-3 w-3" />
+        Active
+      </span>
+    );
+  if (status === "Inactive")
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
+        <Clock className="h-3 w-3" />
+        Inactive
+      </span>
+    );
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md">
-      <AlertTriangle className="h-3 w-3" />Suspended
+      <AlertTriangle className="h-3 w-3" />
+      Suspended
     </span>
   );
 }
 
-export function UserTableList({ items, onEdit }: UserTableListProps) {
+export function UserTableList({
+  items,
+  onEdit,
+  isLoading = false,
+  errorMessage,
+  isReadOnly = false,
+  onRetry,
+}: UserTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalUser, setModalUser] = useState<UserAccount | null>(null);
 
-  const filtered = items.filter((u) =>
-    u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.phone.includes(searchQuery)
+  const filtered = items.filter(
+    (u) =>
+      u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.phone.includes(searchQuery),
   );
 
   const totalUsers = items.length;
   const activeUsers = items.filter((u) => u.status === "Active").length;
   const suspendedUsers = items.filter((u) => u.status === "Suspended").length;
+  const tableColSpan = isReadOnly ? 5 : 6;
 
   return (
     <>
@@ -214,13 +308,44 @@ export function UserTableList({ items, onEdit }: UserTableListProps) {
               <th className="py-3 px-4">Bio</th>
               <th className="py-3 px-4">No. Telepon</th>
               <th className="py-3 px-4">Status</th>
-              <th className="py-3 pr-4 pl-3 text-right">Action</th>
+              {!isReadOnly && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {isLoading ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                <td colSpan={tableColSpan} className="py-12 text-center">
+                  <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memuat data pengguna...
+                  </div>
+                </td>
+              </tr>
+            ) : errorMessage ? (
+              <tr>
+                <td colSpan={tableColSpan} className="py-12 text-center">
+                  <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
+                    <div className="inline-flex items-center gap-2 font-semibold text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      Gagal memuat data pengguna.
+                    </div>
+                    <p className="text-xs">{errorMessage}</p>
+                    {onRetry && (
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Coba lagi
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={tableColSpan} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="h-8 w-8 text-muted-foreground/50" />
                     <p className="text-sm font-medium">Tidak ada pengguna ditemukan.</p>
@@ -236,13 +361,21 @@ export function UserTableList({ items, onEdit }: UserTableListProps) {
                 >
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-xl border border-border overflow-hidden shrink-0 bg-muted">
-                        <img src={user.avatarUrl} alt={user.fullName} className="h-full w-full object-cover" />
-                      </div>
+                      <UserAvatar
+                        name={user.fullName}
+                        src={user.avatarUrl}
+                        className="h-9 w-9 rounded-xl border border-border shrink-0 text-xs"
+                      />
                       <div>
-                        <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{user.fullName}</p>
+                        <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          {user.fullName}
+                        </p>
                         <p className="text-[11px] text-muted-foreground">
-                          Bergabung {new Date(user.joinedAt).toLocaleDateString("id-ID", { month: "short", year: "numeric" })}
+                          Bergabung{" "}
+                          {new Date(user.joinedAt).toLocaleDateString("id-ID", {
+                            month: "short",
+                            year: "numeric",
+                          })}
                         </p>
                       </div>
                     </div>
@@ -252,7 +385,7 @@ export function UserTableList({ items, onEdit }: UserTableListProps) {
                   </td>
                   <td className="py-3 px-4 max-w-[200px]">
                     <p className="text-xs text-muted-foreground truncate" title={user.bio}>
-                      {user.bio || <span className="italic opacity-50">—</span>}
+                      {user.bio || <span className="italic opacity-50">-</span>}
                     </p>
                   </td>
                   <td className="py-3 px-4 whitespace-nowrap">
@@ -261,22 +394,32 @@ export function UserTableList({ items, onEdit }: UserTableListProps) {
                   <td className="py-3 px-4 whitespace-nowrap">
                     <StatusBadge status={user.status} />
                   </td>
-                  <td className="py-3 pr-4 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onEdit(user); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
+                  {!isReadOnly && onEdit && (
+                    <td
+                      className="py-3 pr-4 pl-3 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Edit3 className="h-3.5 w-3.5" />Edit
-                    </button>
-                  </td>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit(user);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
           </tbody>
         </table>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong> pengguna
+          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong>{" "}
+          pengguna
         </div>
       </div>
 
@@ -285,7 +428,15 @@ export function UserTableList({ items, onEdit }: UserTableListProps) {
         <UserInfoModal
           user={modalUser}
           onClose={() => setModalUser(null)}
-          onEdit={() => { onEdit(modalUser); setModalUser(null); }}
+          onEdit={
+            onEdit
+              ? () => {
+                  onEdit(modalUser);
+                  setModalUser(null);
+                }
+              : undefined
+          }
+          isReadOnly={isReadOnly}
         />
       )}
     </>

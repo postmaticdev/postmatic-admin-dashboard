@@ -11,22 +11,32 @@ import {
   Filter,
   X,
   Calendar,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 interface ReferralTableListProps {
   items: ReferralItem[];
+  isLoading?: boolean;
+  errorMessage?: string;
+  canCreate?: boolean;
+  statusReadOnly?: boolean;
   onCreateNew: () => void;
   onEdit: (item: ReferralItem) => void;
   onToggleStatus: (id: string) => void;
+  onRetry?: () => void;
 }
 
 function TableRow({
   item,
+  statusReadOnly,
   onEdit,
   onToggleStatus,
   onRowClick,
 }: {
   item: ReferralItem;
+  statusReadOnly?: boolean;
   onEdit: (item: ReferralItem) => void;
   onToggleStatus: (id: string) => void;
   onRowClick: () => void;
@@ -58,8 +68,16 @@ function TableRow({
 
       <td className="py-4 px-4 min-w-[200px]">
         <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-          <span>Min Order: <span className="font-medium text-foreground">{formatIDR(item.minOrder)}</span></span>
-          <span>Max Discount: <span className="font-medium text-foreground">{item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}</span></span>
+          <span>
+            Reward Referral:{" "}
+            <span className="font-medium text-foreground">{formatIDR(item.minOrder)}</span>
+          </span>
+          <span>
+            Max Discount:{" "}
+            <span className="font-medium text-foreground">
+              {item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}
+            </span>
+          </span>
         </div>
       </td>
 
@@ -79,7 +97,10 @@ function TableRow({
         </div>
       </td>
 
-      <td className="py-4 pr-4 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+      <td
+        className="py-4 pr-4 pl-3 text-right whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
@@ -90,24 +111,26 @@ function TableRow({
             Edit
           </button>
 
-          <div
-            className="flex items-center gap-2"
-            title={item.status === "Active" ? "Ubah status ke Inactive" : "Ubah status ke Active"}
-          >
-            <button
-              type="button"
-              onClick={() => onToggleStatus(item.id)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                item.status === "Active" ? "bg-emerald-500" : "bg-muted-foreground/30"
-              }`}
+          {!statusReadOnly && (
+            <div
+              className="flex items-center gap-2"
+              title={item.status === "Active" ? "Ubah status ke Inactive" : "Ubah status ke Active"}
             >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  item.status === "Active" ? "translate-x-4" : "translate-x-0.5"
+              <button
+                type="button"
+                onClick={() => onToggleStatus(item.id)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                  item.status === "Active" ? "bg-emerald-500" : "bg-muted-foreground/30"
                 }`}
-              />
-            </button>
-          </div>
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    item.status === "Active" ? "translate-x-4" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
         </div>
       </td>
     </tr>
@@ -124,13 +147,16 @@ function ReferralDetailModal({
   onEdit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="h-20 bg-gradient-to-br from-blue-500/20 via-blue-500/10 to-transparent" />
-        
+
         <button
           type="button"
           onClick={onClose}
@@ -141,20 +167,30 @@ function ReferralDetailModal({
 
         <div className="px-6 pb-6 pt-6 space-y-4 text-left">
           <div>
-            <h3 className="text-base font-bold text-foreground leading-tight">Referral Rule: {item.role}</h3>
-            <span className="text-[10px] text-muted-foreground mt-0.5 block">Aturan Diskon Referensi</span>
+            <h3 className="text-base font-bold text-foreground leading-tight">
+              Referral Rule: {item.role}
+            </h3>
+            <span className="text-[10px] text-muted-foreground mt-0.5 block">
+              Aturan Diskon Referensi
+            </span>
           </div>
 
           <div className="border-t border-border/60 pt-4 space-y-3.5">
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Nilai Diskon</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Nilai Diskon
+                </span>
                 <span className="text-sm font-extrabold text-blue-600 dark:text-blue-400 mt-1 block">
-                  {item.type === "Percentage" ? `${item.discountValue}%` : formatIDR(item.discountValue)}
+                  {item.type === "Percentage"
+                    ? `${item.discountValue}%`
+                    : formatIDR(item.discountValue)}
                 </span>
               </div>
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Tipe Diskon</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Tipe Diskon
+                </span>
                 <span className="text-sm font-semibold text-foreground mt-1 block">
                   {item.type}
                 </span>
@@ -163,16 +199,22 @@ function ReferralDetailModal({
 
             <div className="space-y-2 border-t border-border/40 pt-3 text-xs text-muted-foreground">
               <div className="flex items-center justify-between">
-                <span>Minimal Pembelian</span>
+                <span>Reward Referral</span>
                 <span className="font-semibold text-foreground">{formatIDR(item.minOrder)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Maksimal Diskon</span>
-                <span className="font-semibold text-foreground">{item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}</span>
+                <span className="font-semibold text-foreground">
+                  {item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Masa Berlaku</span>
-                <span className="font-semibold text-foreground">{item.startDate} &rarr; {item.endDate || "Unlimited"}</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" /> Masa Berlaku
+                </span>
+                <span className="font-semibold text-foreground">
+                  {item.startDate} &rarr; {item.endDate || "Unlimited"}
+                </span>
               </div>
               <div className="flex items-center justify-between border-t border-border/30 pt-2">
                 <span>Status</span>
@@ -195,7 +237,8 @@ function ReferralDetailModal({
               onClick={onEdit}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
             >
-              <Edit3 className="h-3.5 w-3.5" />Edit Referral
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Referral
             </button>
             <button
               type="button"
@@ -213,22 +256,25 @@ function ReferralDetailModal({
 
 export function ReferralTableList({
   items,
+  isLoading = false,
+  errorMessage,
+  canCreate = true,
+  statusReadOnly = false,
   onCreateNew,
   onEdit,
   onToggleStatus,
+  onRetry,
 }: ReferralTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("ALL");
   const [selectedReferral, setSelectedReferral] = useState<ReferralItem | null>(null);
 
-  const roleCategories = ["ALL", "User", "Admin"];
+  const roleCategories = ["ALL", "Global", "User", "Admin"];
 
   const filteredItems = items.filter((item) => {
-    const matchesSearch =
-      item.role.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = item.role.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesRole =
-      selectedRoleFilter === "ALL" || item.role === selectedRoleFilter;
+    const matchesRole = selectedRoleFilter === "ALL" || item.role === selectedRoleFilter;
 
     return matchesSearch && matchesRole;
   });
@@ -243,27 +289,25 @@ export function ReferralTableList({
                 <Wallet className="h-3.5 w-3.5" />
                 Discount
               </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                Workspace / Referral
-              </span>
+              <span className="text-xs text-muted-foreground font-mono">Workspace / Referral</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Referral Manager
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Referral Manager</h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              Kelola pengaturan diskon referral berdasarkan role untuk pengguna platform Postmatic.
+              Kelola pengaturan diskon dan reward referral untuk pengguna platform Postmatic.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onCreateNew}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all"
-            >
-              <Plus className="h-4 w-4" />
-              Create New Referral
-            </button>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={onCreateNew}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                Create New Referral
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -312,14 +356,43 @@ export function ReferralTableList({
             </tr>
           </thead>
           <tbody>
-            {filteredItems.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center">
+                  <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memuat referral rule...
+                  </div>
+                </td>
+              </tr>
+            ) : errorMessage ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center">
+                  <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-sm text-muted-foreground">
+                    <div className="inline-flex items-center gap-2 font-semibold text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      Gagal memuat referral rule.
+                    </div>
+                    <p className="text-xs">{errorMessage}</p>
+                    {onRetry && (
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Coba lagi
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : filteredItems.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Wallet className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-sm font-medium">
-                      Tidak ada referral yang ditemukan.
-                    </p>
+                    <p className="text-sm font-medium">Tidak ada referral yang ditemukan.</p>
                     <p className="text-xs text-muted-foreground/80">
                       Coba sesuaikan filter atau klik &quot;Create New Referral&quot;.
                     </p>
@@ -331,6 +404,7 @@ export function ReferralTableList({
                 <TableRow
                   key={item.id}
                   item={item}
+                  statusReadOnly={statusReadOnly}
                   onEdit={onEdit}
                   onToggleStatus={onToggleStatus}
                   onRowClick={() => setSelectedReferral(item)}
@@ -341,8 +415,8 @@ export function ReferralTableList({
         </table>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            Menampilkan <strong>{filteredItems.length}</strong> dari{" "}
-            <strong>{items.length}</strong> referral
+            Menampilkan <strong>{filteredItems.length}</strong> dari <strong>{items.length}</strong>{" "}
+            referral
           </span>
         </div>
       </div>
@@ -352,7 +426,10 @@ export function ReferralTableList({
         <ReferralDetailModal
           item={selectedReferral}
           onClose={() => setSelectedReferral(null)}
-          onEdit={() => { onEdit(selectedReferral); setSelectedReferral(null); }}
+          onEdit={() => {
+            onEdit(selectedReferral);
+            setSelectedReferral(null);
+          }}
         />
       )}
     </div>

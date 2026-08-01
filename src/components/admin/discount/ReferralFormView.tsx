@@ -1,26 +1,24 @@
 import React, { useState } from "react";
 import { ReferralItem, DiscountType } from "./types";
 import { formatNumberString, parseNumberString } from "./utils";
-import {
-  ArrowLeft,
-  Save,
-  Users,
-} from "lucide-react";
+import { ArrowLeft, Save, Users, Loader2 } from "lucide-react";
 
 interface ReferralFormViewProps {
   initialItem: ReferralItem | null;
   onSave: (data: Omit<ReferralItem, "id">, id?: string) => void;
   onCancel: () => void;
+  isSaving?: boolean;
 }
 
 export function ReferralFormView({
   initialItem,
   onSave,
   onCancel,
+  isSaving = false,
 }: ReferralFormViewProps) {
   const isEditMode = Boolean(initialItem);
 
-  const [role, setRole] = useState<"User" | "Admin">(initialItem?.role || "User");
+  const [role, setRole] = useState<ReferralItem["role"]>(initialItem?.role || "Global");
   const [startDate, setStartDate] = useState(initialItem?.startDate || "");
   const [hasExpiry, setHasExpiry] = useState(Boolean(initialItem?.endDate));
   const [endDate, setEndDate] = useState(initialItem?.endDate || "");
@@ -49,7 +47,7 @@ export function ReferralFormView({
         maxDiscount: hasMaxDiscount ? maxDiscount : null,
         status,
       },
-      initialItem?.id
+      initialItem?.id,
     );
   };
 
@@ -81,15 +79,23 @@ export function ReferralFormView({
           <button
             type="button"
             onClick={handleSubmit}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20 disabled:pointer-events-none disabled:opacity-70"
           >
-            <Save className="h-3.5 w-3.5" />
+            {isSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
             Simpan Referral
           </button>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-6">
+      <form
+        onSubmit={handleSubmit}
+        className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-6"
+      >
         <div className="flex items-center gap-2 border-b border-border/60 pb-3">
           <Users className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-bold text-foreground">Detail Referral</h2>
@@ -101,9 +107,10 @@ export function ReferralFormView({
             <label className="text-xs font-semibold text-foreground">Role</label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value as "User" | "Admin")}
+              onChange={(e) => setRole(e.target.value as ReferralItem["role"])}
               className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-medium"
             >
+              <option value="Global">Global</option>
               <option value="User">User</option>
               <option value="Admin">Admin</option>
             </select>
@@ -128,7 +135,8 @@ export function ReferralFormView({
           {/* Nilai Diskon */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">
-              Nilai Diskon ({type === "Percentage" ? "%" : "IDR"}) <span className="text-destructive">*</span>
+              Nilai Diskon ({type === "Percentage" ? "%" : "IDR"}){" "}
+              <span className="text-destructive">*</span>
             </label>
             <input
               type="text"
@@ -186,7 +194,9 @@ export function ReferralFormView({
 
           {/* Minimum Order */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">Minimum Order (IDR)</label>
+            <label className="text-xs font-semibold text-foreground">
+              Reward Per Referral (IDR)
+            </label>
             <input
               type="text"
               value={formatNumberString(minOrder)}
@@ -236,7 +246,9 @@ export function ReferralFormView({
                   }`}
                 />
               </button>
-              <span className={`text-xs font-bold ${status === "Active" ? "text-primary" : "text-muted-foreground"}`}>
+              <span
+                className={`text-xs font-bold ${status === "Active" ? "text-primary" : "text-muted-foreground"}`}
+              >
                 {status}
               </span>
             </div>

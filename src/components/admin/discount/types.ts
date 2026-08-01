@@ -15,7 +15,7 @@ export interface VoucherItem {
 
 export interface ReferralItem {
   id: string;
-  role: "User" | "Admin";
+  role: "Global" | "User" | "Admin";
   startDate: string;
   endDate: string | null; // null if no expiry
   type: DiscountType;
