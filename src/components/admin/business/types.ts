@@ -6,10 +6,15 @@ export interface BusinessAccount {
   category: string;
   description?: string;
   websiteUrl?: string;
+  businessPhone?: string;
+  countryCode?: string;
+  colorTone?: string;
   status: "Paid" | "Free";
   balance: number; // Token balance
   joinedAt: string;
 }
+
+export type BusinessFormValues = Omit<BusinessAccount, "id">;
 
 export interface InjectHistoryItem {
   id: string;

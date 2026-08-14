@@ -1,4 +1,5 @@
 import type {
+  RemoteManagedBusinessDetail,
   RemoteBusinessMember,
   RemoteBusinessProfile,
   RemoteBusinessTokenOverview,
@@ -65,6 +66,12 @@ function getPlanStatus(
     : "Free";
 }
 
+function normalizeCountryCode(value: string | null | undefined) {
+  const code = getDisplayText(value);
+  if (!code) return undefined;
+  return code.startsWith("+") ? code : `+${code}`;
+}
+
 export function mapBusinessTokenOverviewToAccount(
   overview: RemoteBusinessTokenOverview,
 ): BusinessAccount {
@@ -92,9 +99,46 @@ export function mapBusinessTokenOverviewToAccount(
       getDisplayText(knowledge?.description) || getDisplayText(root.description) || undefined,
     websiteUrl:
       getDisplayText(knowledge?.websiteUrl) || getDisplayText(root.websiteUrl) || undefined,
+    businessPhone:
+      getDisplayText(knowledge?.businessPhone) || getDisplayText(root.businessPhone) || undefined,
+    countryCode: normalizeCountryCode(knowledge?.countryCode || root.countryCode) || "+62",
+    colorTone: getDisplayText(knowledge?.colorTone) || getDisplayText(root.colorTone) || undefined,
     status: getPlanStatus(root, tokenStatus),
     balance,
     joinedAt: root.createdAt || overview.business.createdAt || new Date().toISOString(),
+  };
+}
+
+export function mapManagedBusinessDetailToAccount(
+  detail: RemoteManagedBusinessDetail,
+  fallback: BusinessAccount,
+): BusinessAccount {
+  const fallbackRoot: RemoteBusinessTokenOverview["business"] = {
+    id: fallback.id,
+    name: fallback.name,
+    primaryLogoUrl: fallback.logoUrl,
+    category: fallback.category,
+    description: fallback.description,
+    websiteUrl: fallback.websiteUrl,
+    businessPhone: fallback.businessPhone,
+    countryCode: fallback.countryCode,
+    colorTone: fallback.colorTone,
+    createdAt: fallback.joinedAt,
+    ownerName: fallback.owner,
+    status: fallback.status,
+  };
+  const mapped = mapBusinessTokenOverviewToAccount({
+    business: detail.businessRoot ?? fallbackRoot,
+    detail,
+    tokenStatus: detail.businessRoot?.tokenStatus ?? null,
+  });
+
+  return {
+    ...fallback,
+    ...mapped,
+    balance: fallback.balance,
+    status: fallback.status,
+    owner: mapped.owner === "Belum tersedia" ? fallback.owner : mapped.owner,
   };
 }
 
