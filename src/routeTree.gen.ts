@@ -22,6 +22,7 @@ import { Route as DashboardWorkspaceCreatorRouteImport } from './routes/_dashboa
 import { Route as DashboardWorkspaceBusinessRouteImport } from './routes/_dashboard.workspace.business'
 import { Route as DashboardWorkspaceAccountRouteImport } from './routes/_dashboard.workspace.account'
 import { Route as DashboardMonitoringSystemRouteImport } from './routes/_dashboard.monitoring.system'
+import { Route as DashboardMonitoringActivityRouteImport } from './routes/_dashboard.monitoring.activity'
 import { Route as DashboardDocsManagementRouteImport } from './routes/_dashboard.docs.management'
 import { Route as DashboardDocsLegalityRouteImport } from './routes/_dashboard.docs.legality'
 import { Route as DashboardCustomerServiceWhatsappRouteImport } from './routes/_dashboard.customer-service.whatsapp'
@@ -109,6 +110,12 @@ const DashboardMonitoringSystemRoute =
   DashboardMonitoringSystemRouteImport.update({
     id: '/monitoring/system',
     path: '/monitoring/system',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardMonitoringActivityRoute =
+  DashboardMonitoringActivityRouteImport.update({
+    id: '/monitoring/activity',
+    path: '/monitoring/activity',
     getParentRoute: () => DashboardRoute,
   } as any)
 const DashboardDocsManagementRoute = DashboardDocsManagementRouteImport.update({
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
   '/docs/legality': typeof DashboardDocsLegalityRoute
   '/docs/management': typeof DashboardDocsManagementRoute
+  '/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
   '/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
@@ -263,6 +271,7 @@ export interface FileRoutesByTo {
   '/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
   '/docs/legality': typeof DashboardDocsLegalityRoute
   '/docs/management': typeof DashboardDocsManagementRoute
+  '/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
   '/workspace/payment': typeof DashboardWorkspacePaymentRoute
@@ -295,6 +304,7 @@ export interface FileRoutesById {
   '/_dashboard/customer-service/whatsapp': typeof DashboardCustomerServiceWhatsappRoute
   '/_dashboard/docs/legality': typeof DashboardDocsLegalityRoute
   '/_dashboard/docs/management': typeof DashboardDocsManagementRoute
+  '/_dashboard/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/_dashboard/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/_dashboard/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
   '/_dashboard/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
@@ -329,6 +339,7 @@ export interface FileRouteTypes {
     | '/customer-service/whatsapp'
     | '/docs/legality'
     | '/docs/management'
+    | '/monitoring/activity'
     | '/monitoring/system'
     | '/workspace/account'
     | '/workspace/business'
@@ -361,6 +372,7 @@ export interface FileRouteTypes {
     | '/customer-service/whatsapp'
     | '/docs/legality'
     | '/docs/management'
+    | '/monitoring/activity'
     | '/monitoring/system'
     | '/workspace/account'
     | '/workspace/payment'
@@ -392,6 +404,7 @@ export interface FileRouteTypes {
     | '/_dashboard/customer-service/whatsapp'
     | '/_dashboard/docs/legality'
     | '/_dashboard/docs/management'
+    | '/_dashboard/monitoring/activity'
     | '/_dashboard/monitoring/system'
     | '/_dashboard/workspace/account'
     | '/_dashboard/workspace/business'
@@ -508,6 +521,13 @@ declare module '@tanstack/react-router' {
       path: '/monitoring/system'
       fullPath: '/monitoring/system'
       preLoaderRoute: typeof DashboardMonitoringSystemRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/monitoring/activity': {
+      id: '/_dashboard/monitoring/activity'
+      path: '/monitoring/activity'
+      fullPath: '/monitoring/activity'
+      preLoaderRoute: typeof DashboardMonitoringActivityRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/_dashboard/docs/management': {
@@ -735,6 +755,7 @@ interface DashboardRouteChildren {
   DashboardDocsRoute: typeof DashboardDocsRouteWithChildren
   DashboardFinancingRoute: typeof DashboardFinancingRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  DashboardMonitoringActivityRoute: typeof DashboardMonitoringActivityRoute
   DashboardMonitoringSystemRoute: typeof DashboardMonitoringSystemRoute
   DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRouteWithChildren
   DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRouteWithChildren
@@ -753,6 +774,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardDocsRoute: DashboardDocsRouteWithChildren,
   DashboardFinancingRoute: DashboardFinancingRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  DashboardMonitoringActivityRoute: DashboardMonitoringActivityRoute,
   DashboardMonitoringSystemRoute: DashboardMonitoringSystemRoute,
   DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRouteWithChildren,
   DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRouteWithChildren,

@@ -12,9 +12,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getWahaHealth, notifyWahaHealth, type RemoteWahaHealth } from "@/lib/monitoring-api";
+import {
+  getEmailHealth,
+  getWahaHealth,
+  notifyEmailHealth,
+  notifyWahaHealth,
+  type RemoteWahaHealth,
+} from "@/lib/monitoring-api";
 
 const WAHA_HEALTH_QUERY_KEY = ["monitoring", "waha-health"] as const;
+const EMAIL_HEALTH_QUERY_KEY = ["monitoring", "email-health"] as const;
 const HISTORY_STORAGE_KEY = "postmatic_system_monitoring_waha_history";
 const HISTORY_LIMIT = 30;
 
@@ -117,6 +124,13 @@ export function SystemMonitoringContainer() {
     staleTime: 15_000,
   });
 
+  const emailHealthQuery = useQuery({
+    queryKey: EMAIL_HEALTH_QUERY_KEY,
+    queryFn: getEmailHealth,
+    refetchInterval: 60_000,
+    staleTime: 15_000,
+  });
+
   const notifyMutation = useMutation({
     mutationFn: notifyWahaHealth,
     onSuccess: (data) => {
@@ -132,7 +146,22 @@ export function SystemMonitoringContainer() {
     },
   });
 
+  const notifyEmailMutation = useMutation({
+    mutationFn: notifyEmailHealth,
+    onSuccess: (data) => {
+      if (data.discordNotificationSent) {
+        toast.success("Alert monitoring email berhasil dikirim.");
+      } else {
+        toast.info("Health check email selesai tanpa pengiriman alert.");
+      }
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Gagal mengirim alert monitoring email."));
+    },
+  });
+
   const latest = notifyMutation.data ?? healthQuery.data;
+  const latestEmail = notifyEmailMutation.data ?? emailHealthQuery.data;
   const accidentHistory = useMemo(
     () => history.filter((item) => item.healthy === false),
     [history],
@@ -182,11 +211,18 @@ export function SystemMonitoringContainer() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void healthQuery.refetch()}
-              disabled={healthQuery.isFetching}
+              onClick={() => {
+                void healthQuery.refetch();
+                void emailHealthQuery.refetch();
+              }}
+              disabled={healthQuery.isFetching || emailHealthQuery.isFetching}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCw className={`h-4 w-4 ${healthQuery.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  healthQuery.isFetching || emailHealthQuery.isFetching ? "animate-spin" : ""
+                }`}
+              />
               Refresh
             </button>
             <button
@@ -201,6 +237,19 @@ export function SystemMonitoringContainer() {
                 <BellRing className="h-4 w-4" />
               )}
               Send Alert
+            </button>
+            <button
+              type="button"
+              onClick={() => notifyEmailMutation.mutate()}
+              disabled={notifyEmailMutation.isPending}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {notifyEmailMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <BellRing className="h-4 w-4" />
+              )}
+              Email Alert
             </button>
           </div>
         </div>
@@ -288,6 +337,122 @@ export function SystemMonitoringContainer() {
           </div>
         </div>
       )}
+
+      <div className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-border/60 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-base font-bold text-foreground">Email CRM Health</h2>
+            <p className="text-xs text-muted-foreground">
+              Status ingest mailbox, quota harian, dan sinkronisasi folder email.
+            </p>
+          </div>
+          <span
+            className={`inline-flex w-fit rounded-md px-2.5 py-1 text-xs font-bold ${healthStatusClasses(
+              latestEmail?.healthy,
+            )}`}
+          >
+            {emailHealthQuery.isLoading ? "Checking" : healthStatusText(latestEmail?.healthy)}
+          </span>
+        </div>
+
+        {emailHealthQuery.isError ? (
+          <div className="p-6 text-sm text-destructive">
+            {getErrorMessage(emailHealthQuery.error, "Gagal memuat Email CRM health.")}
+          </div>
+        ) : (
+          <div className="grid gap-4 p-4 lg:grid-cols-4">
+            <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <p className="text-xs font-semibold text-muted-foreground">Ingest Mode</p>
+              <p className="mt-2 text-sm font-bold text-foreground">
+                {latestEmail?.ingestMode ?? "-"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Enabled: {latestEmail?.enabled === false ? "No" : "Yes"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <p className="text-xs font-semibold text-muted-foreground">Stale Pending</p>
+              <p className="mt-2 text-2xl font-extrabold text-foreground">
+                {latestEmail?.stalePendingCount ?? 0}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Pesan pending lama</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <p className="text-xs font-semibold text-muted-foreground">Mailboxes</p>
+              <p className="mt-2 text-2xl font-extrabold text-foreground">
+                {latestEmail?.mailboxes?.length ?? 0}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Checked at {formatDateTime(latestEmail?.checkedAt)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <p className="text-xs font-semibold text-muted-foreground">Notification</p>
+              <p className="mt-2 text-sm font-bold text-foreground">
+                {latestEmail?.discordNotificationSent ? "Sent" : "Not sent"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Discord monitoring alert</p>
+            </div>
+          </div>
+        )}
+
+        {(latestEmail?.mailboxes ?? []).length > 0 && (
+          <div className="border-t border-border/60">
+            <div className="max-h-[360px] overflow-auto">
+              <table className="w-full min-w-[760px] border-collapse text-left">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-border bg-muted text-xs font-semibold text-muted-foreground">
+                    <th className="px-4 py-3">Mailbox</th>
+                    <th className="px-4 py-3">Runtime</th>
+                    <th className="px-4 py-3">Quota</th>
+                    <th className="px-4 py-3">Folders</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestEmail?.mailboxes?.map((mailbox) => (
+                    <tr
+                      key={mailbox.mailboxId ?? mailbox.address}
+                      className="border-b border-border/60 bg-card"
+                    >
+                      <td className="px-4 py-4 text-xs">
+                        <p className="font-bold text-foreground">{mailbox.address ?? "-"}</p>
+                        <p className="text-muted-foreground">
+                          {mailbox.healthy ? "Healthy" : "Needs attention"}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-muted-foreground">
+                        <p className="font-semibold text-foreground">
+                          {mailbox.runtime?.state ?? "-"}
+                        </p>
+                        <p>Reconnect: {mailbox.runtime?.reconnectAttempts ?? 0}</p>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-muted-foreground">
+                        <p className="font-semibold text-foreground">
+                          {mailbox.dailySendUsage ?? 0} / {mailbox.dailySendLimit ?? "-"}
+                        </p>
+                        <p>Quarantined: {mailbox.quarantinedCount ?? 0}</p>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-muted-foreground">
+                        <div className="flex flex-col gap-1">
+                          {(mailbox.folders ?? []).map((folder) => (
+                            <span
+                              key={folder.folderPath ?? folder.specialUse}
+                              className="inline-flex justify-between gap-3 rounded border border-border bg-muted/30 px-2 py-1"
+                            >
+                              <span>{folder.folderPath ?? folder.specialUse ?? "-"}</span>
+                              <span>{folder.syncLagSeconds ?? 0}s</span>
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="rounded-xl border border-border bg-card shadow-sm">
         <div className="flex flex-col gap-2 border-b border-border/60 p-4 md:flex-row md:items-center md:justify-between">

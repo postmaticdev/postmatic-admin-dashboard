@@ -29,7 +29,8 @@ export interface TicketMessage {
   sentAt?: string | null;
   deliveredAt?: string | null;
   readAt?: string | null;
-  attachments?: { name: string; url: string; type?: string }[];
+  canResend?: boolean;
+  attachments?: { assetId?: number | string; name: string; url: string; type?: string }[];
   replies?: TicketMessage[];
   quotedExternalId?: number | string | null;
   quotedMessage?: { authorName: string; content: string };
@@ -44,6 +45,9 @@ export interface Ticket {
     whatsappRoomChatId?: number;
     whatsappMessageChatId?: number;
     whatsappTicketMessageChatId?: number;
+    emailThreadId?: number;
+    emailTicketId?: number;
+    emailMessageId?: number;
   };
   viewKind?: TicketViewKind;
   source: TicketSource;

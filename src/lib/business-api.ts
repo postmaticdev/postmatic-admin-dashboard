@@ -159,6 +159,17 @@ export interface RemoteImageTokenInjectionDashboardData {
   overview: RemoteImageTokenInjectionOverview | null;
 }
 
+export interface RemoteTokenProduct {
+  id?: number | string | null;
+  type?: string | null;
+  currencyCode?: string | null;
+  priceAmount?: number | string | null;
+  tokenAmount?: number | string | null;
+  amount?: number | string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface BusinessKnowledgePayload {
   name: string;
   category: string;
@@ -201,6 +212,13 @@ export interface ImageTokenInjectionHistoryQuery {
 export interface ImageTokenInjectionPayload {
   businessRootId: number;
   amount: number;
+}
+
+export interface TokenProductPayload {
+  type: "image_token";
+  currencyCode: string;
+  priceAmount: number;
+  tokenAmount: number;
 }
 
 function buildUrl(path: string) {
@@ -484,6 +502,19 @@ const getImageTokenInjectionDashboardDataServer = createServerFn({ method: "GET"
   },
 );
 
+const getImageTokenProductPriceServer = createServerFn({ method: "GET" }).handler(async () => {
+  const response = await apiRequest<RemoteTokenProduct>(
+    appendQuery("/api/app/token-product", {
+      amount: 1000,
+      currencyCode: "IDR",
+      from: "price",
+      type: "image_token",
+    }),
+  );
+
+  return response.data;
+});
+
 const injectImageTokenServer = createServerFn({ method: "POST" })
   .validator((data: ImageTokenInjectionPayload) => data)
   .handler(async ({ data }) => {
@@ -494,6 +525,17 @@ const injectImageTokenServer = createServerFn({ method: "POST" })
         body: JSON.stringify(data),
       },
     );
+
+    return response.data;
+  });
+
+const upsertImageTokenProductServer = createServerFn({ method: "POST" })
+  .validator((data: TokenProductPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteTokenProduct>("/api/app/token-product", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
 
     return response.data;
   });
@@ -544,8 +586,16 @@ export function getImageTokenInjectionDashboardData() {
   return getImageTokenInjectionDashboardDataServer();
 }
 
+export function getImageTokenProductPrice() {
+  return getImageTokenProductPriceServer();
+}
+
 export function injectImageToken(payload: ImageTokenInjectionPayload) {
   return injectImageTokenServer({ data: payload });
+}
+
+export function upsertImageTokenProduct(payload: TokenProductPayload) {
+  return upsertImageTokenProductServer({ data: payload });
 }
 
 export function upsertManagedBusinessKnowledge(id: string, payload: BusinessKnowledgePayload) {

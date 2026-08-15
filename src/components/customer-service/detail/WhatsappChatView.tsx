@@ -29,6 +29,7 @@ import { uploadCustomerServiceAttachment } from "@/lib/customer-service-api";
 import type { Ticket, TicketMessage, TicketReference } from "@/lib/types/ticket";
 
 interface AttachedFile {
+  assetId: number | string;
   name: string;
   url: string;
   type: string;
@@ -284,6 +285,7 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
       const newAtts = [
         ...attachments,
         ...uploadedAttachments.map((attachment) => ({
+          assetId: attachment.assetId,
           name: attachment.name,
           url: attachment.url,
           type: attachment.type,
@@ -328,7 +330,12 @@ export function WhatsappChatView({ ticket, onSelectTicket }: WhatsappChatViewPro
       authorName: "CS Postmatic",
       content: inputText.trim(),
       direction: "out",
-      attachments: attachments.map((att) => ({ name: att.name, url: att.url, type: att.type })),
+      attachments: attachments.map((att) => ({
+        assetId: att.assetId,
+        name: att.name,
+        url: att.url,
+        type: att.type,
+      })),
       quotedMessage: replyingTo
         ? {
             authorName: replyingTo.authorName,

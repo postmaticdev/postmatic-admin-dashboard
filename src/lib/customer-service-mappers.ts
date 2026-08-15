@@ -1,10 +1,13 @@
 import type {
+  RemoteEmailMessage,
+  RemoteEmailThread,
   RemoteTicketStatus,
   RemoteTicket,
   RemoteWebsiteMessage,
   RemoteWhatsappMessage,
   RemoteWhatsappRoom,
 } from "@/lib/customer-service-api";
+import { API_ORIGIN } from "@/lib/customer-service-api";
 import type { Ticket, TicketMessage, TicketReference, TicketStatus } from "@/lib/types/ticket";
 import { normalizeWhatsappDigits } from "@/lib/whatsapp-room-aliases";
 
@@ -108,6 +111,69 @@ function urlAttachments(urls?: string[] | null) {
     name: attachmentName(url, `attachment-${index + 1}`),
     url,
   }));
+}
+
+function absoluteAssetUrl(url?: string | null) {
+  const value = compactText(url);
+  if (!value) return "";
+
+  try {
+    return new URL(value, API_ORIGIN).toString();
+  } catch {
+    return value;
+  }
+}
+
+function emailAddressName(address?: { name?: string | null; address?: string | null } | null) {
+  const email = compactText(address?.address);
+  return compactText(address?.name) || email.split("@")[0] || email || "Email User";
+}
+
+function emailAddressHandle(address?: { address?: string | null } | null) {
+  return compactText(address?.address, "email");
+}
+
+function emailSummaryToMessage(
+  message: NonNullable<RemoteEmailThread["lastMessage"]>,
+  fallbackName: string,
+): TicketMessage {
+  const out = message.direction === "outbound";
+  const content = richTextToSafeHtml(message.preview || message.subject || "-");
+
+  return {
+    id: `email-summary-${message.id ?? fallbackName}-${message.occurredAt ?? "latest"}`,
+    externalId: message.id ?? undefined,
+    authorId: out ? "agent" : emailAddressHandle(message.from),
+    authorName: out ? "CS Postmatic" : emailAddressName(message.from) || fallbackName,
+    subject: message.subject ?? undefined,
+    content,
+    createdAt: timestamp(message.occurredAt),
+    direction: out ? "out" : "in",
+    sentStatus: message.sentStatus,
+  };
+}
+
+function mapEmailAttachments(message: RemoteEmailMessage) {
+  return (message.attachments ?? [])
+    .map((attachment, index) => {
+      const url = absoluteAssetUrl(attachment.assetUrl);
+      if (!url) return null;
+
+      return {
+        name: compactText(attachment.filename, `attachment-${index + 1}`),
+        url,
+        type: attachment.mimeType ?? undefined,
+      };
+    })
+    .filter((attachment): attachment is { name: string; url: string; type?: string } =>
+      Boolean(attachment),
+    );
+}
+
+function sortMessages(messages: TicketMessage[]) {
+  return [...messages].sort(
+    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
 }
 
 function numberOrUndefined(value?: number | string | null) {
@@ -249,6 +315,125 @@ export function mapWebsiteMessage(message: RemoteWebsiteMessage): TicketMessage 
     attachments: urlAttachments(message.attachments),
     createdAt: timestamp(message.createdAt),
     direction: out ? "out" : "in",
+  };
+}
+
+export function mapEmailThread(
+  thread: RemoteEmailThread,
+  emailTicket?: RemoteTicket | null,
+  messages?: RemoteEmailMessage[],
+): Ticket {
+  const threadId = Number(thread.id);
+  const createdAt = timestamp(thread.createdAt ?? thread.lastMessageAt);
+  const updatedAt = timestamp(thread.updatedAt ?? thread.lastMessageAt ?? thread.createdAt);
+  const displayName =
+    compactText(thread.primaryContactName) ||
+    compactText(thread.primaryContactEmail).split("@")[0] ||
+    `Email Thread ${threadId}`;
+  const handle = compactText(thread.primaryContactEmail, "email");
+  const mappedMessages = messages?.map((message) => mapEmailMessage(message, displayName)) ?? [];
+  const summaryMessage =
+    !mappedMessages.length && thread.lastMessage
+      ? emailSummaryToMessage(thread.lastMessage, displayName)
+      : undefined;
+  const allMessages = sortMessages(summaryMessage ? [summaryMessage] : mappedMessages);
+  const lastMessage = allMessages.at(-1);
+  const lastMessageAt = timestamp(thread.lastMessageAt ?? lastMessage?.createdAt ?? updatedAt);
+  const snippet = compactText(
+    thread.lastMessage?.preview ?? htmlToText(lastMessage?.content),
+    lastMessage?.attachments?.length ? "Pesan media" : "-",
+  );
+
+  return {
+    id: `gmail:${threadId}`,
+    externalIds: {
+      emailThreadId: threadId,
+      emailTicketId: emailTicket?.id != null ? Number(emailTicket.id) : undefined,
+      emailMessageId:
+        thread.lastMessage?.id != null
+          ? Number(thread.lastMessage.id)
+          : lastMessage?.externalId != null
+            ? Number(lastMessage.externalId)
+            : undefined,
+    },
+    viewKind: emailTicket ? "ticket" : "conversation",
+    source: "gmail",
+    subject: compactText(thread.subject ?? emailTicket?.subject, `Email Thread #${threadId}`),
+    snippet,
+    senderName: displayName,
+    senderHandle: handle,
+    updatedAt,
+    lastMessageAt,
+    status: remoteStatusToTicketStatus(emailTicket?.slaStatus),
+    unread: Number(thread.unreadMessage ?? 0) > 0,
+    unreadCount: Number(thread.unreadMessage ?? 0) || undefined,
+    isSavedAsTicket: Boolean(emailTicket),
+    isSynced: true,
+    isDetailsLoaded: Boolean(messages),
+    isPinned: Boolean(thread.isPinned ?? emailTicket?.isPinned),
+    messages: allMessages,
+  };
+}
+
+export function mapEmailTicket(ticket: RemoteTicket): Ticket {
+  const ticketId = Number(ticket.id);
+  const threadId = ticket.emailThreadId != null ? Number(ticket.emailThreadId) : undefined;
+  const createdAt = timestamp(ticket.createdAt);
+  const handle = compactText(ticket.email, "email");
+  const displayName = handle.split("@")[0] || handle;
+
+  return {
+    id: threadId != null ? `gmail:${threadId}` : `gmail-ticket:${ticketId}`,
+    externalIds: {
+      emailThreadId: threadId,
+      emailTicketId: ticketId,
+    },
+    viewKind: "ticket",
+    source: "gmail",
+    subject: compactText(ticket.subject, `Email Ticket #${ticketId}`),
+    snippet: compactText(htmlToText(ticket.body), "-"),
+    senderName: displayName,
+    senderHandle: handle,
+    updatedAt: timestamp(ticket.updatedAt ?? ticket.createdAt),
+    lastMessageAt: timestamp(ticket.lastMessageAt ?? ticket.latestMessageAt ?? ticket.updatedAt),
+    status: remoteStatusToTicketStatus(ticket.slaStatus),
+    unread: Number(ticket.unreadMessages ?? 0) > 0,
+    unreadCount: Number(ticket.unreadMessages ?? 0) || undefined,
+    isSavedAsTicket: true,
+    isSynced: true,
+    isDetailsLoaded: false,
+    isPinned: Boolean(ticket.isPinned),
+    messages: [
+      {
+        id: `email-ticket-${ticketId}-body`,
+        authorId: handle,
+        authorName: displayName,
+        content: richTextToSafeHtml(ticket.body),
+        attachments: urlAttachments(ticket.attachments),
+        createdAt,
+        direction: "in",
+      },
+    ],
+  };
+}
+
+export function mapEmailMessage(message: RemoteEmailMessage, fallbackName = "Email User"): TicketMessage {
+  const out = message.direction === "outbound" || message.senderType === "agent";
+  const body = message.htmlBody || message.textBody || message.subject || "-";
+
+  return {
+    id: `email-message-${message.id}`,
+    externalId: message.id,
+    authorId: out ? "agent" : emailAddressHandle(message.from),
+    authorName: out ? "CS Postmatic" : emailAddressName(message.from) || fallbackName,
+    subject: message.subject ?? undefined,
+    content: richTextToSafeHtml(body),
+    attachments: mapEmailAttachments(message),
+    createdAt: timestamp(message.occurredAt ?? message.createdAt),
+    direction: out ? "out" : "in",
+    sentStatus: message.sentStatus,
+    errorMessage: message.lastErrorMessage ?? message.lastErrorCode ?? undefined,
+    canResend: Boolean(message.canResend),
   };
 }
 

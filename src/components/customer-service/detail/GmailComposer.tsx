@@ -12,11 +12,15 @@ import {
   AlignRight,
   Link as LinkIcon,
   Paperclip,
+  Loader2,
+  X,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTickets } from "@/contexts/TicketsContext";
-import type { TicketMessage } from "@/lib/types/ticket";
+import { uploadCustomerServiceAttachment, type UploadedAttachment } from "@/lib/customer-service-api";
+import { toast } from "sonner";
 
 interface Props {
   onCancel: () => void;
@@ -28,15 +32,19 @@ interface GmailDraft {
   to?: string;
   subject?: string;
   body?: string;
+  attachments?: UploadedAttachment[];
 }
 
 export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
-  const { createTicket, addMessage, getDraft, setDraft } = useTickets();
+  const { getDraft, sendEmailMessage, setDraft } = useTickets();
   const draftKey = `gmail-compose-${replyToData?.ticketId || "new"}`;
 
   const [to, setTo] = useState(replyToData?.to ?? "");
   const [subject, setSubject] = useState(replyToData?.subject ?? "");
   const [bodyHtml, setBodyHtml] = useState("");
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,38 +55,32 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
     }
   };
 
-  const insertHtmlAtCursor = (html: string) => {
-    const sel = window.getSelection();
-    if (sel && sel.getRangeAt && sel.rangeCount) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const el = document.createElement("div");
-      el.innerHTML = html;
-      const frag = document.createDocumentFragment();
-      let node;
-      let lastNode;
-      while ((node = el.firstChild)) {
-        lastNode = frag.appendChild(node);
-      }
-      range.insertNode(frag);
-      if (lastNode) {
-        range.setStartAfter(lastNode);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    } else if (editorRef.current) {
-      editorRef.current.innerHTML += html;
-    }
-    if (editorRef.current) {
-      handleEditorInput(editorRef.current.innerHTML);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
+    setIsUploadingAttachment(true);
+
+    try {
+      const uploadedAttachments = await Promise.all(
+        Array.from(files).map((file) => uploadCustomerServiceAttachment(file)),
+      );
+      const nextAttachments = [...attachments, ...uploadedAttachments];
+
+      setAttachments(nextAttachments);
+      saveDraft(to, subject, bodyHtml, nextAttachments);
+    } catch (error) {
+      toast.error("Gagal mengunggah lampiran email", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+
+    return;
+
+    /*
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -101,6 +103,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
     });
 
     if (fileInputRef.current) fileInputRef.current.value = "";
+    */
   };
 
   const execListCommand = (listType: "bullet" | "number" | "abc") => {
@@ -139,6 +142,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
       setTo(saved.to || replyToData?.to || "");
       setSubject(saved.subject || replyToData?.subject || "");
       setBodyHtml(saved.body || "");
+      setAttachments(saved.attachments || []);
       if (editorRef.current) {
         editorRef.current.innerHTML = saved.body || "";
       }
@@ -146,15 +150,26 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
       setTo(replyToData?.to ?? "");
       setSubject(replyToData?.subject ?? "");
       setBodyHtml("");
+      setAttachments([]);
       if (editorRef.current) {
         editorRef.current.innerHTML = "";
       }
     }
   }, [replyToData, getDraft, draftKey]);
 
-  const saveDraft = (newTo: string, newSub: string, newBody: string) => {
-    if (newTo.trim() || newSub.trim() || (newBody && newBody !== "<br>")) {
-      setDraft(draftKey, { to: newTo, subject: newSub, body: newBody });
+  const saveDraft = (
+    newTo: string,
+    newSub: string,
+    newBody: string,
+    nextAttachments = attachments,
+  ) => {
+    if (newTo.trim() || newSub.trim() || (newBody && newBody !== "<br>") || nextAttachments.length) {
+      setDraft(draftKey, {
+        to: newTo,
+        subject: newSub,
+        body: newBody,
+        attachments: nextAttachments,
+      });
     } else {
       setDraft(draftKey, null);
     }
@@ -175,54 +190,47 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
     saveDraft(to, subject, html);
   };
 
-  const handleSend = () => {
-    if (!to.trim() || !subject.trim() || !bodyHtml.trim() || bodyHtml === "<br>") return;
-
-    if (replyToData?.ticketId) {
-      addMessage(replyToData.ticketId, {
-        authorId: "cs-agent",
-        authorName: "CS Postmatic",
-        content: bodyHtml.trim(),
-        direction: "out",
-      });
-      onSent(replyToData.ticketId);
-    } else {
-      // Create new thread
-      const namePart = to.split("@")[0];
-      const senderName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-
-      const firstMsg: Omit<TicketMessage, "id" | "createdAt"> = {
-        authorId: "cs-agent",
-        authorName: "CS Postmatic",
-        content: bodyHtml.trim(),
-        direction: "out",
-      };
-
-      const newTicket = createTicket({
-        source: "gmail",
-        senderName,
-        senderHandle: to.trim(),
-        subject: subject.trim(),
-        snippet: bodyHtml
-          .replace(/<[^>]*>/g, " ")
-          .trim()
-          .substring(0, 100),
-        messages: [
-          {
-            id: `m-${Date.now()}`,
-            ...firstMsg,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      });
-
-      onSent(newTicket.id);
-    }
-
-    setDraft(draftKey, null);
+  const handleRemoveAttachment = (index: number) => {
+    const nextAttachments = attachments.filter((_, itemIndex) => itemIndex !== index);
+    setAttachments(nextAttachments);
+    saveDraft(to, subject, bodyHtml, nextAttachments);
   };
 
-  const isFormValid = to.trim() && subject.trim() && bodyHtml.trim() && bodyHtml !== "<br>";
+  const handleSend = async () => {
+    if (!to.trim() || !subject.trim() || !bodyHtml.trim() || bodyHtml === "<br>") return;
+    if (isUploadingAttachment || isSending) return;
+
+    setIsSending(true);
+
+    try {
+      const ticketId = await sendEmailMessage({
+        replyToTicketId: replyToData?.ticketId,
+        to,
+        subject: subject.trim(),
+        htmlBody: bodyHtml.trim(),
+        uploadedAssetIds: attachments.map((attachment) => attachment.assetId),
+      });
+
+      onSent(ticketId);
+      setDraft(draftKey, null);
+      setAttachments([]);
+    } catch (error) {
+      toast.error("Gagal mengirim email", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const isFormValid = Boolean(
+    to.trim() &&
+      subject.trim() &&
+      bodyHtml.trim() &&
+      bodyHtml !== "<br>" &&
+      !isUploadingAttachment &&
+      !isSending,
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -247,7 +255,7 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
             disabled={!isFormValid}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 h-8 text-xs rounded transition-colors disabled:opacity-50 shrink-0"
           >
-            Send
+            {isSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Send"}
           </Button>
         </div>
       </header>
@@ -306,6 +314,33 @@ export function GmailComposer({ onCancel, onSent, replyToData }: Props) {
             [&_p]:mb-1"
         />
       </div>
+
+      {(attachments.length > 0 || isUploadingAttachment) && (
+        <div className="flex flex-wrap gap-2 border-t border-border bg-card px-4 py-2">
+          {attachments.map((attachment, index) => (
+            <div
+              key={`${attachment.assetId}-${index}`}
+              className="flex max-w-[220px] items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground"
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+              <span className="truncate">{attachment.name}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveAttachment(index)}
+                className="rounded text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {isUploadingAttachment && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Mengunggah lampiran...
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Formatting Toolbar */}
       <div className="flex items-center gap-1 border-t border-border bg-card px-4 py-2 shrink-0 overflow-x-auto">

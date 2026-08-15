@@ -104,7 +104,10 @@ const NAV: NavItem[] = [
   {
     label: "Monitoring",
     icon: Activity,
-    children: [{ label: "System Alert", to: "/monitoring/system", icon: BellRing }],
+    children: [
+      { label: "System Alert", to: "/monitoring/system", icon: BellRing },
+      { label: "Activity Log", to: "/monitoring/activity", icon: Activity },
+    ],
   },
   { label: "Financing", icon: Wallet, to: "/financing" },
   {

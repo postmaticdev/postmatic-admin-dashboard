@@ -12,10 +12,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
+  composeEmail,
+  createEmailTicket,
   createWhatsappRoom,
   createWhatsappTicket,
-  getAttachmentType,
   getChatBlastHistories,
+  getEmailMessages,
+  getEmailThreadInfo,
+  getEmailThreads,
+  getEmailTickets,
   getRealtimeWebsocketUrl,
   getWebsiteTicketDetail,
   getWebsiteTickets,
@@ -24,14 +29,22 @@ import {
   getWhatsappTickets,
   normalizeRemoteChatAttachment,
   refreshWhatsappRoomDisplayInfo as refreshWhatsappRoomDisplayInfoApi,
+  resendEmailMessage as resendEmailMessageApi,
   resendWhatsappMessage as resendWhatsappMessageApi,
+  replyEmail,
   replyWebsiteTicket,
   replyWhatsappRoom,
+  setEmailThreadPinned,
   setTicketPinned,
   setWhatsappRoomPinned,
+  markEmailThreadRead,
+  updateEmailTicketStatus,
   updateWebsiteTicketStatus,
   updateWhatsappTicketStatus,
+  type EmailMessagePayload,
   type RemoteChatBlastHistory,
+  type RemoteEmailMessage,
+  type RemoteEmailThread,
   type RemoteTicket,
   type RemoteWebsiteMessage,
   type RemoteWhatsappMessage,
@@ -41,6 +54,9 @@ import {
 } from "@/lib/customer-service-api";
 import {
   applyWhatsappMessages,
+  mapEmailMessage,
+  mapEmailThread,
+  mapEmailTicket,
   mapWebsiteMessage,
   mapWebsiteTicket,
   mapWhatsappMessage,
@@ -50,7 +66,6 @@ import {
   remoteStatusToTicketStatus,
   ticketStatusToRemoteStatus,
 } from "@/lib/customer-service-mappers";
-import { MOCK_TICKETS } from "@/lib/mock/tickets";
 import type {
   Ticket,
   TicketMessage,
@@ -67,8 +82,12 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 
 const CUSTOMER_SERVICE_QUERY_KEY = ["customer-service", "overview"] as const;
-const GMAIL_MOCK_TICKETS = MOCK_TICKETS.filter((ticket) => ticket.source === "gmail");
-const REALTIME_TOPICS = ["chat.whatsapp.admin", "chat.website.admin", "ticket.admin"] as const;
+const REALTIME_TOPICS = [
+  "chat.whatsapp.admin",
+  "chat.website.admin",
+  "chat.email.admin",
+  "ticket.admin",
+] as const;
 const REALTIME_PING_INTERVAL_MS = 15_000;
 const REALTIME_RECONNECT_DELAY_MS = 2_000;
 const REALTIME_MAX_RECONNECT_ATTEMPTS = 3;
@@ -113,14 +132,22 @@ function htmlToMessageText(value?: string | null) {
     .trim();
 }
 
-function getAttachmentName(url: string, fallback: string) {
-  const rawName = url.split(/[?#]/)[0].split("/").filter(Boolean).at(-1) ?? fallback;
+function parseEmailRecipients(value: string) {
+  return value
+    .split(/[,;\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(.*?)<([^>]+)>$/);
+      const name = match?.[1]?.trim().replace(/^"|"$/g, "");
+      const address = (match?.[2] ?? item).trim();
 
-  try {
-    return decodeURIComponent(rawName);
-  } catch {
-    return rawName;
-  }
+      return {
+        name: name || address.split("@")[0] || address,
+        address,
+      };
+    })
+    .filter((item) => item.address.includes("@"));
 }
 
 function getWhatsappBlastStatus(history: RemoteChatBlastHistory) {
@@ -204,6 +231,11 @@ function getRealtimeTopics(tickets: Ticket[]) {
     if (ticket.source === "website" && websiteTicketId != null) {
       topics.add(`ticket.${websiteTicketId}`);
     }
+
+    const emailThreadId = ticket.externalIds?.emailThreadId;
+    if (ticket.source === "gmail" && emailThreadId != null) {
+      topics.add(`chat.email.thread.${emailThreadId}`);
+    }
   });
 
   return topics;
@@ -239,6 +271,15 @@ interface TicketsContextValue {
   updateTicketStatus: (id: string, status?: TicketStatus) => void;
   addMessage: (ticketId: string, message: Omit<TicketMessage, "id" | "createdAt">) => void;
   resendWhatsappMessage: (ticketId: string, messageId: string) => Promise<void>;
+  sendEmailMessage: (payload: {
+    replyToTicketId?: string;
+    to: string;
+    subject: string;
+    htmlBody: string;
+    uploadedAssetIds?: Array<number | string>;
+    replyAll?: boolean;
+  }) => Promise<string>;
+  resendEmailMessage: (ticketId: string, messageId: string) => Promise<void>;
   markAsRead: (id: string) => void;
   getDraft: <T = unknown>(key: string) => T | undefined;
   setDraft: (key: string, val: unknown) => void;
@@ -279,7 +320,11 @@ function isWhatsappConversationView(ticket: Ticket) {
 }
 
 function getRemoteTicketId(ticket: Ticket) {
-  return ticket.externalIds?.websiteTicketId ?? ticket.externalIds?.whatsappTicketId;
+  return (
+    ticket.externalIds?.websiteTicketId ??
+    ticket.externalIds?.whatsappTicketId ??
+    ticket.externalIds?.emailTicketId
+  );
 }
 
 function mergeTicketReference(existing: TicketReference | undefined, next: TicketReference) {
@@ -439,7 +484,7 @@ function findMatchingLocalTicket(remoteTicket: Ticket, previousTickets: Ticket[]
 function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) {
   const localOnlyTickets = previousTickets.filter(
     (ticket) =>
-      !ticket.isSynced || ticket.source === "gmail" || hasPendingOutgoingWhatsappMessage(ticket),
+      !ticket.isSynced || hasPendingOutgoingWhatsappMessage(ticket),
   );
 
   const mergedRemote = remoteTickets.map((remoteTicket) => {
@@ -499,20 +544,14 @@ function toExternalAttachmentUrls(message: Omit<TicketMessage, "id" | "createdAt
     .filter((url) => url && !url.startsWith("data:"));
 }
 
-function toWhatsappAttachmentPayloads(message: Omit<TicketMessage, "id" | "createdAt">) {
-  return (message.attachments ?? [])
-    .filter((attachment) => attachment.url && !attachment.url.startsWith("data:"))
-    .map((attachment) => {
-      const filename = attachment.name || getAttachmentName(attachment.url, "attachment");
-      const mimeType = attachment.type || "application/octet-stream";
-
-      return {
-        attachment: attachment.url,
-        attachmentFilename: filename,
-        attachmentMimeType: mimeType,
-        attachmentType: getAttachmentType(filename, mimeType),
-      };
-    });
+function toWhatsappUploadedAssetIds(message: Omit<TicketMessage, "id" | "createdAt">) {
+  return Array.from(
+    new Set(
+      (message.attachments ?? [])
+        .map((attachment) => attachment.assetId)
+        .filter((assetId): assetId is number | string => assetId != null && `${assetId}` !== ""),
+    ),
+  );
 }
 
 function buildWhatsappReplyPayloads(
@@ -521,22 +560,15 @@ function buildWhatsappReplyPayloads(
   const body = message.content.trim();
   const quotedWhatsappMessageId = Number(message.quotedExternalId);
   const quotedPayload = Number.isFinite(quotedWhatsappMessageId) ? { quotedWhatsappMessageId } : {};
-  const attachments = toWhatsappAttachmentPayloads(message);
+  const uploadedAssetIds = toWhatsappUploadedAssetIds(message);
 
-  if (!attachments.length) {
-    return [
-      {
-        body,
-        ...quotedPayload,
-      },
-    ];
-  }
-
-  return attachments.map((attachment, index) => ({
-    body: index === 0 ? body : "",
-    ...attachment,
-    ...(index === 0 ? quotedPayload : {}),
-  }));
+  return [
+    {
+      body,
+      ...quotedPayload,
+      ...(uploadedAssetIds.length ? { uploadedAssetIds } : {}),
+    },
+  ];
 }
 
 async function sendWhatsappReplyPayloads(roomChatId: number, payloads: ReplyWhatsappPayload[]) {
@@ -828,14 +860,28 @@ function mergeWhatsappBlastMessagesIntoTicket(ticket: Ticket, blastMessages: Tic
 }
 
 async function getCustomerServiceOverview() {
-  const [websiteTickets, whatsappTickets, whatsappRooms, chatBlastHistories] = await Promise.all([
+  const [
+    websiteTickets,
+    whatsappTickets,
+    whatsappRooms,
+    emailThreads,
+    emailTickets,
+    chatBlastHistories,
+  ] = await Promise.all([
     getWebsiteTickets(),
     getWhatsappTickets(),
     getWhatsappRooms(),
+    getEmailThreads({ inboxView: "inbox", limit: 50 }),
+    getEmailTickets(),
     getChatBlastHistories().catch(() => [] as RemoteChatBlastHistory[]),
   ]);
 
   const whatsappRoomById = new Map(whatsappRooms.map((room) => [Number(room.id), room]));
+  const emailTicketByThreadId = new Map(
+    emailTickets
+      .filter((ticket) => ticket.emailThreadId != null)
+      .map((ticket) => [Number(ticket.emailThreadId), ticket]),
+  );
   const whatsappBlastMessagesByRoomId = getWhatsappBlastMessagesByRoom(
     chatBlastHistories,
     whatsappRooms,
@@ -857,6 +903,12 @@ async function getCustomerServiceOverview() {
   });
 
   const websiteMapped = websiteTickets.map((ticket) => mapWebsiteTicket(ticket));
+  const emailThreadMapped = emailThreads.map((thread) =>
+    mapEmailThread(thread, emailTicketByThreadId.get(Number(thread.id))),
+  );
+  const emailTicketMapped = emailTickets
+    .filter((ticket) => ticket.emailThreadId == null)
+    .map((ticket) => mapEmailTicket(ticket));
   const whatsappRoomMapped = whatsappRooms.map((room) => {
     const roomId = Number(room.id);
 
@@ -894,6 +946,8 @@ async function getCustomerServiceOverview() {
   });
 
   return applyWhatsappRoomAliases([
+    ...emailThreadMapped,
+    ...emailTicketMapped,
     ...websiteMapped,
     ...whatsappRoomMapped,
     ...whatsappTicketMapped,
@@ -1009,6 +1063,10 @@ function matchesRemoteTicket(ticket: Ticket, remoteTicket: RemoteTicket) {
     return ticket.externalIds?.websiteTicketId === remoteTicketId;
   }
 
+  if (remoteTicket.channel === "email") {
+    return ticket.externalIds?.emailTicketId === remoteTicketId;
+  }
+
   return ticket.externalIds?.whatsappTicketId === remoteTicketId;
 }
 
@@ -1042,6 +1100,8 @@ function upsertRealtimeTicket(tickets: Ticket[], remoteTicket: RemoteTicket) {
   const mappedTicket =
     remoteTicket.channel === "website"
       ? mapWebsiteTicket(remoteTicket)
+      : remoteTicket.channel === "email"
+        ? mapEmailTicket(remoteTicket)
       : mapWhatsappTicket(remoteTicket, linkedRemoteRoom, linkedTicketHistory);
   let found = false;
 
@@ -1127,13 +1187,21 @@ function applyRealtimeTicketStatus(
         ...ticket.externalIds,
         ...(remoteTicket.channel === "website"
           ? { websiteTicketId: Number(remoteTicket.id) }
-          : {
-              whatsappTicketId: Number(remoteTicket.id),
-              whatsappRoomChatId:
-                remoteTicket.whatsappRoomChatId != null
-                  ? Number(remoteTicket.whatsappRoomChatId)
-                  : ticket.externalIds?.whatsappRoomChatId,
-            }),
+          : remoteTicket.channel === "email"
+            ? {
+                emailTicketId: Number(remoteTicket.id),
+                emailThreadId:
+                  remoteTicket.emailThreadId != null
+                    ? Number(remoteTicket.emailThreadId)
+                    : ticket.externalIds?.emailThreadId,
+              }
+            : {
+                whatsappTicketId: Number(remoteTicket.id),
+                whatsappRoomChatId:
+                  remoteTicket.whatsappRoomChatId != null
+                    ? Number(remoteTicket.whatsappRoomChatId)
+                    : ticket.externalIds?.whatsappRoomChatId,
+              }),
       },
       status: status ?? ticket.status,
       updatedAt: remoteTicket.updatedAt ?? ticket.updatedAt,
@@ -1261,7 +1329,7 @@ function applyRealtimeWhatsappMessage(
 export function TicketsProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { accessToken, isAuthenticated } = useAuth();
-  const [tickets, setTickets] = useState<Ticket[]>(GMAIL_MOCK_TICKETS);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [locallyUnmarkedTicketIds, setLocallyUnmarkedTicketIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1354,6 +1422,11 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         if (!message?.id) return;
 
         setTickets((previous) => applyRealtimeWebsiteMessage(previous, message, data?.ticket));
+        return;
+      }
+
+      if (eventType.startsWith("chat.email.") || eventType.includes("email")) {
+        queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
         return;
       }
 
@@ -1535,6 +1608,36 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           return mappedTicket;
         }
 
+        if (ticket.source === "gmail" && ticket.externalIds?.emailThreadId) {
+          const [threadInfo, messages, emailTickets] = await Promise.all([
+            getEmailThreadInfo(ticket.externalIds.emailThreadId),
+            getEmailMessages(ticket.externalIds.emailThreadId),
+            getEmailTickets().catch(() => [] as RemoteTicket[]),
+          ]);
+          const linkedTicket =
+            emailTickets.find(
+              (item) => item.emailThreadId != null && Number(item.emailThreadId) === ticket.externalIds?.emailThreadId,
+            ) ??
+            (ticket.externalIds.emailTicketId
+              ? ({
+                  id: ticket.externalIds.emailTicketId,
+                  channel: "email",
+                  emailThreadId: ticket.externalIds.emailThreadId,
+                  slaStatus: ticket.status ? ticketStatusToRemoteStatus(ticket.status) : undefined,
+                } as RemoteTicket)
+              : null);
+          const mappedTicket = mapEmailThread(threadInfo, linkedTicket, messages);
+
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === ticket.id
+                ? { ...mappedTicket, isPinned: item.isPinned, unread: item.unread }
+                : item,
+            ),
+          );
+          return mappedTicket;
+        }
+
         if (ticket.source === "whatsapp" && ticket.externalIds?.whatsappRoomChatId) {
           const [messages, chatBlastHistories] = await Promise.all([
             getWhatsappMessages(ticket.externalIds.whatsappRoomChatId),
@@ -1636,6 +1739,51 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       window.setTimeout(refresh, 5_000);
     },
     [queryClient, refreshWhatsappMessages],
+  );
+
+  const refreshEmailMessages = useCallback(
+    async (ticketId: string, emailThreadId: number) => {
+      const [threadInfo, messages, emailTickets] = await Promise.all([
+        getEmailThreadInfo(emailThreadId),
+        getEmailMessages(emailThreadId),
+        getEmailTickets().catch(() => [] as RemoteTicket[]),
+      ]);
+      const linkedTicket = emailTickets.find(
+        (item) => item.emailThreadId != null && Number(item.emailThreadId) === emailThreadId,
+      );
+      const mappedTicket = mapEmailThread(threadInfo, linkedTicket, messages);
+
+      setTickets((previous) =>
+        previous.map((item) =>
+          item.id === ticketId
+            ? {
+                ...mappedTicket,
+                isPinned: item.isPinned,
+                unread: item.unread,
+              }
+            : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const scheduleEmailMessagesRefresh = useCallback(
+    (ticketId: string, emailThreadId: number) => {
+      const refresh = () => {
+        refreshEmailMessages(ticketId, emailThreadId).catch(() =>
+          queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }),
+        );
+      };
+
+      refresh();
+
+      if (typeof window === "undefined") return;
+
+      window.setTimeout(refresh, 1_500);
+      window.setTimeout(refresh, 5_000);
+    },
+    [queryClient, refreshEmailMessages],
   );
 
   const ensureTicketDetails = useCallback(
@@ -1772,6 +1920,76 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (ticket.source === "gmail") {
+        if (!ticket.isDetailsLoaded) {
+          ticket = await loadTicketDetails(ticket);
+        }
+
+        const emailMessageId =
+          Number(opts?.messageExternalId) ||
+          Number(
+            [...ticket.messages]
+              .reverse()
+              .find((message) => message.externalId != null)?.externalId ??
+              ticket.externalIds?.emailMessageId,
+          );
+
+        if (!Number.isFinite(emailMessageId)) {
+          throw new Error("Thread email belum memiliki message ID untuk dibuat menjadi ticket.");
+        }
+
+        const createdTicket = await createEmailTicket({
+          emailMessageId,
+          appTicketCategoryId: null,
+          priority: "high",
+        });
+        const mappedTicket =
+          ticket.externalIds?.emailThreadId != null
+            ? mapEmailThread(
+                {
+                  id: ticket.externalIds.emailThreadId,
+                  subject,
+                  primaryContactEmail: ticket.senderHandle,
+                  primaryContactName: ticket.senderName,
+                  unreadMessage: ticket.unreadCount ?? 0,
+                  isPinned: ticket.isPinned,
+                  lastMessageAt: ticket.lastMessageAt,
+                  createdAt: ticket.updatedAt,
+                  updatedAt: ticket.updatedAt,
+                } as RemoteEmailThread,
+                createdTicket,
+                [],
+              )
+            : mapEmailTicket(createdTicket);
+
+        setLocallyUnmarkedTicketIds((previous) => {
+          const next = new Set(previous);
+          next.delete(id);
+          next.delete(mappedTicket.id);
+          return next;
+        });
+        setTickets((previous) =>
+          previous.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  externalIds: {
+                    ...item.externalIds,
+                    emailTicketId: Number(createdTicket.id),
+                    emailMessageId,
+                  },
+                  viewKind: "ticket",
+                  isSavedAsTicket: true,
+                  subject,
+                  status: remoteStatusToTicketStatus(createdTicket.slaStatus) ?? item.status,
+                }
+              : item,
+          ),
+        );
+        queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+        return;
+      }
+
       setLocallyUnmarkedTicketIds((previous) => {
         const next = new Set(previous);
         next.delete(id);
@@ -1838,6 +2056,37 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                   ? {
                       ...item,
                       isPinned: Boolean(remoteRoom.isPinned),
+                    }
+                  : item,
+              ),
+            );
+            queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+          })
+          .catch(() => {
+            setTickets((previous) =>
+              previous.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      isPinned: ticket.isPinned,
+                    }
+                  : item,
+              ),
+            );
+          });
+        return;
+      }
+
+      if (ticket?.source === "gmail" && ticket.externalIds?.emailThreadId != null) {
+        setEmailThreadPinned(ticket.externalIds.emailThreadId, nextPinned)
+          .then((remoteThread) => {
+            setTickets((previous) =>
+              previous.map((item) =>
+                item.source === "gmail" &&
+                item.externalIds?.emailThreadId === Number(remoteThread.id)
+                  ? {
+                      ...item,
+                      isPinned: Boolean(remoteThread.isPinned),
                     }
                   : item,
               ),
@@ -2023,8 +2272,12 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           ticket.externalIds.whatsappTicketId,
           remoteStatus,
         );
+      } else if (ticket.externalIds?.emailTicketId) {
+        remoteTicket = await updateEmailTicketStatus(ticket.externalIds.emailTicketId, remoteStatus);
       } else if (ticket.source === "whatsapp") {
         throw new Error("Status WhatsApp hanya bisa diubah dari item ticket, bukan room chat.");
+      } else if (ticket.source === "gmail") {
+        throw new Error("Status email hanya bisa diubah setelah thread dibuat menjadi ticket.");
       }
 
       if (!remoteTicket) {
@@ -2091,6 +2344,182 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       });
     },
     [persistTicketStatus, queryClient, revertTicketStatus],
+  );
+
+  const sendEmailMessage = useCallback(
+    async ({
+      replyToTicketId,
+      to,
+      subject,
+      htmlBody,
+      uploadedAssetIds = [],
+      replyAll = false,
+    }: {
+      replyToTicketId?: string;
+      to: string;
+      subject: string;
+      htmlBody: string;
+      uploadedAssetIds?: Array<number | string>;
+      replyAll?: boolean;
+    }) => {
+      const textBody = htmlToMessageText(htmlBody);
+      const normalizedHtml = htmlBody.trim();
+      const basePayload: EmailMessagePayload = {
+        textBody,
+        htmlBody: normalizedHtml,
+        uploadedAssetIds,
+      };
+
+      if (replyToTicketId) {
+        const ticket = ticketsRef.current.find((item) => item.id === replyToTicketId);
+        const emailThreadId = ticket?.externalIds?.emailThreadId;
+
+        if (!ticket || ticket.source !== "gmail" || emailThreadId == null) {
+          throw new Error("Thread email belum tersedia untuk reply.");
+        }
+
+        const optimisticMessage: TicketMessage = {
+          id: `m-email-${Date.now()}`,
+          authorId: "agent",
+          authorName: "CS Postmatic",
+          content: normalizedHtml,
+          createdAt: new Date().toISOString(),
+          direction: "out",
+          sentStatus: "pending",
+          pendingAt: new Date().toISOString(),
+        };
+
+        setTickets((previous) =>
+          previous.map((item) =>
+            item.id === replyToTicketId
+              ? {
+                  ...item,
+                  snippet: getMessageSnippet(optimisticMessage, item.snippet),
+                  updatedAt: optimisticMessage.createdAt,
+                  lastMessageAt: optimisticMessage.createdAt,
+                  messages: [...item.messages, optimisticMessage],
+                }
+              : item,
+          ),
+        );
+
+        try {
+          const remoteMessage = await replyEmail(emailThreadId, {
+            ...basePayload,
+            replyAll,
+          });
+          const mappedMessage = mapEmailMessage(remoteMessage, ticket.senderName);
+
+          setTickets((previous) =>
+            previous.map((item) => {
+              if (item.id !== replyToTicketId) return item;
+
+              const messages = sortTicketMessages(
+                item.messages.map((message) =>
+                  message.id === optimisticMessage.id ? mappedMessage : message,
+                ),
+              );
+              const lastMessage = messages.at(-1) ?? mappedMessage;
+
+              return {
+                ...item,
+                externalIds: {
+                  ...item.externalIds,
+                  emailMessageId: Number(remoteMessage.id),
+                },
+                snippet: getMessageSnippet(lastMessage, item.snippet),
+                updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+                lastMessageAt: getNewerTimestamp(
+                  item.lastMessageAt ?? item.updatedAt,
+                  lastMessage.createdAt,
+                ),
+                messages,
+              };
+            }),
+          );
+          scheduleEmailMessagesRefresh(replyToTicketId, emailThreadId);
+          return replyToTicketId;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "Gagal mengirim email.";
+
+          setTickets((previous) =>
+            previous.map((item) =>
+              item.id === replyToTicketId
+                ? {
+                    ...item,
+                    messages: item.messages.map((message) =>
+                      message.id === optimisticMessage.id
+                        ? {
+                            ...message,
+                            sentStatus: "failed",
+                            pendingAt: undefined,
+                            errorMessage: reason,
+                          }
+                        : message,
+                    ),
+                  }
+                : item,
+            ),
+          );
+          throw error;
+        }
+      }
+
+      const recipients = parseEmailRecipients(to);
+      if (!recipients.length) {
+        throw new Error("Masukkan minimal satu alamat email penerima yang valid.");
+      }
+
+      const remoteMessage = await composeEmail({
+        ...basePayload,
+        to: recipients,
+        cc: [],
+        bcc: [],
+        subject,
+      });
+      const emailThreadId = Number(remoteMessage.emailThreadId);
+      if (!Number.isFinite(emailThreadId)) {
+        throw new Error("Endpoint compose belum mengembalikan emailThreadId.");
+      }
+
+      const threadInfo = await getEmailThreadInfo(emailThreadId).catch(
+        () =>
+          ({
+            id: emailThreadId,
+            subject,
+            primaryContactEmail: recipients[0]?.address,
+            primaryContactName: recipients[0]?.name,
+            unreadMessage: 0,
+            isPinned: false,
+            lastMessageAt: remoteMessage.occurredAt ?? remoteMessage.createdAt,
+            createdAt: remoteMessage.createdAt,
+            updatedAt: remoteMessage.updatedAt,
+            lastMessage: {
+              id: remoteMessage.id,
+              direction: remoteMessage.direction,
+              from: remoteMessage.from,
+              subject,
+              preview: textBody,
+              sentStatus: remoteMessage.sentStatus,
+              occurredAt: remoteMessage.occurredAt ?? remoteMessage.createdAt,
+            },
+          }) satisfies RemoteEmailThread,
+      );
+      const mappedTicket = mapEmailThread(threadInfo, null, [remoteMessage]);
+
+      setTickets((previous) =>
+        [mappedTicket, ...previous.filter((item) => item.id !== mappedTicket.id)].sort(
+          (left, right) =>
+            new Date(right.lastMessageAt ?? right.updatedAt).getTime() -
+            new Date(left.lastMessageAt ?? left.updatedAt).getTime(),
+        ),
+      );
+      scheduleEmailMessagesRefresh(mappedTicket.id, emailThreadId);
+      queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
+
+      return mappedTicket.id;
+    },
+    [queryClient, scheduleEmailMessagesRefresh],
   );
 
   const addMessage = useCallback(
@@ -2260,12 +2689,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         });
 
         const whatsappReplyPayloads = buildWhatsappReplyPayloads(messageData);
-        const attachmentReplyPayloads = toWhatsappAttachmentPayloads(messageData).map(
-          (attachment) => ({
-            body: "",
-            ...attachment,
-          }),
-        );
+        const uploadedAssetIds = toWhatsappUploadedAssetIds(messageData);
+        const attachmentReplyPayloads: ReplyWhatsappPayload[] = [];
 
         if (existingWhatsappTicket?.externalIds?.whatsappRoomChatId) {
           const roomChatId = existingWhatsappTicket.externalIds.whatsappRoomChatId;
@@ -2288,6 +2713,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         createWhatsappRoom({
           number: target,
           body,
+          ...(uploadedAssetIds.length ? { uploadedAssetIds } : {}),
         })
           .then(async (createResult: WhatsappRoomCreateResult) => {
             const roomChatId =
@@ -2545,13 +2971,122 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     [scheduleWhatsappMessagesRefresh],
   );
 
+  const resendEmailMessage = useCallback(
+    async (ticketId: string, messageId: string) => {
+      const ticket = ticketsRef.current.find((item) => item.id === ticketId);
+      const message = ticket?.messages.find((item) => item.id === messageId);
+      const emailMessageId = Number(message?.externalId);
+
+      if (!ticket || ticket.source !== "gmail") {
+        throw new Error("Thread email tidak ditemukan untuk retry.");
+      }
+
+      if (!message || !Number.isFinite(emailMessageId)) {
+        throw new Error("Email ini belum punya ID remote untuk retry.");
+      }
+
+      setTickets((previous) =>
+        previous.map((item) =>
+          item.id === ticketId
+            ? {
+                ...item,
+                messages: item.messages.map((currentMessage) =>
+                  currentMessage.id === messageId
+                    ? {
+                        ...currentMessage,
+                        sentStatus: "pending",
+                        pendingAt: new Date().toISOString(),
+                        errorMessage: undefined,
+                      }
+                    : currentMessage,
+                ),
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const remoteMessage = await resendEmailMessageApi(emailMessageId);
+        const mappedMessage = mapEmailMessage(remoteMessage, ticket.senderName);
+
+        setTickets((previous) =>
+          previous.map((item) => {
+            if (item.id !== ticketId) return item;
+
+            const messages = sortTicketMessages(
+              item.messages.map((currentMessage) =>
+                currentMessage.id === messageId ? mappedMessage : currentMessage,
+              ),
+            );
+            const lastMessage = messages.at(-1) ?? mappedMessage;
+
+            return {
+              ...item,
+              externalIds: {
+                ...item.externalIds,
+                emailMessageId: Number(remoteMessage.id),
+              },
+              snippet: getMessageSnippet(lastMessage, item.snippet),
+              updatedAt: getNewerTimestamp(item.updatedAt, lastMessage.createdAt),
+              lastMessageAt: getNewerTimestamp(
+                item.lastMessageAt ?? item.updatedAt,
+                lastMessage.createdAt,
+              ),
+              messages,
+            };
+          }),
+        );
+
+        if (ticket.externalIds?.emailThreadId != null) {
+          scheduleEmailMessagesRefresh(ticketId, ticket.externalIds.emailThreadId);
+        }
+        toast.success("Email dikirim ulang");
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Retry email gagal.";
+
+        setTickets((previous) =>
+          previous.map((item) =>
+            item.id === ticketId
+              ? {
+                  ...item,
+                  messages: item.messages.map((currentMessage) =>
+                    currentMessage.id === messageId
+                      ? {
+                          ...currentMessage,
+                          sentStatus: "failed",
+                          pendingAt: undefined,
+                          errorMessage: reason,
+                        }
+                      : currentMessage,
+                  ),
+                }
+              : item,
+          ),
+        );
+        toast.error("Retry email gagal", {
+          description: reason,
+        });
+        throw error;
+      }
+    },
+    [scheduleEmailMessagesRefresh],
+  );
+
   const markAsRead = useCallback((id: string) => {
+    const ticket = ticketsRef.current.find((item) => item.id === id);
+
     setTickets((previous) =>
       previous.map((ticket) =>
         ticket.id === id && ticket.unread ? { ...ticket, unread: false } : ticket,
       ),
     );
-  }, []);
+
+    if (ticket?.source === "gmail" && ticket.externalIds?.emailThreadId != null && ticket.unread) {
+      markEmailThreadRead(ticket.externalIds.emailThreadId).catch(() =>
+        queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }),
+      );
+    }
+  }, [queryClient]);
 
   const value = useMemo<TicketsContextValue>(
     () => ({
@@ -2571,7 +3106,6 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         tickets.filter(
           (ticket) =>
             ticket.isSavedAsTicket &&
-            ticket.source !== "gmail" &&
             (ticket.source !== "whatsapp" || isWhatsappTicketView(ticket)) &&
             !locallyUnmarkedTicketIds.has(ticket.id),
         ),
@@ -2584,6 +3118,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       updateTicketStatus,
       addMessage,
       resendWhatsappMessage,
+      sendEmailMessage,
+      resendEmailMessage,
       markAsRead,
       getDraft,
       setDraft,
@@ -2601,7 +3137,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       overviewQuery.isLoading,
       refreshWhatsappRoomDisplayInfo,
       refreshTickets,
+      resendEmailMessage,
       resendWhatsappMessage,
+      sendEmailMessage,
       setDraft,
       tickets,
       togglePinTicket,

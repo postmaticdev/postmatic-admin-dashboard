@@ -2,12 +2,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { CornerUpLeft } from "lucide-react";
+import { AlertCircle, CornerUpLeft, FileText, Loader2, RefreshCw } from "lucide-react";
 import { MarkAsTicketButton } from "../MarkAsTicketButton";
 import { StatusBadge } from "../StatusBadge";
 import { TicketStatusSelector } from "../TicketStatusSelector";
 import { formatDateTime } from "@/lib/utils/date";
+import { useTickets } from "@/contexts/TicketsContext";
 import type { Ticket } from "@/lib/types/ticket";
+import { useState } from "react";
 
 interface Props {
   ticket: Ticket;
@@ -15,6 +17,18 @@ interface Props {
 }
 
 export function GmailThreadView({ ticket, onReplyEmail }: Props) {
+  const { resendEmailMessage } = useTickets();
+  const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
+
+  const handleRetryEmail = async (messageId: string) => {
+    setRetryingMessageId(messageId);
+    try {
+      await resendEmailMessage(ticket.id, messageId);
+    } finally {
+      setRetryingMessageId(null);
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background relative">
       <header className="flex items-start justify-between gap-4 border-b border-border bg-card px-6 py-4">
@@ -28,7 +42,9 @@ export function GmailThreadView({ ticket, onReplyEmail }: Props) {
           <h1 className="truncate text-xl font-semibold text-foreground">{ticket.subject}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <TicketStatusSelector ticketId={ticket.id} currentStatus={ticket.status} />
+          {ticket.isSavedAsTicket && (
+            <TicketStatusSelector ticketId={ticket.id} currentStatus={ticket.status} />
+          )}
           <MarkAsTicketButton ticket={ticket} />
         </div>
       </header>
@@ -64,6 +80,31 @@ export function GmailThreadView({ ticket, onReplyEmail }: Props) {
                     {formatDateTime(m.createdAt)}
                   </span>
                 </div>
+                {m.sentStatus === "failed" && (
+                  <div className="mb-3 flex items-start justify-between gap-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                    <span className="inline-flex items-start gap-1.5">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>{m.errorMessage || "Email gagal dikirim."}</span>
+                    </span>
+                    {m.canResend && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={retryingMessageId === m.id}
+                        onClick={() => void handleRetryEmail(m.id)}
+                        className="h-7 shrink-0 gap-1.5 px-2 text-[11px]"
+                      >
+                        {retryingMessageId === m.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                        Retry
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <div
                   className="text-sm leading-relaxed text-foreground/90 prose max-w-none 
                     [&_h1]:text-lg [&_h1]:font-bold [&_h1]:my-2 
@@ -72,6 +113,22 @@ export function GmailThreadView({ ticket, onReplyEmail }: Props) {
                     [&_a]:text-blue-600 [&_a]:underline"
                   dangerouslySetInnerHTML={{ __html: m.content }}
                 />
+                {m.attachments && m.attachments.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {m.attachments.map((attachment, index) => (
+                      <a
+                        key={`${attachment.url}-${index}`}
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex max-w-[220px] items-center gap-2 rounded-md border border-border bg-muted/35 px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                        <span className="truncate">{attachment.name}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </article>
             </div>
           )})}

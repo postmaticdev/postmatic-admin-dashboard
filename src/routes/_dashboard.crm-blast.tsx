@@ -39,11 +39,13 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTickets } from "@/contexts/TicketsContext";
 import {
+  getEmailBlastContacts,
+  getEmailQuota,
   getWhatsappBlastContacts,
+  getUploadedAssetIds,
   getChatBlastHistories,
   normalizeRemoteChatAttachment,
   sendChatBlast,
-  toChatAttachmentPayload,
   uploadCustomerServiceAttachment,
   type WhatsappBlastContact,
   type RemoteChatBlastHistory,
@@ -66,6 +68,7 @@ interface BlastCampaign {
   dateTime: string;
   message: string;
   subject?: string;
+  purpose?: "marketing" | "operational";
   attachments?: UploadedAttachment[];
   targets: string;
 }
@@ -80,26 +83,6 @@ interface ContactUser {
   role: "user" | "admin" | "business";
   sourceId?: string | number;
 }
-
-const MOCK_USERS: ContactUser[] = [
-  { id: "u-1", name: "Hasanudin", handle: "+62 812-1000-5000", role: "user" },
-  { id: "u-2", name: "Ahmad Jalal", handle: "ahmad.jalal@gmail.com", role: "admin" },
-  { id: "u-3", name: "Budi Santoso", handle: "+62 813-1111-5077", role: "business" },
-  { id: "u-4", name: "Citra Dewi", handle: "citra.dewi@gmail.com", role: "user" },
-  { id: "u-5", name: "Eko Prasetyo", handle: "+62 814-1222-5154", role: "admin" },
-  { id: "u-6", name: "Farida Utami", handle: "farida@website.com", role: "business" },
-  { id: "u-7", name: "Gita Amanda", handle: "+62 815-1333-5231", role: "user" },
-  { id: "u-8", name: "Heri Wibowo", handle: "heri.wibowo@gmail.com", role: "admin" },
-  { id: "u-9", name: "Indra Wijaya", handle: "+62 816-1444-5308", role: "business" },
-  { id: "u-10", name: "Kartika Sari", handle: "kartika.sari@gmail.com", role: "user" },
-  { id: "u-11", name: "Luthfi Hakim", handle: "+62 817-1555-5385", role: "admin" },
-  { id: "u-12", name: "Mega Utami", handle: "+62 818-1666-5462", role: "business" },
-  { id: "u-13", name: "Naufal Hadi", handle: "+62 819-1777-5539", role: "user" },
-  { id: "u-14", name: "Olivia Rian", handle: "+62 820-1888-5616", role: "admin" },
-  { id: "u-15", name: "Putra Perdana", handle: "+62 821-1999-5693", role: "business" },
-  { id: "u-16", name: "Rian Hidayat", handle: "+62 822-2110-5770", role: "user" },
-  { id: "u-17", name: "Siti Rahma", handle: "+62 823-2221-5847", role: "business" },
-];
 
 function normalizeWhatsappTarget(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -127,11 +110,30 @@ function parseTargetList(targetGroup: string, manualInput: string) {
     .filter(Boolean);
 }
 
+function htmlToPlainText(value: string) {
+  return value
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toCampaignStatus(status?: string | null): BlastCampaign["status"] {
   const normalized = status?.toLowerCase();
 
   if (normalized === "success") return "success";
-  if (normalized === "failed" || normalized === "error") return "failed";
+  if (normalized === "failed" || normalized === "error" || normalized === "all_failed") {
+    return "failed";
+  }
   if (normalized === "processing") return "processing";
   if (normalized === "scheduled" || normalized === "schedule") return "schedule";
   return "queued";
@@ -162,8 +164,10 @@ function formatBlastDate(value?: string | null) {
 
 function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
   const platform =
-    history.channelType === "gmail" || history.channelType === "website"
-      ? history.channelType
+    history.channelType === "gmail" || history.channelType === "email"
+      ? "gmail"
+      : history.channelType === "website"
+        ? "website"
       : "whatsapp";
   const targets = (history.targets ?? []).filter(Boolean);
   const totalAssign = Number(history.totalAssign ?? 0);
@@ -173,6 +177,7 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
     )
     .filter((attachment): attachment is NonNullable<typeof attachment> => Boolean(attachment))
     .map((attachment) => ({
+      assetId: attachment.uploadedAssetId ?? attachment.url,
       name: attachment.filename,
       url: attachment.url,
       type: attachment.mimeType,
@@ -186,8 +191,9 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
     assign: totalAssign > 0 ? totalAssign : targets.length,
     succeedAssign: Number(history.succeedAssign ?? 0) || undefined,
     dateTime: formatBlastDate(history.scheduledFor ?? history.createdAt),
-    message: history.body ?? "",
+    message: history.htmlBody ?? history.body ?? "",
     subject: history.subject ?? undefined,
+    purpose: history.purpose === "marketing" ? "marketing" : "operational",
     attachments: attachments.length ? attachments : undefined,
     targets: targets.join(", "),
   };
@@ -281,6 +287,7 @@ function CrmBlastPage() {
   const [scheduleTime, setScheduleTime] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeMessage, setComposeMessage] = useState("");
+  const [blastPurpose, setBlastPurpose] = useState<"marketing" | "operational">("operational");
   const [blastAttachments, setBlastAttachments] = useState<UploadedAttachment[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSendingBlast, setIsSendingBlast] = useState(false);
@@ -296,10 +303,17 @@ function CrmBlastPage() {
   const [activeTab, setActiveTab] = useState<"user" | "admin" | "business">("user");
 
   const blastContactsQuery = useQuery({
-    queryKey: ["crm-blast", "contacts"],
-    queryFn: getWhatsappBlastContacts,
-    enabled: isImportOpen && activePlatform !== "gmail",
+    queryKey: ["crm-blast", "contacts", activePlatform],
+    queryFn: activePlatform === "gmail" ? getEmailBlastContacts : getWhatsappBlastContacts,
+    enabled: isImportOpen,
     staleTime: 60_000,
+  });
+
+  const emailQuotaQuery = useQuery({
+    queryKey: ["crm-blast", "email-quota"],
+    queryFn: () => getEmailQuota(),
+    enabled: activePlatform === "gmail",
+    staleTime: 30_000,
   });
 
   const blastHistoriesQuery = useQuery({
@@ -335,6 +349,7 @@ function CrmBlastPage() {
     setScheduleTime("");
     setComposeSubject("");
     setComposeMessage("");
+    setBlastPurpose("operational");
     setBlastAttachments([]);
     setIsUploadingAttachment(false);
     setSendBlastError("");
@@ -365,8 +380,7 @@ function CrmBlastPage() {
       activePlatform === "website" ? "" : manualInput,
     );
 
-    const hasMessageContent =
-      composeMessage.trim() || (activePlatform === "whatsapp" && blastAttachments.length > 0);
+    const hasMessageContent = composeMessage.trim() || blastAttachments.length > 0;
 
     if (!campaignName.trim() || !hasMessageContent || !targetList.length) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
@@ -375,19 +389,16 @@ function CrmBlastPage() {
     setIsSendingBlast(true);
 
     try {
-      const contactPool =
-        activePlatform === "gmail"
-          ? MOCK_USERS
-          : (blastContactsQuery.data ?? []).map((contact) => ({
-              id: contact.id,
-              name: contact.name,
-              handle: contact.handle,
-              phone: contact.phone,
-              email: contact.email,
-              avatarUrl: contact.avatarUrl,
-              role: contact.role,
-              sourceId: contact.sourceId,
-            }));
+      const contactPool = (blastContactsQuery.data ?? []).map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        handle: contact.handle,
+        phone: contact.phone,
+        email: contact.email,
+        avatarUrl: contact.avatarUrl,
+        role: contact.role,
+        sourceId: contact.sourceId,
+      }));
       const targets = {
         profileIds: [] as string[],
         businessIds: [] as number[],
@@ -456,12 +467,30 @@ function CrmBlastPage() {
         throw new Error("Pilih minimal satu penerima yang valid untuk blast.");
       }
 
+      if (activePlatform === "whatsapp" && targets.phoneNumbers.length === 0) {
+        throw new Error("Filter target WhatsApp tidak menghasilkan nomor valid.");
+      }
+
+      if (
+        activePlatform === "gmail" &&
+        emailQuotaQuery.data?.remainingDailyGuard != null &&
+        targets.emails.length > Number(emailQuotaQuery.data.remainingDailyGuard)
+      ) {
+        throw new Error(
+          `Sisa limit email hari ini ${emailQuotaQuery.data.remainingDailyGuard}, kurangi penerima blast.`,
+        );
+      }
+
+      const uploadedAssetIds = getUploadedAssetIds(blastAttachments);
+      const plainBody = htmlToPlainText(composeMessage);
+
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
-        body: composeMessage.trim(),
-        attachments:
-          activePlatform === "whatsapp" ? blastAttachments.map(toChatAttachmentPayload) : [],
-        channelType: activePlatform,
+        body: activePlatform === "whatsapp" ? plainBody : plainBody || composeMessage.trim(),
+        htmlBody: activePlatform === "whatsapp" ? undefined : composeMessage.trim(),
+        uploadedAssetIds,
+        channelType: activePlatform === "gmail" ? "email" : activePlatform,
+        purpose: blastPurpose,
         broadcastType: "direct",
         schedule: null,
         targets,
@@ -488,44 +517,37 @@ function CrmBlastPage() {
     }
   };
 
-  const insertHtmlAtCursor = (html: string) => {
-    const sel = window.getSelection();
-    if (sel && sel.getRangeAt && sel.rangeCount) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const el = document.createElement("div");
-      el.innerHTML = html;
-      const frag = document.createDocumentFragment();
-      let node;
-      let lastNode;
-      while ((node = el.firstChild)) {
-        lastNode = frag.appendChild(node);
-      }
-      range.insertNode(frag);
-      if (lastNode) {
-        range.setStartAfter(lastNode);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    } else {
-      const editor = document.getElementById("rich-blast-editor");
-      if (editor) {
-        editor.innerHTML += html;
-      }
-    }
-    const editor = document.getElementById("rich-blast-editor");
-    if (editor) {
-      setComposeMessage(editor.innerHTML);
-    }
-  };
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     const selectedFiles = Array.from(files);
 
+    setSendBlastError("");
+    setIsUploadingAttachment(true);
+
+    try {
+      const uploadedAttachments = await Promise.all(
+        selectedFiles.map((file) => uploadCustomerServiceAttachment(file)),
+      );
+
+      setBlastAttachments((currentAttachments) => [
+        ...currentAttachments,
+        ...uploadedAttachments,
+      ]);
+    } catch (error) {
+      setSendBlastError(
+        error instanceof Error ? error.message : "Gagal mengunggah lampiran blast.",
+      );
+    } finally {
+      setIsUploadingAttachment(false);
+
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+
+    return;
+
+    /*
     if (activePlatform === "whatsapp") {
       setSendBlastError("");
       setIsUploadingAttachment(true);
@@ -573,6 +595,7 @@ function CrmBlastPage() {
     });
 
     if (fileInputRef.current) fileInputRef.current.value = "";
+    */
   };
 
   const handleRemoveBlastAttachment = (index: number) => {
@@ -587,8 +610,7 @@ function CrmBlastPage() {
       activePlatform === "website" ? "" : manualInput,
     );
 
-    const hasMessageContent =
-      composeMessage.trim() || (activePlatform === "whatsapp" && blastAttachments.length > 0);
+    const hasMessageContent = composeMessage.trim() || blastAttachments.length > 0;
 
     if (!campaignName.trim() || !hasMessageContent || !targetList.length || !scheduleTime) return;
     if (activePlatform !== "whatsapp" && !composeSubject.trim()) return;
@@ -597,19 +619,16 @@ function CrmBlastPage() {
     setIsSendingBlast(true);
 
     try {
-      const contactPool =
-        activePlatform === "gmail"
-          ? MOCK_USERS
-          : (blastContactsQuery.data ?? []).map((contact) => ({
-              id: contact.id,
-              name: contact.name,
-              handle: contact.handle,
-              phone: contact.phone,
-              email: contact.email,
-              avatarUrl: contact.avatarUrl,
-              role: contact.role,
-              sourceId: contact.sourceId,
-            }));
+      const contactPool = (blastContactsQuery.data ?? []).map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        handle: contact.handle,
+        phone: contact.phone,
+        email: contact.email,
+        avatarUrl: contact.avatarUrl,
+        role: contact.role,
+        sourceId: contact.sourceId,
+      }));
       const targets = {
         profileIds: [] as string[],
         businessIds: [] as number[],
@@ -678,12 +697,30 @@ function CrmBlastPage() {
         throw new Error("Pilih minimal satu penerima yang valid untuk blast.");
       }
 
+      if (activePlatform === "whatsapp" && targets.phoneNumbers.length === 0) {
+        throw new Error("Filter target WhatsApp tidak menghasilkan nomor valid.");
+      }
+
+      if (
+        activePlatform === "gmail" &&
+        emailQuotaQuery.data?.remainingDailyGuard != null &&
+        targets.emails.length > Number(emailQuotaQuery.data.remainingDailyGuard)
+      ) {
+        throw new Error(
+          `Sisa limit email hari ini ${emailQuotaQuery.data.remainingDailyGuard}, kurangi penerima blast.`,
+        );
+      }
+
+      const uploadedAssetIds = getUploadedAssetIds(blastAttachments);
+      const plainBody = htmlToPlainText(composeMessage);
+
       await sendChatBlast({
         subject: activePlatform === "whatsapp" ? campaignName.trim() : composeSubject.trim(),
-        body: composeMessage.trim(),
-        attachments:
-          activePlatform === "whatsapp" ? blastAttachments.map(toChatAttachmentPayload) : [],
-        channelType: activePlatform,
+        body: activePlatform === "whatsapp" ? plainBody : plainBody || composeMessage.trim(),
+        htmlBody: activePlatform === "whatsapp" ? undefined : composeMessage.trim(),
+        uploadedAssetIds,
+        channelType: activePlatform === "gmail" ? "email" : activePlatform,
+        purpose: blastPurpose,
         broadcastType: "scheduled",
         schedule: new Date(scheduleTime).toISOString(),
         targets,
@@ -715,27 +752,23 @@ function CrmBlastPage() {
 
   // Import Modal Handlers
   const importableContacts = useMemo<ContactUser[]>(() => {
-    if (activePlatform !== "gmail") {
-      const contacts = (blastContactsQuery.data ?? []).map((contact: WhatsappBlastContact) => ({
-        id: contact.id,
-        name: contact.name,
-        handle: contact.handle,
-        phone: contact.phone,
-        email: contact.email,
-        avatarUrl: contact.avatarUrl,
-        role: contact.role,
-        sourceId: contact.sourceId,
-      }));
+    const contacts = (blastContactsQuery.data ?? []).map((contact: WhatsappBlastContact) => ({
+      id: contact.id,
+      name: contact.name,
+      handle: activePlatform === "gmail" ? (contact.email ?? contact.handle) : contact.handle,
+      phone: contact.phone,
+      email: contact.email,
+      avatarUrl: contact.avatarUrl,
+      role: contact.role,
+      sourceId: contact.sourceId,
+    }));
 
-      if (activePlatform !== "whatsapp") return contacts;
+    if (activePlatform !== "whatsapp") return contacts;
 
-      const whatsappRooms = getBySource("whatsapp");
-      return contacts.filter((contact) =>
-        findExistingWhatsappTicket(contact.phone ?? contact.handle, whatsappRooms),
-      );
-    }
-
-    return MOCK_USERS;
+    const whatsappRooms = getBySource("whatsapp");
+    return contacts.filter((contact) =>
+      findExistingWhatsappTicket(contact.phone ?? contact.handle, whatsappRooms),
+    );
   }, [activePlatform, blastContactsQuery.data, getBySource]);
 
   const filteredUsers = importableContacts.filter((u) => {
@@ -751,8 +784,8 @@ function CrmBlastPage() {
     const term = importSearch.toLowerCase();
     return u.name.toLowerCase().includes(term) || u.handle.toLowerCase().includes(term);
   });
-  const isImportLoading = activePlatform !== "gmail" && blastContactsQuery.isLoading;
-  const importContactsError = activePlatform !== "gmail" ? blastContactsQuery.error : null;
+  const isImportLoading = blastContactsQuery.isLoading;
+  const importContactsError = blastContactsQuery.error;
 
   const handleToggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
@@ -799,9 +832,7 @@ function CrmBlastPage() {
   const hasInvalidTargets = parsedTargets.some((t) => !isValidHandle(t));
 
   const hasTargets = parsedTargets.length > 0;
-  const hasMessageContent =
-    Boolean(composeMessage.trim()) ||
-    (activePlatform === "whatsapp" && blastAttachments.length > 0);
+  const hasMessageContent = Boolean(composeMessage.trim()) || blastAttachments.length > 0;
   const isFormValid =
     campaignName.trim() &&
     hasMessageContent &&
@@ -1158,7 +1189,7 @@ function CrmBlastPage() {
               {/* Message Editor Area */}
               <div className="flex-1 bg-card flex flex-col min-h-[350px]">
                 {activePlatform !== "whatsapp" && (
-                  <div className="px-5 pt-4">
+                  <div className="space-y-3 px-5 pt-4">
                     <Input
                       required
                       placeholder="Subject Email / Blast"
@@ -1166,11 +1197,59 @@ function CrmBlastPage() {
                       onChange={(e) => setComposeSubject(e.target.value)}
                       className="h-10 text-sm focus-visible:ring-1 bg-muted/20 border-border/80"
                     />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
+                        {(["operational", "marketing"] as const).map((purpose) => (
+                          <button
+                            key={purpose}
+                            type="button"
+                            onClick={() => setBlastPurpose(purpose)}
+                            className={cn(
+                              "rounded px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
+                              blastPurpose === purpose
+                                ? "bg-background text-foreground shadow-sm"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {purpose}
+                          </button>
+                        ))}
+                      </div>
+                      {activePlatform === "gmail" && (
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Limit email:{" "}
+                          <strong className="text-foreground">
+                            {emailQuotaQuery.isLoading
+                              ? "memuat..."
+                              : `${emailQuotaQuery.data?.remainingDailyGuard ?? "-"} tersisa`}
+                          </strong>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
 
                 {activePlatform === "whatsapp" ? (
                   <div className="flex flex-col flex-1 min-h-[300px]">
+                    <div className="px-5 pt-4">
+                      <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
+                        {(["operational", "marketing"] as const).map((purpose) => (
+                          <button
+                            key={purpose}
+                            type="button"
+                            onClick={() => setBlastPurpose(purpose)}
+                            className={cn(
+                              "rounded px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
+                              blastPurpose === purpose
+                                ? "bg-background text-foreground shadow-sm"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {purpose}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <textarea
                       required={blastAttachments.length === 0}
                       placeholder="Tulis pesan broadcast Anda..."

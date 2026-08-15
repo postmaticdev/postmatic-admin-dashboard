@@ -6,6 +6,9 @@ import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/aut
 export const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
   "https://api-staging.postmatic.id";
+const ASSET_PUBLIC_ORIGIN =
+  (import.meta.env.VITE_ASSET_PUBLIC_ORIGIN as string | undefined)?.trim() ||
+  "https://asset.postmatic.id";
 
 export interface ApiResponse<T> {
   data: T;
@@ -23,13 +26,14 @@ export interface RemoteTicket {
   id: number;
   appTicketCategoryId?: number | null;
   profileId?: string | null;
-  channel: "website" | "whatsapp";
+  channel: "website" | "whatsapp" | "email";
   priority?: string | null;
   slaStatus?: "open" | "pending" | "in_progress" | "resolved" | string | null;
   isPinned?: boolean | null;
   unreadMessages?: number | null;
   whatsappRoomChatId?: number | null;
   whatsappMessageChatId?: number | null;
+  emailThreadId?: number | null;
   subject?: string | null;
   body?: string | null;
   countryCode?: string | null;
@@ -166,6 +170,7 @@ export interface CreateWhatsappTicketPayload {
 export interface CreateWhatsappRoomPayload {
   number: string;
   body?: string;
+  uploadedAssetIds?: Array<number | string>;
 }
 
 export interface RemoteWhatsappRoomCreateResult {
@@ -180,6 +185,7 @@ export interface WhatsappRoomCreateResult extends RemoteWhatsappRoomCreateResult
 export interface ReplyWhatsappPayload {
   body: string;
   quotedWhatsappMessageId?: number;
+  uploadedAssetIds?: Array<number | string>;
   attachment?: string;
   attachmentFilename?: string;
   attachmentMimeType?: string;
@@ -193,6 +199,7 @@ export interface ReplyWebsitePayload {
 }
 
 export interface UploadedAttachment {
+  assetId: number | string;
   name: string;
   url: string;
   type: string;
@@ -202,6 +209,7 @@ export type ChatAttachmentType = "image" | "video" | "audio" | "document";
 
 export interface RemoteChatAttachment {
   id?: number | null;
+  uploadedAssetId?: number | string | null;
   position?: number | null;
   url?: string | null;
   filename?: string | null;
@@ -213,10 +221,120 @@ export interface RemoteChatAttachment {
 export type RemoteChatAttachmentValue = string | RemoteChatAttachment;
 
 export interface ChatAttachmentPayload {
+  uploadedAssetId?: number | string;
   url: string;
   filename: string;
   mimeType: string;
   attachmentType: ChatAttachmentType;
+}
+
+export interface RemoteEmailAddress {
+  name?: string | null;
+  address?: string | null;
+}
+
+export interface RemoteEmailMailbox {
+  id?: number | null;
+  address?: string | null;
+  displayName?: string | null;
+}
+
+export interface RemoteEmailAttachment {
+  id?: number | null;
+  uploadedAssetId?: number | string | null;
+  position?: number | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  disposition?: string | null;
+  contentId?: string | null;
+  assetUrl?: string | null;
+  status?: string | null;
+}
+
+export interface RemoteEmailMessageSummary {
+  id?: number | null;
+  direction?: "inbound" | "outbound" | string | null;
+  from?: RemoteEmailAddress | null;
+  subject?: string | null;
+  preview?: string | null;
+  sentStatus?: string | null;
+  occurredAt?: string | null;
+}
+
+export interface RemoteEmailThread {
+  id: number;
+  mailbox?: RemoteEmailMailbox | null;
+  subject?: string | null;
+  primaryContactEmail?: string | null;
+  primaryContactName?: string | null;
+  unreadMessage?: number | null;
+  isPinned?: boolean | null;
+  isArchived?: boolean | null;
+  inboxView?: "inbox" | "archive" | "spam" | "trash" | string | null;
+  lastMessage?: RemoteEmailMessageSummary | null;
+  lastMessageAt?: string | null;
+  appTicketCategoryId?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteEmailMessage {
+  id: number;
+  emailThreadId?: number | null;
+  direction?: "inbound" | "outbound" | string | null;
+  senderType?: "customer" | "agent" | string | null;
+  from?: RemoteEmailAddress | null;
+  replyTo?: RemoteEmailAddress | null;
+  to?: RemoteEmailAddress[] | null;
+  cc?: RemoteEmailAddress[] | null;
+  bcc?: RemoteEmailAddress[] | null;
+  subject?: string | null;
+  textBody?: string | null;
+  htmlBody?: string | null;
+  rfcMessageId?: string | null;
+  inReplyTo?: string | null;
+  references?: string[] | null;
+  parent?: RemoteEmailMessageSummary | null;
+  resendOfEmailMessageId?: number | null;
+  resentAsEmailMessageId?: number | null;
+  canResend?: boolean | null;
+  sentStatus?: string | null;
+  sendAttempts?: number | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  attachments?: RemoteEmailAttachment[] | null;
+  inlineContentUrls?: Record<string, string> | null;
+  occurredAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface EmailMessagePayload {
+  to?: RemoteEmailAddress[];
+  cc?: RemoteEmailAddress[];
+  bcc?: RemoteEmailAddress[];
+  subject?: string;
+  textBody: string;
+  htmlBody: string;
+  replyAll?: boolean;
+  uploadedAssetIds?: Array<number | string>;
+}
+
+export interface RemoteEmailQuota {
+  mailboxId?: number | null;
+  address?: string | null;
+  dailyUsage?: number | null;
+  dailyGuard?: number | null;
+  providerDailyLimit?: number | null;
+  remainingDailyGuard?: number | null;
+  guardResetAt?: string | null;
+}
+
+export interface CreateEmailTicketPayload {
+  emailMessageId: number;
+  appTicketCategoryId?: number | null;
+  priority: "low" | "medium" | "high";
 }
 
 interface RemoteAssetUploadInstruction {
@@ -282,8 +400,11 @@ export interface ChatBlastTargetsPayload {
 export interface ChatBlastPayload {
   subject: string;
   body: string;
+  htmlBody?: string;
+  uploadedAssetIds?: Array<number | string>;
   attachments?: ChatAttachmentPayload[];
-  channelType: "whatsapp" | "gmail" | "website";
+  channelType: "whatsapp" | "gmail" | "email" | "website";
+  purpose?: "marketing" | "operational";
   broadcastType: "direct" | "scheduled";
   schedule: string | null;
   targets: ChatBlastTargetsPayload;
@@ -293,8 +414,10 @@ export interface RemoteChatBlastHistory {
   id: number;
   subject?: string | null;
   body?: string | null;
+  htmlBody?: string | null;
+  purpose?: "marketing" | "operational" | string | null;
   attachments?: RemoteChatAttachmentValue[] | null;
-  channelType?: "whatsapp" | "gmail" | "website" | string | null;
+  channelType?: "whatsapp" | "gmail" | "email" | "website" | string | null;
   totalAssign?: number | null;
   succeedAssign?: number | null;
   targets?: string[] | null;
@@ -309,8 +432,10 @@ export interface RemoteNotificationChatBlast {
   id?: number | null;
   subject?: string | null;
   body?: string | null;
+  htmlBody?: string | null;
+  purpose?: string | null;
   attachments?: RemoteChatAttachmentValue[] | null;
-  channelType?: "whatsapp" | "gmail" | "website" | string | null;
+  channelType?: "whatsapp" | "gmail" | "email" | "website" | string | null;
   broadcastType?: string | null;
   status?: string | null;
   scheduledFor?: string | null;
@@ -489,6 +614,27 @@ function uploadHeaders(headers?: Record<string, string> | null) {
   return nextHeaders;
 }
 
+function normalizePublicAssetUrl(url: string) {
+  try {
+    const assetUrl = new URL(url);
+
+    if (assetUrl.hostname.endsWith(".r2.dev")) {
+      const publicOrigin = new URL(ASSET_PUBLIC_ORIGIN);
+      assetUrl.protocol = publicOrigin.protocol;
+      assetUrl.host = publicOrigin.host;
+    }
+
+    return assetUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function publicAssetUrl(asset: RemoteUploadedAsset, fallbackUrl?: string | null) {
+  const assetUrl = asset.assetUrl?.trim() || fallbackUrl?.trim();
+  return assetUrl ? normalizePublicAssetUrl(assetUrl) : "";
+}
+
 const presignAssetServer = createServerFn({ method: "POST" })
   .validator((data: AssetPresignPayload) => data)
   .handler(async ({ data }) => {
@@ -585,9 +731,10 @@ async function uploadAssetToR2(file: File) {
   });
 
   if (presignedAsset.status === "ready" && presignedAsset.upload == null) {
-    const cachedUrl = presignedAsset.assetUrl?.trim();
+    const cachedUrl = publicAssetUrl(presignedAsset);
     if (!cachedUrl) throw new Error("Asset siap tetapi URL tidak tersedia.");
-    return { url: cachedUrl, mimeType: presignedAsset.mimeType ?? mimeType };
+    if (presignedAsset.id == null) throw new Error("Asset siap tetapi ID tidak tersedia.");
+    return { id: presignedAsset.id, url: cachedUrl, mimeType: presignedAsset.mimeType ?? mimeType };
   }
 
   const upload = presignedAsset.upload;
@@ -604,12 +751,15 @@ async function uploadAssetToR2(file: File) {
     throw new Error("Asset belum ready setelah confirm.");
   }
 
-  const assetUrl = confirmedAsset.assetUrl?.trim();
+  const assetUrl = publicAssetUrl(confirmedAsset, presignedAsset.assetUrl);
   if (!assetUrl) {
     throw new Error("Confirm asset berhasil tetapi URL tidak tersedia.");
   }
+  if (confirmedAsset.id == null) {
+    throw new Error("Confirm asset berhasil tetapi ID tidak tersedia.");
+  }
 
-  return { url: assetUrl, mimeType: confirmedAsset.mimeType ?? mimeType };
+  return { id: confirmedAsset.id, url: assetUrl, mimeType: confirmedAsset.mimeType ?? mimeType };
 }
 
 export function getAttachmentType(name: string, mimeType?: string | null): ChatAttachmentType {
@@ -640,11 +790,22 @@ export function toChatAttachmentPayload(attachment: UploadedAttachment): ChatAtt
   const mimeType = attachment.type || "application/octet-stream";
 
   return {
+    uploadedAssetId: attachment.assetId,
     url: attachment.url,
     filename,
     mimeType,
     attachmentType: getAttachmentType(filename, mimeType),
   };
+}
+
+export function getUploadedAssetIds(attachments: UploadedAttachment[]) {
+  return Array.from(
+    new Set(
+      attachments
+        .map((attachment) => attachment.assetId)
+        .filter((assetId): assetId is number | string => assetId != null && `${assetId}` !== ""),
+    ),
+  );
 }
 
 function getAttachmentNameFromUrl(url: string, fallback: string) {
@@ -668,6 +829,7 @@ export function normalizeRemoteChatAttachment(
     const filename = getAttachmentNameFromUrl(url, fallbackName);
 
     return {
+      uploadedAssetId: attachment.uploadedAssetId ?? attachment.id ?? undefined,
       url,
       filename,
       mimeType: "application/octet-stream",
@@ -869,6 +1031,142 @@ const createWhatsappTicketServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
+const getEmailThreadsServer = createServerFn({ method: "GET" })
+  .validator(
+    (data?: {
+      inboxView?: "inbox" | "archive" | "spam" | "trash";
+      search?: string;
+      limit?: number;
+      sort?: "asc" | "desc";
+      sortBy?: string;
+    }) => data ?? {},
+  )
+  .handler(async ({ data }) => {
+    return apiRequestAllPages<RemoteEmailThread>("/api/chat/email", {
+      inboxView: data.inboxView ?? "inbox",
+      search: data.search ?? undefined,
+      limit: data.limit ?? 50,
+      sort: data.sort ?? "desc",
+      sortBy: data.sortBy ?? "lastMessageAt",
+    });
+  });
+
+const getEmailTicketsServer = createServerFn({ method: "GET" }).handler(async () => {
+  return apiRequestAllPages<RemoteTicket>("/api/ticket/email", {
+    limit: 50,
+    sort: "desc",
+    sortBy: "id",
+  });
+});
+
+const getEmailThreadInfoServer = createServerFn({ method: "GET" })
+  .validator((data: { emailThreadId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailThread>(
+      `/api/chat/email/${data.emailThreadId}/info`,
+    );
+    return response.data;
+  });
+
+const getEmailMessagesServer = createServerFn({ method: "GET" })
+  .validator((data: { emailThreadId: number; limit?: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailMessage[]>(
+      appendQuery(`/api/chat/email/${data.emailThreadId}`, {
+        page: 1,
+        limit: data.limit ?? 50,
+      }),
+    );
+    return response.data ?? [];
+  });
+
+const getEmailQuotaServer = createServerFn({ method: "GET" })
+  .validator((data?: { emailMailboxId?: number }) => data ?? {})
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailQuota>(
+      appendQuery("/api/chat/email/quota", {
+        emailMailboxId: data.emailMailboxId,
+      }),
+    );
+    return response.data;
+  });
+
+const composeEmailServer = createServerFn({ method: "POST" })
+  .validator((data: EmailMessagePayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailMessage>("/api/chat/email", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.data;
+  });
+
+const replyEmailServer = createServerFn({ method: "POST" })
+  .validator((data: { emailThreadId: number; payload: EmailMessagePayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailMessage>(
+      `/api/chat/email/${data.emailThreadId}/reply`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
+      },
+    );
+    return response.data;
+  });
+
+const markEmailThreadReadServer = createServerFn({ method: "POST" })
+  .validator((data: { emailThreadId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailThread>(
+      `/api/chat/email/${data.emailThreadId}/mark-read`,
+      { method: "POST" },
+    );
+    return response.data;
+  });
+
+const setEmailThreadPinnedServer = createServerFn({ method: "POST" })
+  .validator((data: { emailThreadId: number; isPinned: boolean }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailThread>(
+      `/api/chat/email/${data.emailThreadId}/set-pinned`,
+      {
+        method: "POST",
+        body: JSON.stringify({ isPinned: data.isPinned }),
+      },
+    );
+    return response.data;
+  });
+
+const resendEmailMessageServer = createServerFn({ method: "POST" })
+  .validator((data: { emailMessageId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailMessage>(
+      `/api/chat/email/message/${data.emailMessageId}/resend`,
+      { method: "POST" },
+    );
+    return response.data;
+  });
+
+const createEmailTicketServer = createServerFn({ method: "POST" })
+  .validator((data: CreateEmailTicketPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteTicket>("/api/chat/email/ticket", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.data;
+  });
+
+const updateEmailTicketStatusServer = createServerFn({ method: "POST" })
+  .validator((data: { ticketId: number; status: RemoteTicketStatus }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteTicket>(`/api/ticket/email/${data.ticketId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status: data.status }),
+    });
+    return response.data;
+  });
+
 const CONTACT_PAGE_LIMIT = 100;
 const CONTACT_PAGE_CAP = 10;
 
@@ -1050,6 +1348,47 @@ async function getManagedWhatsappContacts(role: "user" | "admin") {
     .filter((contact): contact is WhatsappBlastContact => Boolean(contact));
 }
 
+function profileToEmailContact(
+  profile: RemoteManagedProfile,
+  role: "user" | "admin",
+): WhatsappBlastContact | null {
+  const email = profile.email?.trim();
+  if (!email) return null;
+
+  const resolvedRole = profile.role === "admin" ? "admin" : "user";
+  if (resolvedRole !== role) return null;
+
+  const sourceId = profile.id ?? email;
+  const name = profile.name?.trim() || email.split("@")[0] || email;
+
+  return {
+    id: `email-${role}-${sourceId}`,
+    name,
+    handle: email,
+    phone: profile.phone ?? "",
+    avatarUrl: profile.imageUrl ?? profile.image ?? undefined,
+    countryCode: profile.countryCode ?? undefined,
+    email,
+    role,
+    sourceId,
+  };
+}
+
+async function getManagedEmailContacts(role: "user" | "admin") {
+  const listedProfiles = await apiRequestAllPages<RemoteManagedProfile>("/api/user/manage", {
+    role,
+  });
+
+  return Array.from(
+    new Map(
+      listedProfiles
+        .map((profile) => profileToEmailContact(profile, role))
+        .filter((contact): contact is WhatsappBlastContact => Boolean(contact))
+        .map((contact) => [`${contact.role}:${contact.email}`, contact]),
+    ).values(),
+  );
+}
+
 function businessToWhatsappContact(
   business: RemoteBusinessSummary,
   knowledge?: RemoteBusinessKnowledge | null,
@@ -1155,6 +1494,34 @@ const getWhatsappBlastContactsServer = createServerFn({ method: "GET" }).handler
   return contacts;
 });
 
+const getEmailBlastContactsServer = createServerFn({ method: "GET" }).handler(async () => {
+  const contactResults = await Promise.allSettled([
+    getManagedEmailContacts("user"),
+    getManagedEmailContacts("admin"),
+  ]);
+
+  const contacts = Array.from(
+    new Map(
+      contactResults
+        .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+        .map((contact) => [`${contact.role}:${contact.email}`, contact]),
+    ).values(),
+  );
+
+  if (!contacts.length) {
+    const firstError = contactResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (firstError) {
+      throw firstError.reason instanceof Error
+        ? firstError.reason
+        : new Error("Gagal memuat kontak email blast.");
+    }
+  }
+
+  return contacts;
+});
+
 const getChatBlastHistoriesServer = createServerFn({ method: "POST" }).handler(async () => {
   return apiRequestAllPages<RemoteChatBlastHistory>(
     "/api/chat/blast",
@@ -1213,6 +1580,7 @@ export async function uploadCustomerServiceAttachment(file: File): Promise<Uploa
   const asset = await uploadAssetToR2(file);
 
   return {
+    assetId: asset.id,
     name: file.name || "attachment",
     url: asset.url,
     type: asset.mimeType,
@@ -1267,8 +1635,66 @@ export function createWhatsappTicket(payload: CreateWhatsappTicketPayload) {
   return createWhatsappTicketServer({ data: payload });
 }
 
+export function getEmailThreads(query?: {
+  inboxView?: "inbox" | "archive" | "spam" | "trash";
+  search?: string;
+  limit?: number;
+  sort?: "asc" | "desc";
+  sortBy?: string;
+}) {
+  return getEmailThreadsServer({ data: query ?? {} });
+}
+
+export function getEmailTickets() {
+  return getEmailTicketsServer();
+}
+
+export function getEmailThreadInfo(emailThreadId: number) {
+  return getEmailThreadInfoServer({ data: { emailThreadId } });
+}
+
+export function getEmailMessages(emailThreadId: number, limit = 50) {
+  return getEmailMessagesServer({ data: { emailThreadId, limit } });
+}
+
+export function getEmailQuota(emailMailboxId?: number) {
+  return getEmailQuotaServer({ data: { emailMailboxId } });
+}
+
+export function composeEmail(payload: EmailMessagePayload) {
+  return composeEmailServer({ data: payload });
+}
+
+export function replyEmail(emailThreadId: number, payload: EmailMessagePayload) {
+  return replyEmailServer({ data: { emailThreadId, payload } });
+}
+
+export function markEmailThreadRead(emailThreadId: number) {
+  return markEmailThreadReadServer({ data: { emailThreadId } });
+}
+
+export function setEmailThreadPinned(emailThreadId: number, isPinned: boolean) {
+  return setEmailThreadPinnedServer({ data: { emailThreadId, isPinned } });
+}
+
+export function resendEmailMessage(emailMessageId: number) {
+  return resendEmailMessageServer({ data: { emailMessageId } });
+}
+
+export function createEmailTicket(payload: CreateEmailTicketPayload) {
+  return createEmailTicketServer({ data: payload });
+}
+
+export function updateEmailTicketStatus(ticketId: number, status: RemoteTicketStatus) {
+  return updateEmailTicketStatusServer({ data: { ticketId, status } });
+}
+
 export function getWhatsappBlastContacts() {
   return getWhatsappBlastContactsServer();
+}
+
+export function getEmailBlastContacts() {
+  return getEmailBlastContactsServer();
 }
 
 export function getChatBlastHistories() {

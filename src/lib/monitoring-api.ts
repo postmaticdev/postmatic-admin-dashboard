@@ -27,6 +27,44 @@ export interface RemoteWahaHealth {
   checkedAt?: string | null;
 }
 
+export interface RemoteEmailHealthFolder {
+  folderPath?: string | null;
+  specialUse?: string | null;
+  lastSuccessfulSyncAt?: string | null;
+  syncLagSeconds?: number | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  healthy?: boolean | null;
+}
+
+export interface RemoteEmailHealthMailbox {
+  mailboxId?: number | null;
+  address?: string | null;
+  healthy?: boolean | null;
+  runtime?: {
+    state?: string | null;
+    lastErrorCode?: string | null;
+    reconnectAttempts?: number | null;
+    updatedAt?: string | null;
+  } | null;
+  quarantinedCount?: number | null;
+  dailySendUsage?: number | null;
+  dailySendLimit?: number | null;
+  folders?: RemoteEmailHealthFolder[] | null;
+}
+
+export interface RemoteEmailHealth {
+  healthy?: boolean | null;
+  enabled?: boolean | null;
+  ingestMode?: string | null;
+  stalePendingCount?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  mailboxes?: RemoteEmailHealthMailbox[] | null;
+  discordNotificationSent?: boolean | null;
+  checkedAt?: string | null;
+}
+
 function buildUrl(path: string) {
   return new URL(path, API_ORIGIN).toString();
 }
@@ -87,10 +125,30 @@ const notifyWahaHealthServer = createServerFn({ method: "POST" }).handler(async 
   return response.data;
 });
 
+const getEmailHealthServer = createServerFn({ method: "GET" }).handler(async () => {
+  const response = await apiRequest<RemoteEmailHealth>("/api/monitoring/email/check");
+  return response.data;
+});
+
+const notifyEmailHealthServer = createServerFn({ method: "POST" }).handler(async () => {
+  const response = await apiRequest<RemoteEmailHealth>("/api/monitoring/email/check", {
+    method: "POST",
+  });
+  return response.data;
+});
+
 export function getWahaHealth() {
   return getWahaHealthServer();
 }
 
 export function notifyWahaHealth() {
   return notifyWahaHealthServer();
+}
+
+export function getEmailHealth() {
+  return getEmailHealthServer();
+}
+
+export function notifyEmailHealth() {
+  return notifyEmailHealthServer();
 }
