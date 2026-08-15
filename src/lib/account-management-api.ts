@@ -82,6 +82,13 @@ export interface ManagedProfileListQuery {
   limit?: number;
 }
 
+export interface CreateManagedUserPayload {
+  email: string;
+  name: string;
+  password: string;
+  role: ManagedProfileRole;
+}
+
 function buildUrl(path: string) {
   return new URL(path, API_ORIGIN).toString();
 }
@@ -202,6 +209,45 @@ const getUserManageOverviewServer = createServerFn({ method: "GET" }).handler(as
   return response.data;
 });
 
+const createManagedUserServer = createServerFn({ method: "POST" })
+  .validator((data: CreateManagedUserPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteManagedProfile>("/api/user/manage", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const updateManagedProfileRoleServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; role: ManagedProfileRole }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteManagedProfile>(
+      `/api/user/manage/${encodeURIComponent(data.id)}/update-role`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ role: data.role }),
+      },
+    );
+
+    return response.data;
+  });
+
+const updateManagedProfileBanServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; isBanned: boolean }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteManagedProfile>(
+      `/api/user/manage/${encodeURIComponent(data.id)}/banned`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ isBanned: data.isBanned }),
+      },
+    );
+
+    return response.data;
+  });
+
 export function getManagedProfiles(query: ManagedProfileListQuery = {}) {
   return getManagedProfilesServer({ data: query });
 }
@@ -212,4 +258,16 @@ export function getManagedProfileById(id: string) {
 
 export function getUserManageOverview() {
   return getUserManageOverviewServer();
+}
+
+export function createManagedUser(payload: CreateManagedUserPayload) {
+  return createManagedUserServer({ data: payload });
+}
+
+export function updateManagedProfileRole(id: string, role: ManagedProfileRole) {
+  return updateManagedProfileRoleServer({ data: { id, role } });
+}
+
+export function updateManagedProfileBan(id: string, isBanned: boolean) {
+  return updateManagedProfileBanServer({ data: { id, isBanned } });
 }

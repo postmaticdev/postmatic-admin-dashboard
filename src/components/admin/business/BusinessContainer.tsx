@@ -1,49 +1,16 @@
-import React, { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  getBusinessDashboardData,
-  getManagedBusinessById,
-  upsertManagedBusinessKnowledge,
-  type BusinessKnowledgePayload,
-} from "@/lib/business-api";
-import { BusinessAccount, BusinessFormValues } from "./types";
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { getBusinessDashboardData } from "@/lib/business-api";
+import { BusinessAccount } from "./types";
 import { BusinessTableList } from "./BusinessTableList";
-import { BusinessFormView } from "./BusinessFormView";
-import {
-  getErrorMessage,
-  mapBusinessTokenOverviewToAccount,
-  mapManagedBusinessDetailToAccount,
-} from "./mappers";
-import { toast } from "sonner";
+import { getErrorMessage, mapBusinessTokenOverviewToAccount } from "./mappers";
 import { Building2, Plus } from "lucide-react";
 
 const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
 
-function sanitizePhone(value?: string) {
-  return value?.replace(/[^\d]/g, "").replace(/^0+/, "") || undefined;
-}
-
-function sanitizeCountryCode(value?: string) {
-  const digits = value?.replace(/[^\d]/g, "");
-  return digits || undefined;
-}
-
-function toBusinessKnowledgePayload(data: BusinessFormValues): BusinessKnowledgePayload {
-  return {
-    name: data.name.trim(),
-    category: data.category.trim(),
-    primaryLogoUrl: data.logoUrl.trim() || undefined,
-    description: data.description?.trim() || undefined,
-    websiteUrl: data.websiteUrl?.trim() || undefined,
-    businessPhone: sanitizePhone(data.businessPhone),
-    countryCode: sanitizeCountryCode(data.countryCode),
-    colorTone: data.colorTone?.replace(/^#/, "").trim() || undefined,
-  };
-}
-
 export function BusinessContainer() {
-  const queryClient = useQueryClient();
-  const [editingItem, setEditingItem] = useState<BusinessAccount | null>(null);
+  const navigate = useNavigate();
 
   const businessQuery = useQuery({
     queryKey: BUSINESS_QUERY_KEY,
@@ -56,48 +23,15 @@ export function BusinessContainer() {
     [businessQuery.data],
   );
 
-  const editingBusinessId = editingItem?.id;
-  const businessDetailQuery = useQuery({
-    queryKey: [...BUSINESS_QUERY_KEY, "detail", editingBusinessId],
-    queryFn: () => getManagedBusinessById(editingBusinessId!),
-    enabled: Boolean(editingBusinessId),
-  });
-
-  const editingBusiness = useMemo(() => {
-    if (!editingItem) return null;
-    if (!businessDetailQuery.data) return editingItem;
-    return mapManagedBusinessDetailToAccount(businessDetailQuery.data, editingItem);
-  }, [businessDetailQuery.data, editingItem]);
-
-  const updateKnowledgeMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: BusinessFormValues }) =>
-      upsertManagedBusinessKnowledge(id, toBusinessKnowledgePayload(data)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: BUSINESS_QUERY_KEY }),
-  });
-
-  const handleSave = async (data: BusinessFormValues, id?: string) => {
-    if (!id) {
-      toast.error(
-        `Endpoint create business sederhana untuk "${data.name}" belum tersedia di koleksi Postman terbaru.`,
-      );
-      return;
-    }
-
-    try {
-      await updateKnowledgeMutation.mutateAsync({ id, data });
-      toast.success(`Business "${data.name}" berhasil diperbarui!`);
-      setEditingItem(null);
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Gagal memperbarui business."));
-    }
-  };
-
   const handleEdit = (item: BusinessAccount) => {
-    setEditingItem(item);
+    void navigate({
+      to: "/workspace/business/$businessId/knowledge-base",
+      params: { businessId: item.id },
+    });
   };
 
   const handleCreateNew = () => {
-    toast.error("Endpoint create business sederhana belum tersedia di koleksi Postman terbaru.");
+    void navigate({ to: "/workspace/business/create" });
   };
 
   return (
@@ -145,18 +79,6 @@ export function BusinessContainer() {
         }
         onEdit={handleEdit}
         onRetry={() => businessQuery.refetch()}
-      />
-
-      <BusinessFormView
-        business={editingBusiness}
-        onSave={handleSave}
-        onCancel={() => {
-          setEditingItem(null);
-        }}
-        isSaving={updateKnowledgeMutation.isPending}
-        isLoadingInitialData={
-          businessDetailQuery.isFetching && !businessDetailQuery.data && Boolean(editingBusinessId)
-        }
       />
     </div>
   );

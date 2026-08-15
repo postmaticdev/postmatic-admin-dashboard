@@ -10,7 +10,6 @@ import {
   X,
   Phone,
   Mail,
-  FileText,
   Calendar,
   Activity,
   Heart,
@@ -18,14 +17,21 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Ban,
+  ShieldCheck,
+  Unlock,
 } from "lucide-react";
 
 interface UserTableListProps {
   items: UserAccount[];
   onEdit?: (item: UserAccount) => void;
+  onPromoteToAdmin?: (item: UserAccount) => void;
+  onToggleBan?: (item: UserAccount, isBanned: boolean) => void;
   isLoading?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
+  promotingUserId?: string | null;
+  updatingBanUserId?: string | null;
   onRetry?: () => void;
 }
 
@@ -65,13 +71,24 @@ function UserInfoModal({
   user,
   onClose,
   onEdit,
+  onPromoteToAdmin,
+  onToggleBan,
   isReadOnly,
+  isPromoting,
+  isUpdatingBan,
 }: {
   user: UserAccount;
   onClose: () => void;
   onEdit?: () => void;
+  onPromoteToAdmin?: () => void;
+  onToggleBan?: () => void;
   isReadOnly?: boolean;
+  isPromoting?: boolean;
+  isUpdatingBan?: boolean;
 }) {
+  const isSuspended = user.status === "Suspended";
+  const hasActions = !isReadOnly && Boolean(onEdit || onPromoteToAdmin || onToggleBan);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -167,12 +184,49 @@ function UserInfoModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            {!isReadOnly && onEdit && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {hasActions && onPromoteToAdmin && (
+              <button
+                type="button"
+                onClick={onPromoteToAdmin}
+                disabled={isPromoting || isUpdatingBan}
+                className="flex-1 inline-flex min-w-[9rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500 text-white text-sm font-semibold shadow-md shadow-violet-500/20 hover:bg-violet-600 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isPromoting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                )}
+                Jadikan Admin
+              </button>
+            )}
+            {hasActions && onToggleBan && (
+              <button
+                type="button"
+                onClick={onToggleBan}
+                disabled={isPromoting || isUpdatingBan}
+                className={`flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                  isSuspended
+                    ? "border border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                    : "border border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                }`}
+              >
+                {isUpdatingBan ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : isSuspended ? (
+                  <Unlock className="h-3.5 w-3.5" />
+                ) : (
+                  <Ban className="h-3.5 w-3.5" />
+                )}
+                {isSuspended ? "Buka Ban" : "Ban User"}
+              </button>
+            )}
+            {hasActions && onEdit && (
               <button
                 type="button"
                 onClick={onEdit}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
+                disabled={isPromoting || isUpdatingBan}
+                className="flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Edit Pengguna
@@ -181,7 +235,7 @@ function UserInfoModal({
             <button
               type="button"
               onClick={onClose}
-              className={`${isReadOnly ? "flex-1" : "px-4"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
+              className={`${hasActions ? "px-4" : "flex-1"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
             >
               Tutup
             </button>
@@ -215,12 +269,87 @@ function StatusBadge({ status }: { status: UserAccount["status"] }) {
   );
 }
 
+function UserActionButtons({
+  user,
+  onEdit,
+  onPromoteToAdmin,
+  onToggleBan,
+  isPromoting,
+  isUpdatingBan,
+}: {
+  user: UserAccount;
+  onEdit?: (item: UserAccount) => void;
+  onPromoteToAdmin?: (item: UserAccount) => void;
+  onToggleBan?: (item: UserAccount, isBanned: boolean) => void;
+  isPromoting?: boolean;
+  isUpdatingBan?: boolean;
+}) {
+  const isSuspended = user.status === "Suspended";
+  const isBusy = Boolean(isPromoting || isUpdatingBan);
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {onPromoteToAdmin && (
+        <button
+          type="button"
+          onClick={() => onPromoteToAdmin(user)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500 hover:text-white transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60"
+        >
+          {isPromoting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ShieldCheck className="h-3.5 w-3.5" />
+          )}
+          Admin
+        </button>
+      )}
+      {onToggleBan && (
+        <button
+          type="button"
+          onClick={() => onToggleBan(user, !isSuspended)}
+          disabled={isBusy}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60 ${
+            isSuspended
+              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-white"
+              : "bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500 hover:text-white"
+          }`}
+        >
+          {isUpdatingBan ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : isSuspended ? (
+            <Unlock className="h-3.5 w-3.5" />
+          ) : (
+            <Ban className="h-3.5 w-3.5" />
+          )}
+          {isSuspended ? "Buka" : "Ban"}
+        </button>
+      )}
+      {onEdit && (
+        <button
+          type="button"
+          onClick={() => onEdit(user)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60"
+        >
+          <Edit3 className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function UserTableList({
   items,
   onEdit,
+  onPromoteToAdmin,
+  onToggleBan,
   isLoading = false,
   errorMessage,
   isReadOnly = false,
+  promotingUserId,
+  updatingBanUserId,
   onRetry,
 }: UserTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -236,7 +365,8 @@ export function UserTableList({
   const totalUsers = items.length;
   const activeUsers = items.filter((u) => u.status === "Active").length;
   const suspendedUsers = items.filter((u) => u.status === "Suspended").length;
-  const tableColSpan = isReadOnly ? 5 : 6;
+  const hasActions = !isReadOnly && Boolean(onEdit || onPromoteToAdmin || onToggleBan);
+  const tableColSpan = hasActions ? 6 : 5;
 
   return (
     <>
@@ -308,7 +438,7 @@ export function UserTableList({
               <th className="py-3 px-4">Bio</th>
               <th className="py-3 px-4">No. Telepon</th>
               <th className="py-3 px-4">Status</th>
-              {!isReadOnly && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
+              {hasActions && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -394,22 +524,19 @@ export function UserTableList({
                   <td className="py-3 px-4 whitespace-nowrap">
                     <StatusBadge status={user.status} />
                   </td>
-                  {!isReadOnly && onEdit && (
+                  {hasActions && (
                     <td
                       className="py-3 pr-4 pl-3 text-right whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(user);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
+                      <UserActionButtons
+                        user={user}
+                        onEdit={onEdit}
+                        onPromoteToAdmin={onPromoteToAdmin}
+                        onToggleBan={onToggleBan}
+                        isPromoting={promotingUserId === user.id}
+                        isUpdatingBan={updatingBanUserId === user.id}
+                      />
                     </td>
                   )}
                 </tr>
@@ -428,6 +555,22 @@ export function UserTableList({
         <UserInfoModal
           user={modalUser}
           onClose={() => setModalUser(null)}
+          onPromoteToAdmin={
+            onPromoteToAdmin
+              ? () => {
+                  onPromoteToAdmin(modalUser);
+                  setModalUser(null);
+                }
+              : undefined
+          }
+          onToggleBan={
+            onToggleBan
+              ? () => {
+                  onToggleBan(modalUser, modalUser.status !== "Suspended");
+                  setModalUser(null);
+                }
+              : undefined
+          }
           onEdit={
             onEdit
               ? () => {
@@ -437,6 +580,8 @@ export function UserTableList({
               : undefined
           }
           isReadOnly={isReadOnly}
+          isPromoting={promotingUserId === modalUser.id}
+          isUpdatingBan={updatingBanUserId === modalUser.id}
         />
       )}
     </>

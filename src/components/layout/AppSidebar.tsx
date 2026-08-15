@@ -29,6 +29,7 @@ import {
   Coins,
   Activity,
   BellRing,
+  UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -99,6 +100,7 @@ const NAV: NavItem[] = [
       },
       { label: "Payment", to: "/workspace/payment", icon: CreditCard },
       { label: "RSS", to: "/workspace/rss", icon: Rss },
+      { label: "Avatar", to: "/workspace/avatar", icon: UserRound },
     ],
   },
   {

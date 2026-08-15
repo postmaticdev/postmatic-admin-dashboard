@@ -56,6 +56,21 @@ export interface RssCategoryPayload {
   name: string;
 }
 
+export interface RemoteAppAvatar {
+  id: number | string;
+  name?: string | null;
+  imageUrl?: string | null;
+  isActive?: boolean | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface AppAvatarPayload {
+  name: string;
+  imageUrl: string;
+  isActive: boolean;
+}
+
 export type GenerativeModelType = "image" | "text";
 
 export interface RemoteGenerativeModel {
@@ -298,6 +313,50 @@ const deleteRssFeedServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
+const getAppAvatarsServer = createServerFn({ method: "GET" }).handler(async () => {
+  return apiRequestAllPages<RemoteAppAvatar>("/api/app/avatar", {
+    limit: 100,
+    sort: "desc",
+    sortBy: "id",
+  });
+});
+
+const createAppAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: AppAvatarPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteAppAvatar>("/api/app/avatar", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
+const updateAppAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: AppAvatarPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteAppAvatar>(
+      `/api/app/avatar/${encodeURIComponent(data.id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteAppAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteAppAvatar>(
+      `/api/app/avatar/${encodeURIComponent(data.id)}`,
+      { method: "DELETE" },
+    );
+
+    return response.data;
+  });
+
 const getGenerativeModelsServer = createServerFn({ method: "GET" })
   .validator((data: { type: GenerativeModelType }) => data)
   .handler(async ({ data }) => {
@@ -404,6 +463,22 @@ export function updateRssFeed(id: string, payload: RssFeedPayload) {
 
 export function deleteRssFeed(id: string) {
   return deleteRssFeedServer({ data: { id } });
+}
+
+export function getAppAvatars() {
+  return getAppAvatarsServer();
+}
+
+export function createAppAvatar(payload: AppAvatarPayload) {
+  return createAppAvatarServer({ data: payload });
+}
+
+export function updateAppAvatar(id: string, payload: AppAvatarPayload) {
+  return updateAppAvatarServer({ data: { id, payload } });
+}
+
+export function deleteAppAvatar(id: string) {
+  return deleteAppAvatarServer({ data: { id } });
 }
 
 export function getGenerativeModels(type: GenerativeModelType) {

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ImageIcon, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ImageIcon, Loader2, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { BusinessAccount, BusinessFormValues } from "./types";
+import { ImageUploadField } from "./ImageUploadField";
 
 interface BusinessFormViewProps {
   business: BusinessAccount | null;
@@ -77,7 +78,6 @@ export function BusinessFormView({
   isSaving = false,
   isLoadingInitialData = false,
 }: BusinessFormViewProps) {
-  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Information Technology");
   const [description, setDescription] = useState("");
@@ -101,33 +101,9 @@ export function BusinessFormView({
   }, [business]);
 
   const logoPreviewUrl = logoUrl.trim() || fallbackLogoUrl;
-  const isUploadedLogo = logoUrl.startsWith("data:");
   const colorPreview = colorInputValue(colorTone);
   const isSubmitDisabled = isSaving || isLoadingInitialData;
   const isBusinessDisabled = isSaving || isLoadingInitialData;
-
-  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("File harus berupa gambar.");
-      event.target.value = "";
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setLogoUrl(reader.result);
-      } else {
-        toast.error("Gagal membaca gambar.");
-      }
-    };
-    reader.onerror = () => toast.error("Gagal membaca gambar.");
-    reader.readAsDataURL(file);
-    event.target.value = "";
-  };
 
   const handleRandomLogo = () => {
     const seed = encodeURIComponent(name.trim() || Math.random().toString(36).slice(2, 8));
@@ -166,30 +142,11 @@ export function BusinessFormView({
     <div className="space-y-6">
       <div className="flex w-full flex-col items-start gap-6 md:flex-row">
         <div className="w-full space-y-3 md:w-44">
-          <label className="text-sm font-medium text-foreground">Logo Brand</label>
           <div className="flex flex-col items-start gap-3">
-            <button
-              type="button"
-              onClick={() => logoInputRef.current?.click()}
-              disabled={isBusinessDisabled}
-              title="Upload logo"
-              className="group relative h-32 w-32 overflow-hidden rounded-lg border border-border bg-muted text-muted-foreground transition-colors hover:border-primary disabled:pointer-events-none disabled:opacity-50"
-            >
-              <img
-                src={logoPreviewUrl}
-                alt="Business logo preview"
-                className="h-full w-full object-cover"
-              />
-              <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                <Upload className="h-5 w-5 text-white" />
-              </span>
-            </button>
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleLogoUpload}
+            <ImageUploadField
+              label="Logo Brand"
+              value={logoPreviewUrl}
+              onChange={setLogoUrl}
               disabled={isBusinessDisabled}
             />
             <Button
@@ -236,11 +193,9 @@ export function BusinessFormView({
         <div className="relative">
           <ImageIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={isUploadedLogo ? "" : logoUrl}
+            value={logoUrl}
             onChange={(event) => setLogoUrl(event.target.value)}
-            placeholder={
-              isUploadedLogo ? "Gambar upload siap disimpan" : "https://example.com/logo.png"
-            }
+            placeholder="https://example.com/logo.png"
             disabled={isBusinessDisabled}
             className="pl-9"
           />

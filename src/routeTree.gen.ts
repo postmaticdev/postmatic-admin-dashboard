@@ -20,6 +20,7 @@ import { Route as DashboardWorkspaceRssRouteImport } from './routes/_dashboard.w
 import { Route as DashboardWorkspacePaymentRouteImport } from './routes/_dashboard.workspace.payment'
 import { Route as DashboardWorkspaceCreatorRouteImport } from './routes/_dashboard.workspace.creator'
 import { Route as DashboardWorkspaceBusinessRouteImport } from './routes/_dashboard.workspace.business'
+import { Route as DashboardWorkspaceAvatarRouteImport } from './routes/_dashboard.workspace.avatar'
 import { Route as DashboardWorkspaceAccountRouteImport } from './routes/_dashboard.workspace.account'
 import { Route as DashboardMonitoringSystemRouteImport } from './routes/_dashboard.monitoring.system'
 import { Route as DashboardMonitoringActivityRouteImport } from './routes/_dashboard.monitoring.activity'
@@ -35,12 +36,14 @@ import { Route as DashboardWorkspaceDiscountVoucherRouteImport } from './routes/
 import { Route as DashboardWorkspaceDiscountReferralRouteImport } from './routes/_dashboard.workspace.discount.referral'
 import { Route as DashboardWorkspaceCreatorGalleryRouteImport } from './routes/_dashboard.workspace.creator.gallery'
 import { Route as DashboardWorkspaceBusinessTokenInjectRouteImport } from './routes/_dashboard.workspace.business.token-inject'
+import { Route as DashboardWorkspaceBusinessCreateRouteImport } from './routes/_dashboard.workspace.business.create'
 import { Route as DashboardWorkspaceAiModelTextRouteImport } from './routes/_dashboard.workspace.ai-model.text'
 import { Route as DashboardWorkspaceAiModelImageRouteImport } from './routes/_dashboard.workspace.ai-model.image'
 import { Route as DashboardWorkspaceAccountUserRouteImport } from './routes/_dashboard.workspace.account.user'
 import { Route as DashboardWorkspaceAccountRoleRouteImport } from './routes/_dashboard.workspace.account.role'
 import { Route as DashboardWorkspaceAccountCreatorRouteImport } from './routes/_dashboard.workspace.account.creator'
 import { Route as DashboardWorkspaceAccountAdminRouteImport } from './routes/_dashboard.workspace.account.admin'
+import { Route as DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRouteImport } from './routes/_dashboard.workspace.business.$businessId.knowledge-base'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/_dashboard',
@@ -98,6 +101,12 @@ const DashboardWorkspaceBusinessRoute =
   DashboardWorkspaceBusinessRouteImport.update({
     id: '/workspace/business',
     path: '/workspace/business',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardWorkspaceAvatarRoute =
+  DashboardWorkspaceAvatarRouteImport.update({
+    id: '/workspace/avatar',
+    path: '/workspace/avatar',
     getParentRoute: () => DashboardRoute,
   } as any)
 const DashboardWorkspaceAccountRoute =
@@ -188,6 +197,12 @@ const DashboardWorkspaceBusinessTokenInjectRoute =
     path: '/token-inject',
     getParentRoute: () => DashboardWorkspaceBusinessRoute,
   } as any)
+const DashboardWorkspaceBusinessCreateRoute =
+  DashboardWorkspaceBusinessCreateRouteImport.update({
+    id: '/create',
+    path: '/create',
+    getParentRoute: () => DashboardWorkspaceBusinessRoute,
+  } as any)
 const DashboardWorkspaceAiModelTextRoute =
   DashboardWorkspaceAiModelTextRouteImport.update({
     id: '/workspace/ai-model/text',
@@ -224,6 +239,12 @@ const DashboardWorkspaceAccountAdminRoute =
     path: '/admin',
     getParentRoute: () => DashboardWorkspaceAccountRoute,
   } as any)
+const DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute =
+  DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRouteImport.update({
+    id: '/$businessId/knowledge-base',
+    path: '/$businessId/knowledge-base',
+    getParentRoute: () => DashboardWorkspaceBusinessRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -241,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/workspace/avatar': typeof DashboardWorkspaceAvatarRoute
   '/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
   '/workspace/creator': typeof DashboardWorkspaceCreatorRouteWithChildren
   '/workspace/payment': typeof DashboardWorkspacePaymentRoute
@@ -251,12 +273,14 @@ export interface FileRoutesByFullPath {
   '/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
   '/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
   '/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/workspace/business/create': typeof DashboardWorkspaceBusinessCreateRoute
   '/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
   '/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
   '/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
   '/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
   '/workspace/business/': typeof DashboardWorkspaceBusinessIndexRoute
   '/workspace/creator/': typeof DashboardWorkspaceCreatorIndexRoute
+  '/workspace/business/$businessId/knowledge-base': typeof DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -274,6 +298,7 @@ export interface FileRoutesByTo {
   '/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/workspace/avatar': typeof DashboardWorkspaceAvatarRoute
   '/workspace/payment': typeof DashboardWorkspacePaymentRoute
   '/workspace/rss': typeof DashboardWorkspaceRssRoute
   '/workspace/account/admin': typeof DashboardWorkspaceAccountAdminRoute
@@ -282,12 +307,14 @@ export interface FileRoutesByTo {
   '/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
   '/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
   '/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/workspace/business/create': typeof DashboardWorkspaceBusinessCreateRoute
   '/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
   '/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
   '/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
   '/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
   '/workspace/business': typeof DashboardWorkspaceBusinessIndexRoute
   '/workspace/creator': typeof DashboardWorkspaceCreatorIndexRoute
+  '/workspace/business/$businessId/knowledge-base': typeof DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -307,6 +334,7 @@ export interface FileRoutesById {
   '/_dashboard/monitoring/activity': typeof DashboardMonitoringActivityRoute
   '/_dashboard/monitoring/system': typeof DashboardMonitoringSystemRoute
   '/_dashboard/workspace/account': typeof DashboardWorkspaceAccountRouteWithChildren
+  '/_dashboard/workspace/avatar': typeof DashboardWorkspaceAvatarRoute
   '/_dashboard/workspace/business': typeof DashboardWorkspaceBusinessRouteWithChildren
   '/_dashboard/workspace/creator': typeof DashboardWorkspaceCreatorRouteWithChildren
   '/_dashboard/workspace/payment': typeof DashboardWorkspacePaymentRoute
@@ -317,12 +345,14 @@ export interface FileRoutesById {
   '/_dashboard/workspace/account/user': typeof DashboardWorkspaceAccountUserRoute
   '/_dashboard/workspace/ai-model/image': typeof DashboardWorkspaceAiModelImageRoute
   '/_dashboard/workspace/ai-model/text': typeof DashboardWorkspaceAiModelTextRoute
+  '/_dashboard/workspace/business/create': typeof DashboardWorkspaceBusinessCreateRoute
   '/_dashboard/workspace/business/token-inject': typeof DashboardWorkspaceBusinessTokenInjectRoute
   '/_dashboard/workspace/creator/gallery': typeof DashboardWorkspaceCreatorGalleryRoute
   '/_dashboard/workspace/discount/referral': typeof DashboardWorkspaceDiscountReferralRoute
   '/_dashboard/workspace/discount/voucher': typeof DashboardWorkspaceDiscountVoucherRoute
   '/_dashboard/workspace/business/': typeof DashboardWorkspaceBusinessIndexRoute
   '/_dashboard/workspace/creator/': typeof DashboardWorkspaceCreatorIndexRoute
+  '/_dashboard/workspace/business/$businessId/knowledge-base': typeof DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -342,6 +372,7 @@ export interface FileRouteTypes {
     | '/monitoring/activity'
     | '/monitoring/system'
     | '/workspace/account'
+    | '/workspace/avatar'
     | '/workspace/business'
     | '/workspace/creator'
     | '/workspace/payment'
@@ -352,12 +383,14 @@ export interface FileRouteTypes {
     | '/workspace/account/user'
     | '/workspace/ai-model/image'
     | '/workspace/ai-model/text'
+    | '/workspace/business/create'
     | '/workspace/business/token-inject'
     | '/workspace/creator/gallery'
     | '/workspace/discount/referral'
     | '/workspace/discount/voucher'
     | '/workspace/business/'
     | '/workspace/creator/'
+    | '/workspace/business/$businessId/knowledge-base'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -375,6 +408,7 @@ export interface FileRouteTypes {
     | '/monitoring/activity'
     | '/monitoring/system'
     | '/workspace/account'
+    | '/workspace/avatar'
     | '/workspace/payment'
     | '/workspace/rss'
     | '/workspace/account/admin'
@@ -383,12 +417,14 @@ export interface FileRouteTypes {
     | '/workspace/account/user'
     | '/workspace/ai-model/image'
     | '/workspace/ai-model/text'
+    | '/workspace/business/create'
     | '/workspace/business/token-inject'
     | '/workspace/creator/gallery'
     | '/workspace/discount/referral'
     | '/workspace/discount/voucher'
     | '/workspace/business'
     | '/workspace/creator'
+    | '/workspace/business/$businessId/knowledge-base'
   id:
     | '__root__'
     | '/'
@@ -407,6 +443,7 @@ export interface FileRouteTypes {
     | '/_dashboard/monitoring/activity'
     | '/_dashboard/monitoring/system'
     | '/_dashboard/workspace/account'
+    | '/_dashboard/workspace/avatar'
     | '/_dashboard/workspace/business'
     | '/_dashboard/workspace/creator'
     | '/_dashboard/workspace/payment'
@@ -417,12 +454,14 @@ export interface FileRouteTypes {
     | '/_dashboard/workspace/account/user'
     | '/_dashboard/workspace/ai-model/image'
     | '/_dashboard/workspace/ai-model/text'
+    | '/_dashboard/workspace/business/create'
     | '/_dashboard/workspace/business/token-inject'
     | '/_dashboard/workspace/creator/gallery'
     | '/_dashboard/workspace/discount/referral'
     | '/_dashboard/workspace/discount/voucher'
     | '/_dashboard/workspace/business/'
     | '/_dashboard/workspace/creator/'
+    | '/_dashboard/workspace/business/$businessId/knowledge-base'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -507,6 +546,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace/business'
       fullPath: '/workspace/business'
       preLoaderRoute: typeof DashboardWorkspaceBusinessRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/workspace/avatar': {
+      id: '/_dashboard/workspace/avatar'
+      path: '/workspace/avatar'
+      fullPath: '/workspace/avatar'
+      preLoaderRoute: typeof DashboardWorkspaceAvatarRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/_dashboard/workspace/account': {
@@ -614,6 +660,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardWorkspaceBusinessTokenInjectRouteImport
       parentRoute: typeof DashboardWorkspaceBusinessRoute
     }
+    '/_dashboard/workspace/business/create': {
+      id: '/_dashboard/workspace/business/create'
+      path: '/create'
+      fullPath: '/workspace/business/create'
+      preLoaderRoute: typeof DashboardWorkspaceBusinessCreateRouteImport
+      parentRoute: typeof DashboardWorkspaceBusinessRoute
+    }
     '/_dashboard/workspace/ai-model/text': {
       id: '/_dashboard/workspace/ai-model/text'
       path: '/workspace/ai-model/text'
@@ -655,6 +708,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/account/admin'
       preLoaderRoute: typeof DashboardWorkspaceAccountAdminRouteImport
       parentRoute: typeof DashboardWorkspaceAccountRoute
+    }
+    '/_dashboard/workspace/business/$businessId/knowledge-base': {
+      id: '/_dashboard/workspace/business/$businessId/knowledge-base'
+      path: '/$businessId/knowledge-base'
+      fullPath: '/workspace/business/$businessId/knowledge-base'
+      preLoaderRoute: typeof DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRouteImport
+      parentRoute: typeof DashboardWorkspaceBusinessRoute
     }
   }
 }
@@ -716,15 +776,21 @@ const DashboardWorkspaceAccountRouteWithChildren =
   )
 
 interface DashboardWorkspaceBusinessRouteChildren {
+  DashboardWorkspaceBusinessCreateRoute: typeof DashboardWorkspaceBusinessCreateRoute
   DashboardWorkspaceBusinessTokenInjectRoute: typeof DashboardWorkspaceBusinessTokenInjectRoute
   DashboardWorkspaceBusinessIndexRoute: typeof DashboardWorkspaceBusinessIndexRoute
+  DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute: typeof DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute
 }
 
 const DashboardWorkspaceBusinessRouteChildren: DashboardWorkspaceBusinessRouteChildren =
   {
+    DashboardWorkspaceBusinessCreateRoute:
+      DashboardWorkspaceBusinessCreateRoute,
     DashboardWorkspaceBusinessTokenInjectRoute:
       DashboardWorkspaceBusinessTokenInjectRoute,
     DashboardWorkspaceBusinessIndexRoute: DashboardWorkspaceBusinessIndexRoute,
+    DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute:
+      DashboardWorkspaceBusinessBusinessIdKnowledgeBaseRoute,
   }
 
 const DashboardWorkspaceBusinessRouteWithChildren =
@@ -758,6 +824,7 @@ interface DashboardRouteChildren {
   DashboardMonitoringActivityRoute: typeof DashboardMonitoringActivityRoute
   DashboardMonitoringSystemRoute: typeof DashboardMonitoringSystemRoute
   DashboardWorkspaceAccountRoute: typeof DashboardWorkspaceAccountRouteWithChildren
+  DashboardWorkspaceAvatarRoute: typeof DashboardWorkspaceAvatarRoute
   DashboardWorkspaceBusinessRoute: typeof DashboardWorkspaceBusinessRouteWithChildren
   DashboardWorkspaceCreatorRoute: typeof DashboardWorkspaceCreatorRouteWithChildren
   DashboardWorkspacePaymentRoute: typeof DashboardWorkspacePaymentRoute
@@ -777,6 +844,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMonitoringActivityRoute: DashboardMonitoringActivityRoute,
   DashboardMonitoringSystemRoute: DashboardMonitoringSystemRoute,
   DashboardWorkspaceAccountRoute: DashboardWorkspaceAccountRouteWithChildren,
+  DashboardWorkspaceAvatarRoute: DashboardWorkspaceAvatarRoute,
   DashboardWorkspaceBusinessRoute: DashboardWorkspaceBusinessRouteWithChildren,
   DashboardWorkspaceCreatorRoute: DashboardWorkspaceCreatorRouteWithChildren,
   DashboardWorkspacePaymentRoute: DashboardWorkspacePaymentRoute,

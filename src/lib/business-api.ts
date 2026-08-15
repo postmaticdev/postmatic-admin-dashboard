@@ -71,15 +71,69 @@ export interface RemoteBusinessKnowledge {
   updatedAt?: string | null;
 }
 
+export interface RemoteBusinessProduct {
+  id: number | string;
+  businessRootId?: number | string | null;
+  name?: string | null;
+  category?: string | null;
+  description?: string | null;
+  price?: number | string | null;
+  currency?: string | null;
+  imageUrls?: string[] | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteBusinessRoleKnowledge {
+  businessRootId?: number | string | null;
+  hashtags?: string[] | null;
+  targetAudience?: string | null;
+  tone?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteBusinessRssSubscription {
+  id: number | string;
+  businessRootId?: number | string | null;
+  title?: string | null;
+  appRssId?: number | string | null;
+  isActive?: boolean | null;
+  appRssFeed?: {
+    id?: number | string | null;
+    title?: string | null;
+    url?: string | null;
+    publisher?: string | null;
+    appRssCategory?: {
+      id?: number | string | null;
+      name?: string | null;
+    } | null;
+  } | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteBusinessAvatar {
+  id: number | string;
+  name?: string | null;
+  imageUrl?: string | null;
+  appAvatarId?: number | string | null;
+  businessRootId?: number | string | null;
+  rootBusinessId?: number | string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface RemoteManagedBusinessDetail {
   businessRoot?: RemoteManagedBusiness | null;
   knowledge?: RemoteBusinessKnowledge | null;
   connectedPlatforms?: unknown[] | null;
   imageContents?: unknown[] | null;
   members?: RemoteBusinessMember[] | null;
-  products?: unknown[] | null;
-  role?: unknown;
-  rssSubscriptions?: unknown[] | null;
+  products?: RemoteBusinessProduct[] | null;
+  role?: RemoteBusinessRoleKnowledge | null;
+  rssSubscriptions?: RemoteBusinessRssSubscription[] | null;
+  avatars?: RemoteBusinessAvatar[] | null;
   timezonePreference?: unknown;
 }
 
@@ -179,6 +233,52 @@ export interface BusinessKnowledgePayload {
   colorTone?: string;
   businessPhone?: string;
   countryCode?: string;
+}
+
+export interface BusinessProductPayload {
+  name: string;
+  category: string;
+  description: string;
+  price: number;
+  currency: string;
+  imageUrls: string[];
+}
+
+export interface BusinessRoleKnowledgePayload {
+  hashtags: string[];
+  targetAudience: string;
+  tone: string;
+}
+
+export interface CreateManagedBusinessPayload {
+  ownerEmail: string;
+  knowledge: {
+    category: string;
+    description: string;
+    name: string;
+    primaryLogoUrl: string;
+    websiteUrl: string;
+    colorTone: string;
+    businessPhone: string;
+    countryCode: string;
+  };
+  role: BusinessRoleKnowledgePayload;
+  products: BusinessProductPayload[];
+}
+
+export interface CreateManagedBusinessResult {
+  id: number | string;
+}
+
+export interface BusinessAvatarPayload {
+  name: string;
+  imageUrl: string;
+}
+
+export interface BusinessRssSubscriptionPayload {
+  appRssFeedId: number;
+  isActive: boolean;
+  title: string;
 }
 
 export interface ImageTokenHistoryQuery {
@@ -540,6 +640,17 @@ const upsertImageTokenProductServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
+const createManagedBusinessServer = createServerFn({ method: "POST" })
+  .validator((data: CreateManagedBusinessPayload) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<CreateManagedBusinessResult>("/api/business/manage", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return response.data;
+  });
+
 const upsertManagedBusinessKnowledgeServer = createServerFn({ method: "POST" })
   .validator((data: { id: string; payload: BusinessKnowledgePayload }) => data)
   .handler(async ({ data }) => {
@@ -549,6 +660,152 @@ const upsertManagedBusinessKnowledgeServer = createServerFn({ method: "POST" })
         method: "POST",
         body: JSON.stringify(data.payload),
       },
+    );
+
+    return response.data;
+  });
+
+const getManagedBusinessAvatarsServer = createServerFn({ method: "GET" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) =>
+    apiRequestAllPages<RemoteBusinessAvatar>(
+      `/api/business/avatar/${encodeURIComponent(data.id)}`,
+      {
+        limit: 100,
+        sort: "desc",
+        sortBy: "id",
+      },
+    ),
+  );
+
+const upsertManagedBusinessRoleKnowledgeServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: BusinessRoleKnowledgePayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessRoleKnowledge>(
+      `/api/business/role/${encodeURIComponent(data.id)}`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const createManagedBusinessProductServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: BusinessProductPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessProduct>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/product`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const updateManagedBusinessProductServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; productId: string; payload: BusinessProductPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessProduct>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/product/${encodeURIComponent(data.productId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteManagedBusinessProductServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; productId: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<{ id?: number | string }>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/product/${encodeURIComponent(data.productId)}`,
+      { method: "DELETE" },
+    );
+
+    return response.data;
+  });
+
+const createManagedBusinessAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: BusinessAvatarPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessAvatar>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/avatar`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const updateManagedBusinessAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; avatarId: string; payload: BusinessAvatarPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessAvatar>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/avatar/${encodeURIComponent(data.avatarId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteManagedBusinessAvatarServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; avatarId: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteBusinessAvatar>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/avatar/${encodeURIComponent(data.avatarId)}`,
+      { method: "DELETE" },
+    );
+
+    return response.data;
+  });
+
+const createManagedBusinessRssSubscriptionServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; payload: BusinessRssSubscriptionPayload }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<{ id?: number | string }>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/rss-subscription`,
+      {
+        method: "POST",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const updateManagedBusinessRssSubscriptionServer = createServerFn({ method: "POST" })
+  .validator(
+    (data: { id: string; subscriptionId: string; payload: BusinessRssSubscriptionPayload }) => data,
+  )
+  .handler(async ({ data }) => {
+    const response = await apiRequest<{ id?: number | string }>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/rss-subscription/${encodeURIComponent(data.subscriptionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data.payload),
+      },
+    );
+
+    return response.data;
+  });
+
+const deleteManagedBusinessRssSubscriptionServer = createServerFn({ method: "POST" })
+  .validator((data: { id: string; subscriptionId: string }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<{ id?: number | string }>(
+      `/api/business/manage/${encodeURIComponent(data.id)}/rss-subscription/${encodeURIComponent(data.subscriptionId)}`,
+      { method: "DELETE" },
     );
 
     return response.data;
@@ -598,6 +855,74 @@ export function upsertImageTokenProduct(payload: TokenProductPayload) {
   return upsertImageTokenProductServer({ data: payload });
 }
 
+export function createManagedBusiness(payload: CreateManagedBusinessPayload) {
+  return createManagedBusinessServer({ data: payload });
+}
+
 export function upsertManagedBusinessKnowledge(id: string, payload: BusinessKnowledgePayload) {
   return upsertManagedBusinessKnowledgeServer({ data: { id, payload } });
+}
+
+export function getManagedBusinessAvatars(id: string) {
+  return getManagedBusinessAvatarsServer({ data: { id } });
+}
+
+export function upsertManagedBusinessRoleKnowledge(
+  id: string,
+  payload: BusinessRoleKnowledgePayload,
+) {
+  return upsertManagedBusinessRoleKnowledgeServer({ data: { id, payload } });
+}
+
+export function createManagedBusinessProduct(id: string, payload: BusinessProductPayload) {
+  return createManagedBusinessProductServer({ data: { id, payload } });
+}
+
+export function updateManagedBusinessProduct(
+  id: string,
+  productId: string,
+  payload: BusinessProductPayload,
+) {
+  return updateManagedBusinessProductServer({ data: { id, productId, payload } });
+}
+
+export function deleteManagedBusinessProduct(id: string, productId: string) {
+  return deleteManagedBusinessProductServer({ data: { id, productId } });
+}
+
+export function createManagedBusinessAvatar(id: string, payload: BusinessAvatarPayload) {
+  return createManagedBusinessAvatarServer({ data: { id, payload } });
+}
+
+export function updateManagedBusinessAvatar(
+  id: string,
+  avatarId: string,
+  payload: BusinessAvatarPayload,
+) {
+  return updateManagedBusinessAvatarServer({ data: { id, avatarId, payload } });
+}
+
+export function deleteManagedBusinessAvatar(id: string, avatarId: string) {
+  return deleteManagedBusinessAvatarServer({ data: { id, avatarId } });
+}
+
+export function createManagedBusinessRssSubscription(
+  id: string,
+  payload: BusinessRssSubscriptionPayload,
+) {
+  return createManagedBusinessRssSubscriptionServer({ data: { id, payload } });
+}
+
+export function updateManagedBusinessRssSubscription(
+  id: string,
+  subscriptionId: string,
+  payload: BusinessRssSubscriptionPayload,
+) {
+  return updateManagedBusinessRssSubscriptionServer({
+    data: { id, subscriptionId, payload },
+  });
+}
+
+export function deleteManagedBusinessRssSubscription(id: string, subscriptionId: string) {
+  return deleteManagedBusinessRssSubscriptionServer({ data: { id, subscriptionId } });
 }
