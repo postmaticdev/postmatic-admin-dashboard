@@ -79,6 +79,7 @@ import {
   rememberWhatsappRoomAlias,
   whatsappPhonesMatch,
 } from "@/lib/whatsapp-room-aliases";
+import { ADMIN_NOTIFICATIONS_QUERY_PREFIX } from "@/lib/query-keys";
 import { useAuth } from "@/hooks/useAuth";
 
 const CUSTOMER_SERVICE_QUERY_KEY = ["customer-service", "overview"] as const;
@@ -90,7 +91,8 @@ const REALTIME_TOPICS = [
 ] as const;
 const REALTIME_PING_INTERVAL_MS = 15_000;
 const REALTIME_RECONNECT_DELAY_MS = 2_000;
-const REALTIME_MAX_RECONNECT_ATTEMPTS = 3;
+const REALTIME_MAX_RECONNECT_DELAY_MS = 30_000;
+const REALTIME_HANDSHAKE_TIMEOUT_MS = 10_000;
 const REALTIME_FALLBACK_REFRESH_INTERVAL_MS = 5_000;
 const WHATSAPP_BLAST_DEDUPE_WINDOW_MS = 10 * 60 * 1_000;
 
@@ -483,8 +485,7 @@ function findMatchingLocalTicket(remoteTicket: Ticket, previousTickets: Ticket[]
 
 function mergeRemoteTickets(remoteTickets: Ticket[], previousTickets: Ticket[]) {
   const localOnlyTickets = previousTickets.filter(
-    (ticket) =>
-      !ticket.isSynced || hasPendingOutgoingWhatsappMessage(ticket),
+    (ticket) => !ticket.isSynced || hasPendingOutgoingWhatsappMessage(ticket),
   );
 
   const mergedRemote = remoteTickets.map((remoteTicket) => {
@@ -960,12 +961,19 @@ interface RealtimePayload {
   data?: {
     afterStatus?: string | null;
     beforeStatus?: string | null;
-    message?: RemoteWebsiteMessage | RemoteWhatsappMessage | null;
+    emailMessageId?: number | null;
+    emailThreadId?: number | null;
+    message?: RemoteEmailMessage | RemoteWebsiteMessage | RemoteWhatsappMessage | null;
     reason?: string | null;
+    rejected?: string[] | null;
     room?: RemoteWhatsappRoom | null;
+    subscribed?: string[] | null;
+    thread?: RemoteEmailThread | null;
     ticket?: RemoteTicket | null;
     ticketId?: number | null;
     messages?: RemoteWhatsappMessage[] | null;
+    topics?: string[] | null;
+    unsubscribed?: string[] | null;
   } | null;
   sentAt?: string | null;
 }
@@ -995,6 +1003,14 @@ async function parseRealtimeMessageData(value: unknown) {
 
 function isWhatsappRealtimeEvent(eventType: string) {
   return eventType.startsWith("chat.whatsapp.") || eventType.includes("whatsapp");
+}
+
+function isEmailRealtimeEvent(eventType: string) {
+  return (
+    eventType === "chat.email.thread.upserted" ||
+    eventType === "chat.email.message.created" ||
+    eventType === "chat.email.message.updated"
+  );
 }
 
 function sortTicketMessages(messages: TicketMessage[]) {
@@ -1064,7 +1080,14 @@ function matchesRemoteTicket(ticket: Ticket, remoteTicket: RemoteTicket) {
   }
 
   if (remoteTicket.channel === "email") {
-    return ticket.externalIds?.emailTicketId === remoteTicketId;
+    const remoteEmailThreadId = Number(remoteTicket.emailThreadId);
+
+    return Boolean(
+      ticket.source === "gmail" &&
+      (ticket.externalIds?.emailTicketId === remoteTicketId ||
+        (Number.isFinite(remoteEmailThreadId) &&
+          ticket.externalIds?.emailThreadId === remoteEmailThreadId)),
+    );
   }
 
   return ticket.externalIds?.whatsappTicketId === remoteTicketId;
@@ -1102,7 +1125,7 @@ function upsertRealtimeTicket(tickets: Ticket[], remoteTicket: RemoteTicket) {
       ? mapWebsiteTicket(remoteTicket)
       : remoteTicket.channel === "email"
         ? mapEmailTicket(remoteTicket)
-      : mapWhatsappTicket(remoteTicket, linkedRemoteRoom, linkedTicketHistory);
+        : mapWhatsappTicket(remoteTicket, linkedRemoteRoom, linkedTicketHistory);
   let found = false;
 
   const updatedTickets = tickets.map((ticket) => {
@@ -1122,6 +1145,7 @@ function upsertRealtimeTicket(tickets: Ticket[], remoteTicket: RemoteTicket) {
       lastMessageAt: mappedTicket.lastMessageAt ?? ticket.lastMessageAt,
       status: mappedTicket.status ?? ticket.status,
       isSavedAsTicket: true,
+      viewKind: "ticket",
       isSynced: true,
       isPinned: mappedTicket.isPinned,
     };
@@ -1206,6 +1230,7 @@ function applyRealtimeTicketStatus(
       status: status ?? ticket.status,
       updatedAt: remoteTicket.updatedAt ?? ticket.updatedAt,
       isSavedAsTicket: true,
+      viewKind: "ticket",
       isPinned: remoteTicket.isPinned ?? ticket.isPinned,
       ticketHistory: remoteReference
         ? [
@@ -1326,6 +1351,117 @@ function applyRealtimeWhatsappMessage(
   ];
 }
 
+function getRealtimeEmailThreadId(
+  thread?: RemoteEmailThread | null,
+  message?: RemoteEmailMessage | null,
+  fallbackThreadId?: number | null,
+) {
+  const rawEmailThreadId = thread?.id ?? message?.emailThreadId ?? fallbackThreadId;
+  if (rawEmailThreadId == null) return null;
+
+  const emailThreadId = Number(rawEmailThreadId);
+  return Number.isFinite(emailThreadId) ? emailThreadId : null;
+}
+
+function getExistingEmailTicket(ticket: Ticket): RemoteTicket | null {
+  const emailTicketId = ticket.externalIds?.emailTicketId;
+  if (emailTicketId == null) return null;
+
+  return {
+    id: emailTicketId,
+    channel: "email",
+    emailThreadId: ticket.externalIds?.emailThreadId,
+    slaStatus: ticket.status ? ticketStatusToRemoteStatus(ticket.status) : undefined,
+    isPinned: ticket.isPinned,
+  };
+}
+
+function mergeRealtimeEmailThread(ticket: Ticket, thread: RemoteEmailThread) {
+  const mappedThread = mapEmailThread(thread, getExistingEmailTicket(ticket));
+  const keepLoadedMessages = Boolean(ticket.isDetailsLoaded);
+
+  return {
+    ...ticket,
+    externalIds: {
+      ...ticket.externalIds,
+      ...mappedThread.externalIds,
+    },
+    subject: mappedThread.subject,
+    snippet: mappedThread.snippet,
+    senderName: mappedThread.senderName,
+    senderHandle: mappedThread.senderHandle,
+    updatedAt: getNewerTimestamp(ticket.updatedAt, mappedThread.updatedAt),
+    lastMessageAt: getNewerTimestamp(
+      ticket.lastMessageAt ?? ticket.updatedAt,
+      mappedThread.lastMessageAt,
+    ),
+    unread: mappedThread.unread,
+    unreadCount: mappedThread.unreadCount,
+    isPinned: mappedThread.isPinned,
+    isDetailsLoaded: keepLoadedMessages,
+    messages: keepLoadedMessages ? ticket.messages : mappedThread.messages,
+  };
+}
+
+function applyRealtimeEmailEvent(
+  tickets: Ticket[],
+  thread?: RemoteEmailThread | null,
+  message?: RemoteEmailMessage | null,
+  fallbackThreadId?: number | null,
+) {
+  const emailThreadId = getRealtimeEmailThreadId(thread, message, fallbackThreadId);
+  if (emailThreadId == null) return tickets;
+
+  const existingTicket = tickets.find(
+    (ticket) => ticket.source === "gmail" && ticket.externalIds?.emailThreadId === emailThreadId,
+  );
+
+  if (thread?.inboxView && thread.inboxView !== "inbox" && !existingTicket?.isSavedAsTicket) {
+    return tickets.filter(
+      (ticket) => ticket.source !== "gmail" || ticket.externalIds?.emailThreadId !== emailThreadId,
+    );
+  }
+
+  if (!existingTicket && !thread) return tickets;
+
+  if (!existingTicket && thread) {
+    const mappedThread = mapEmailThread(thread);
+    const mappedMessage = message ? mapEmailMessage(message, mappedThread.senderName) : null;
+    const nextTicket = mappedMessage
+      ? {
+          ...mergeMessageIntoTicket(mappedThread, mappedMessage),
+          isDetailsLoaded: false,
+        }
+      : mappedThread;
+
+    return [nextTicket, ...tickets];
+  }
+
+  return tickets.map((ticket) => {
+    if (ticket.source !== "gmail" || ticket.externalIds?.emailThreadId !== emailThreadId) {
+      return ticket;
+    }
+
+    const nextThread = thread ? mergeRealtimeEmailThread(ticket, thread) : ticket;
+    if (!message) return nextThread;
+
+    const hadLoadedDetails = Boolean(nextThread.isDetailsLoaded);
+    const nextMessage = mapEmailMessage(message, nextThread.senderName);
+    const mergedTicket = mergeMessageIntoTicket(nextThread, nextMessage);
+
+    return {
+      ...mergedTicket,
+      externalIds: {
+        ...mergedTicket.externalIds,
+        emailMessageId: Number(message.id),
+      },
+      isDetailsLoaded: hadLoadedDetails,
+      unread: thread ? nextThread.unread : mergedTicket.unread,
+      unreadCount: thread ? nextThread.unreadCount : mergedTicket.unreadCount,
+    };
+  });
+}
+
 export function TicketsProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { accessToken, isAuthenticated } = useAuth();
@@ -1333,15 +1469,19 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   const [locallyUnmarkedTicketIds, setLocallyUnmarkedTicketIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [isRealtimeUnavailable, setIsRealtimeUnavailable] = useState(false);
   const draftsRef = useRef<Record<string, unknown>>({});
   const ticketsRef = useRef<Ticket[]>(tickets);
   const loadingDetailsRef = useRef(new Set<string>());
   const realtimeWebsocketRef = useRef<WebSocket | null>(null);
   const subscribedRealtimeTopicsRef = useRef(new Set<string>());
-  const shouldUseRealtimeFallback =
-    isAuthenticated && isRealtimeUnavailable && !isRealtimeConnected;
+  const pendingRealtimeTopicsRef = useRef(new Set<string>());
+  const realtimeHandshakeTimeoutRef = useRef<number | null>(null);
+  const realtimeSubscriptionTimeoutRef = useRef<number | null>(null);
+  const adminNotificationRefreshTimeoutRef = useRef<number | null>(null);
+  const isRealtimeProtocolReadyRef = useRef(false);
+  const isRealtimeSubscriptionReadyRef = useRef(false);
+  const shouldUseRealtimeFallback = isAuthenticated && isRealtimeUnavailable;
 
   const overviewQuery = useQuery({
     queryKey: CUSTOMER_SERVICE_QUERY_KEY,
@@ -1369,18 +1509,64 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
+  const clearRealtimeSubscriptionTimeout = useCallback(() => {
+    if (realtimeSubscriptionTimeoutRef.current == null || typeof window === "undefined") return;
+
+    window.clearTimeout(realtimeSubscriptionTimeoutRef.current);
+    realtimeSubscriptionTimeoutRef.current = null;
+  }, []);
+
+  const clearRealtimeHandshakeTimeout = useCallback(() => {
+    if (realtimeHandshakeTimeoutRef.current == null || typeof window === "undefined") return;
+
+    window.clearTimeout(realtimeHandshakeTimeoutRef.current);
+    realtimeHandshakeTimeoutRef.current = null;
+  }, []);
+
+  const refreshAdminNotificationsFromRealtime = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ADMIN_NOTIFICATIONS_QUERY_PREFIX });
+
+    if (typeof window === "undefined") return;
+    if (adminNotificationRefreshTimeoutRef.current != null) {
+      window.clearTimeout(adminNotificationRefreshTimeoutRef.current);
+    }
+
+    // Notification admin dibuat setelah transaction domain selesai. Refetch kedua
+    // menutup race kecil jika event WebSocket tiba sebelum row inbox admin tersedia.
+    adminNotificationRefreshTimeoutRef.current = window.setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: ADMIN_NOTIFICATIONS_QUERY_PREFIX });
+      adminNotificationRefreshTimeoutRef.current = null;
+    }, 1_000);
+  }, [queryClient]);
+
   const subscribeRealtimeTopics = useCallback(
     (topics: Iterable<string>) => {
-      for (const topic of topics) {
-        if (subscribedRealtimeTopicsRef.current.has(topic)) continue;
+      if (!isRealtimeProtocolReadyRef.current) return false;
 
-        const didSend = sendRealtimeMessage({ type: "subscribe", topic });
-        if (didSend) {
-          subscribedRealtimeTopicsRef.current.add(topic);
+      const nextTopics = Array.from(topics).filter(
+        (topic) =>
+          !subscribedRealtimeTopicsRef.current.has(topic) &&
+          !pendingRealtimeTopicsRef.current.has(topic),
+      );
+      if (!nextTopics.length) return true;
+
+      const didSend = sendRealtimeMessage({ type: "subscribe", topics: nextTopics });
+
+      if (didSend) {
+        nextTopics.forEach((topic) => pendingRealtimeTopicsRef.current.add(topic));
+        isRealtimeSubscriptionReadyRef.current = false;
+        clearRealtimeSubscriptionTimeout();
+
+        if (typeof window !== "undefined") {
+          realtimeSubscriptionTimeoutRef.current = window.setTimeout(() => {
+            realtimeWebsocketRef.current?.close(4000, "Realtime subscription timed out");
+          }, 10_000);
         }
       }
+
+      return didSend;
     },
-    [sendRealtimeMessage],
+    [clearRealtimeSubscriptionTimeout, sendRealtimeMessage],
   );
 
   const handleRealtimePayload = useCallback(
@@ -1389,9 +1575,55 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       const data = payload.data;
 
       if (eventType === "realtime.connected") {
+        clearRealtimeHandshakeTimeout();
+        isRealtimeProtocolReadyRef.current = true;
+        isRealtimeSubscriptionReadyRef.current = false;
         subscribedRealtimeTopicsRef.current = new Set();
+        pendingRealtimeTopicsRef.current = new Set();
         subscribeRealtimeTopics(getRealtimeTopics(ticketsRef.current));
         return;
+      }
+
+      if (eventType === "realtime.subscription_updated") {
+        const subscribed = Array.isArray(data?.subscribed) ? data.subscribed : [];
+        const unsubscribed = Array.isArray(data?.unsubscribed) ? data.unsubscribed : [];
+        const rejected = Array.isArray(data?.rejected) ? data.rejected : [];
+
+        subscribed.forEach((topic) => {
+          pendingRealtimeTopicsRef.current.delete(topic);
+          subscribedRealtimeTopicsRef.current.add(topic);
+        });
+        [...unsubscribed, ...rejected].forEach((topic) => {
+          pendingRealtimeTopicsRef.current.delete(topic);
+          subscribedRealtimeTopicsRef.current.delete(topic);
+        });
+
+        const subscriptionReady = pendingRealtimeTopicsRef.current.size === 0;
+        isRealtimeSubscriptionReadyRef.current = subscriptionReady;
+
+        if (subscriptionReady) {
+          clearRealtimeSubscriptionTimeout();
+          const hasAllAdminTopics = REALTIME_TOPICS.every((topic) =>
+            subscribedRealtimeTopicsRef.current.has(topic),
+          );
+          setIsRealtimeUnavailable(!hasAllAdminTopics);
+        }
+        return;
+      }
+
+      const eventTopic = payload.topic;
+      const canProcessDomainEvent =
+        isRealtimeSubscriptionReadyRef.current ||
+        (eventTopic != null && subscribedRealtimeTopicsRef.current.has(eventTopic));
+      if (!canProcessDomainEvent) return;
+
+      if (
+        eventType === "chat.whatsapp.message.created" ||
+        eventType === "chat.website.message.created" ||
+        eventType === "chat.email.message.created" ||
+        eventType === "ticket.created"
+      ) {
+        refreshAdminNotificationsFromRealtime();
       }
 
       if (isWhatsappRealtimeEvent(eventType)) {
@@ -1425,7 +1657,11 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (eventType.startsWith("chat.email.") || eventType.includes("email")) {
+      if (isEmailRealtimeEvent(eventType)) {
+        const message = data?.message as RemoteEmailMessage | null | undefined;
+        setTickets((previous) =>
+          applyRealtimeEmailEvent(previous, data?.thread, message, data?.emailThreadId),
+        );
         queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
         return;
       }
@@ -1443,7 +1679,13 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY });
       }
     },
-    [queryClient, subscribeRealtimeTopics],
+    [
+      clearRealtimeHandshakeTimeout,
+      clearRealtimeSubscriptionTimeout,
+      queryClient,
+      refreshAdminNotificationsFromRealtime,
+      subscribeRealtimeTopics,
+    ],
   );
 
   useEffect(() => {
@@ -1458,8 +1700,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     let reconnectAttempts = 0;
     let isDisposed = false;
 
-    setIsRealtimeConnected(false);
-    setIsRealtimeUnavailable(false);
+    setIsRealtimeUnavailable(true);
 
     const clearPingInterval = () => {
       if (pingInterval) {
@@ -1471,42 +1712,54 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     const connect = () => {
       if (isDisposed) return;
 
+      reconnectTimeout = undefined;
       const websocket = new WebSocket(websocketUrl);
       websocket.binaryType = "arraybuffer";
       activeWebsocket = websocket;
       realtimeWebsocketRef.current = websocket;
       subscribedRealtimeTopicsRef.current = new Set();
+      pendingRealtimeTopicsRef.current = new Set();
+      isRealtimeProtocolReadyRef.current = false;
+      isRealtimeSubscriptionReadyRef.current = false;
       clearPingInterval();
-
-      websocket.onopen = () => {
-        reconnectAttempts = 0;
-        setIsRealtimeConnected(true);
-        setIsRealtimeUnavailable(false);
-        subscribeRealtimeTopics(getRealtimeTopics(ticketsRef.current));
-        sendRealtimeMessage({ type: "ping" });
-        pingInterval = window.setInterval(
-          () => sendRealtimeMessage({ type: "ping" }),
-          REALTIME_PING_INTERVAL_MS,
-        );
-      };
+      clearRealtimeHandshakeTimeout();
+      clearRealtimeSubscriptionTimeout();
+      realtimeHandshakeTimeoutRef.current = window.setTimeout(() => {
+        if (!isRealtimeProtocolReadyRef.current) {
+          websocket.close(4000, "Realtime handshake timed out");
+        }
+      }, REALTIME_HANDSHAKE_TIMEOUT_MS);
 
       websocket.onmessage = (event) => {
         parseRealtimeMessageData(event.data)
           .then((payload) => {
             if (!payload) return;
             handleRealtimePayload(payload);
+
+            if (
+              payload.type === "realtime.subscription_updated" &&
+              isRealtimeSubscriptionReadyRef.current
+            ) {
+              reconnectAttempts = 0;
+              clearPingInterval();
+              sendRealtimeMessage({ type: "ping" });
+              pingInterval = window.setInterval(
+                () => sendRealtimeMessage({ type: "ping" }),
+                REALTIME_PING_INTERVAL_MS,
+              );
+            }
           })
           .catch(() => undefined);
       };
 
       websocket.onerror = () => {
-        setIsRealtimeConnected(false);
         websocket.close();
       };
 
       websocket.onclose = () => {
         clearPingInterval();
-        setIsRealtimeConnected(false);
+        clearRealtimeHandshakeTimeout();
+        clearRealtimeSubscriptionTimeout();
 
         if (activeWebsocket === websocket) {
           activeWebsocket = null;
@@ -1517,34 +1770,63 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         }
 
         subscribedRealtimeTopicsRef.current = new Set();
+        pendingRealtimeTopicsRef.current = new Set();
+        isRealtimeProtocolReadyRef.current = false;
+        isRealtimeSubscriptionReadyRef.current = false;
 
         if (!isDisposed) {
+          setIsRealtimeUnavailable(true);
           reconnectAttempts += 1;
-
-          if (reconnectAttempts > REALTIME_MAX_RECONNECT_ATTEMPTS) {
-            setIsRealtimeUnavailable(true);
-            return;
-          }
-
-          reconnectTimeout = window.setTimeout(
-            connect,
-            REALTIME_RECONNECT_DELAY_MS * reconnectAttempts,
+          const reconnectDelay = Math.min(
+            REALTIME_RECONNECT_DELAY_MS * 2 ** Math.min(reconnectAttempts - 1, 4),
+            REALTIME_MAX_RECONNECT_DELAY_MS,
           );
+
+          reconnectTimeout = window.setTimeout(connect, reconnectDelay);
         }
       };
     };
 
+    const reconnectNow = () => {
+      if (
+        isDisposed ||
+        activeWebsocket?.readyState === WebSocket.OPEN ||
+        activeWebsocket?.readyState === WebSocket.CONNECTING
+      ) {
+        return;
+      }
+
+      if (reconnectTimeout) {
+        window.clearTimeout(reconnectTimeout);
+        reconnectTimeout = undefined;
+      }
+      reconnectAttempts = 0;
+      connect();
+    };
+
+    window.addEventListener("online", reconnectNow);
     connect();
 
     return () => {
       isDisposed = true;
+      window.removeEventListener("online", reconnectNow);
       clearPingInterval();
+      clearRealtimeHandshakeTimeout();
+      clearRealtimeSubscriptionTimeout();
+
+      if (adminNotificationRefreshTimeoutRef.current != null) {
+        window.clearTimeout(adminNotificationRefreshTimeoutRef.current);
+        adminNotificationRefreshTimeoutRef.current = null;
+      }
 
       if (reconnectTimeout) {
         window.clearTimeout(reconnectTimeout);
       }
 
       subscribedRealtimeTopicsRef.current = new Set();
+      pendingRealtimeTopicsRef.current = new Set();
+      isRealtimeProtocolReadyRef.current = false;
+      isRealtimeSubscriptionReadyRef.current = false;
 
       if (activeWebsocket) {
         activeWebsocket.close(1000, "Dashboard closed");
@@ -1552,6 +1834,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     };
   }, [
     accessToken,
+    clearRealtimeHandshakeTimeout,
+    clearRealtimeSubscriptionTimeout,
     handleRealtimePayload,
     isAuthenticated,
     sendRealtimeMessage,
@@ -1616,7 +1900,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           ]);
           const linkedTicket =
             emailTickets.find(
-              (item) => item.emailThreadId != null && Number(item.emailThreadId) === ticket.externalIds?.emailThreadId,
+              (item) =>
+                item.emailThreadId != null &&
+                Number(item.emailThreadId) === ticket.externalIds?.emailThreadId,
             ) ??
             (ticket.externalIds.emailTicketId
               ? ({
@@ -1741,32 +2027,58 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     [queryClient, refreshWhatsappMessages],
   );
 
-  const refreshEmailMessages = useCallback(
-    async (ticketId: string, emailThreadId: number) => {
-      const [threadInfo, messages, emailTickets] = await Promise.all([
-        getEmailThreadInfo(emailThreadId),
-        getEmailMessages(emailThreadId),
-        getEmailTickets().catch(() => [] as RemoteTicket[]),
-      ]);
-      const linkedTicket = emailTickets.find(
-        (item) => item.emailThreadId != null && Number(item.emailThreadId) === emailThreadId,
-      );
-      const mappedTicket = mapEmailThread(threadInfo, linkedTicket, messages);
+  const refreshEmailMessages = useCallback(async (ticketId: string, emailThreadId: number) => {
+    const [threadInfo, messages, emailTickets] = await Promise.all([
+      getEmailThreadInfo(emailThreadId),
+      getEmailMessages(emailThreadId),
+      getEmailTickets().catch(() => [] as RemoteTicket[]),
+    ]);
+    const linkedTicket = emailTickets.find(
+      (item) => item.emailThreadId != null && Number(item.emailThreadId) === emailThreadId,
+    );
+    const mappedTicket = mapEmailThread(threadInfo, linkedTicket, messages);
 
-      setTickets((previous) =>
-        previous.map((item) =>
-          item.id === ticketId
-            ? {
-                ...mappedTicket,
-                isPinned: item.isPinned,
-                unread: item.unread,
-              }
-            : item,
-        ),
+    setTickets((previous) =>
+      previous.map((item) =>
+        item.id === ticketId
+          ? {
+              ...mappedTicket,
+              isPinned: item.isPinned,
+              unread: item.unread,
+            }
+          : item,
+      ),
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!shouldUseRealtimeFallback || typeof window === "undefined") return;
+
+    const refreshLoadedEmailThreads = () => {
+      const loadedEmailTickets = ticketsRef.current.filter(
+        (ticket) =>
+          ticket.source === "gmail" &&
+          ticket.isDetailsLoaded &&
+          ticket.externalIds?.emailThreadId != null,
       );
-    },
-    [],
-  );
+
+      loadedEmailTickets.forEach((ticket) => {
+        refreshEmailMessages(ticket.id, ticket.externalIds!.emailThreadId!).catch(() =>
+          queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }),
+        );
+      });
+    };
+
+    refreshLoadedEmailThreads();
+    const interval = window.setInterval(
+      refreshLoadedEmailThreads,
+      REALTIME_FALLBACK_REFRESH_INTERVAL_MS,
+    );
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [queryClient, refreshEmailMessages, shouldUseRealtimeFallback]);
 
   const scheduleEmailMessagesRefresh = useCallback(
     (ticketId: string, emailThreadId: number) => {
@@ -1928,10 +2240,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         const emailMessageId =
           Number(opts?.messageExternalId) ||
           Number(
-            [...ticket.messages]
-              .reverse()
-              .find((message) => message.externalId != null)?.externalId ??
-              ticket.externalIds?.emailMessageId,
+            [...ticket.messages].reverse().find((message) => message.externalId != null)
+              ?.externalId ?? ticket.externalIds?.emailMessageId,
           );
 
         if (!Number.isFinite(emailMessageId)) {
@@ -2273,7 +2583,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           remoteStatus,
         );
       } else if (ticket.externalIds?.emailTicketId) {
-        remoteTicket = await updateEmailTicketStatus(ticket.externalIds.emailTicketId, remoteStatus);
+        remoteTicket = await updateEmailTicketStatus(
+          ticket.externalIds.emailTicketId,
+          remoteStatus,
+        );
       } else if (ticket.source === "whatsapp") {
         throw new Error("Status WhatsApp hanya bisa diubah dari item ticket, bukan room chat.");
       } else if (ticket.source === "gmail") {
@@ -3072,21 +3385,28 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     [scheduleEmailMessagesRefresh],
   );
 
-  const markAsRead = useCallback((id: string) => {
-    const ticket = ticketsRef.current.find((item) => item.id === id);
+  const markAsRead = useCallback(
+    (id: string) => {
+      const ticket = ticketsRef.current.find((item) => item.id === id);
 
-    setTickets((previous) =>
-      previous.map((ticket) =>
-        ticket.id === id && ticket.unread ? { ...ticket, unread: false } : ticket,
-      ),
-    );
-
-    if (ticket?.source === "gmail" && ticket.externalIds?.emailThreadId != null && ticket.unread) {
-      markEmailThreadRead(ticket.externalIds.emailThreadId).catch(() =>
-        queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }),
+      setTickets((previous) =>
+        previous.map((ticket) =>
+          ticket.id === id && ticket.unread ? { ...ticket, unread: false } : ticket,
+        ),
       );
-    }
-  }, [queryClient]);
+
+      if (
+        ticket?.source === "gmail" &&
+        ticket.externalIds?.emailThreadId != null &&
+        ticket.unread
+      ) {
+        markEmailThreadRead(ticket.externalIds.emailThreadId).catch(() =>
+          queryClient.invalidateQueries({ queryKey: CUSTOMER_SERVICE_QUERY_KEY }),
+        );
+      }
+    },
+    [queryClient],
+  );
 
   const value = useMemo<TicketsContextValue>(
     () => ({

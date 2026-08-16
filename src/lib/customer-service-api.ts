@@ -428,35 +428,44 @@ export interface RemoteChatBlastHistory {
   updatedAt?: string | null;
 }
 
-export interface RemoteNotificationChatBlast {
+export interface RemoteEmailBlastDelivery {
   id?: number | null;
-  subject?: string | null;
-  body?: string | null;
-  htmlBody?: string | null;
-  purpose?: string | null;
-  attachments?: RemoteChatAttachmentValue[] | null;
-  channelType?: "whatsapp" | "gmail" | "email" | "website" | string | null;
-  broadcastType?: string | null;
-  status?: string | null;
-  scheduledFor?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-}
-
-export interface RemoteNotification {
-  id: number;
   chatBlastMessageHistoryId?: number | null;
-  profileId?: string | null;
-  readAt?: string | null;
-  chatBlast?: RemoteNotificationChatBlast | null;
+  emailThreadId?: number | null;
+  emailMessageId?: number | null;
+  recipient?: RemoteEmailAddress | string | null;
+  recipientAddress?: string | null;
+  recipientEmail?: string | null;
+  normalizedRecipient?: string | null;
+  email?: string | null;
+  status?: "pending" | "sent" | "failed" | "delivery_unknown" | "bounced" | string | null;
+  sentStatus?: "pending" | "sent" | "failed" | "delivery_unknown" | "bounced" | string | null;
+  attemptCount?: number | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  queuedAt?: string | null;
+  sentAt?: string | null;
+  failedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
 
-export interface RemoteNotificationUnreadCount {
+export interface RemoteAdminNotification {
+  id: number;
+  eventKey: string;
+  severity: "info" | "warning" | "critical" | string;
+  title: string;
+  message: string;
+  actorProfileId?: string | null;
+  resourceType: "ticket" | "chat";
+  resourceId: string;
+  readAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteAdminNotificationUnreadCount {
   totalUnread?: number | null;
-  blastMessages?: number | null;
-  ticketRepliesForCustomer?: number | null;
 }
 
 export type RemoteTicketStatus = "open" | "pending" | "in_progress" | "resolved";
@@ -1541,6 +1550,16 @@ const getChatBlastHistoryServer = createServerFn({ method: "GET" })
     return response.data;
   });
 
+const getEmailBlastDeliveriesServer = createServerFn({ method: "GET" })
+  .validator((data: { id: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<RemoteEmailBlastDelivery[]>(
+      `/api/chat/blast/${data.id}/deliveries`,
+      { cache: "no-store" },
+    );
+    return response.data ?? [];
+  });
+
 const sendChatBlastServer = createServerFn({ method: "POST" })
   .validator((data: ChatBlastPayload) => data)
   .handler(async ({ data }) => {
@@ -1551,18 +1570,33 @@ const sendChatBlastServer = createServerFn({ method: "POST" })
     return response.data;
   });
 
-const getCommonNotificationsServer = createServerFn({ method: "GET" }).handler(async () => {
-  return apiRequestAllPages<RemoteNotification>("/api/notification/common");
+const getAdminNotificationsServer = createServerFn({ method: "GET" }).handler(async () => {
+  const response = await apiRequest<RemoteAdminNotification[]>(
+    appendQuery("/api/notification/admin", { page: 1, limit: 20 }),
+    { cache: "no-store" },
+  );
+  return response.data ?? [];
 });
 
-const getCommonNotificationUnreadCountServer = createServerFn({ method: "GET" }).handler(
+const getAdminNotificationUnreadCountServer = createServerFn({ method: "GET" }).handler(
   async () => {
-    const response = await apiRequest<RemoteNotificationUnreadCount>(
-      "/api/notification/common/unread-count",
+    const response = await apiRequest<RemoteAdminNotificationUnreadCount>(
+      "/api/notification/admin/unread-count",
+      { cache: "no-store" },
     );
     return response.data ?? { totalUnread: 0 };
   },
 );
+
+const markAdminNotificationReadServer = createServerFn({ method: "POST" })
+  .validator((data: { notificationId: number }) => data)
+  .handler(async ({ data }) => {
+    const response = await apiRequest<{ id: number }>(
+      `/api/notification/admin/${data.notificationId}/read`,
+      { method: "POST" },
+    );
+    return response.data ?? { id: data.notificationId };
+  });
 
 export function getWebsiteTickets() {
   return getWebsiteTicketsServer();
@@ -1705,16 +1739,24 @@ export function getChatBlastHistory(id: number) {
   return getChatBlastHistoryServer({ data: { id } });
 }
 
+export function getEmailBlastDeliveries(id: number) {
+  return getEmailBlastDeliveriesServer({ data: { id } });
+}
+
 export function sendChatBlast(payload: ChatBlastPayload) {
   return sendChatBlastServer({ data: payload });
 }
 
-export function getCommonNotifications() {
-  return getCommonNotificationsServer();
+export function getAdminNotifications() {
+  return getAdminNotificationsServer();
 }
 
-export function getCommonNotificationUnreadCount() {
-  return getCommonNotificationUnreadCountServer();
+export function getAdminNotificationUnreadCount() {
+  return getAdminNotificationUnreadCountServer();
+}
+
+export function markAdminNotificationRead(notificationId: number) {
+  return markAdminNotificationReadServer({ data: { notificationId } });
 }
 
 export function getRealtimeWebsocketUrl(accessToken?: string | null) {
@@ -1723,7 +1765,7 @@ export function getRealtimeWebsocketUrl(accessToken?: string | null) {
 
   const url = new URL("/api/realtime/ws", API_ORIGIN);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("postmaticAccessToken", token);
+  url.searchParams.set("accessToken", token);
 
   return url.toString();
 }

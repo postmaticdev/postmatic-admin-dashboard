@@ -11,6 +11,68 @@ interface Props {
   scopeKey: string;
 }
 
+interface NotificationResourceTarget {
+  eventKey: string;
+  resourceId: string;
+  resourceType: "ticket" | "chat";
+}
+
+function getNotificationResourceTarget(): NotificationResourceTarget | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const eventKey = params.get("notificationEventKey")?.trim();
+  const resourceId = params.get("notificationResourceId")?.trim();
+  const resourceType = params.get("notificationResourceType")?.trim();
+
+  if (!eventKey || !resourceId || (resourceType !== "ticket" && resourceType !== "chat")) {
+    return null;
+  }
+
+  return { eventKey, resourceId, resourceType };
+}
+
+function ticketMatchesNotificationResource(ticket: Ticket, target: NotificationResourceTarget) {
+  const eventKey = target.eventKey.toLowerCase();
+
+  if (eventKey.includes("whatsapp")) {
+    const remoteId =
+      target.resourceType === "ticket"
+        ? ticket.externalIds?.whatsappTicketId
+        : ticket.externalIds?.whatsappRoomChatId;
+    return (
+      ticket.source === "whatsapp" && remoteId != null && String(remoteId) === target.resourceId
+    );
+  }
+
+  if (eventKey.includes("email")) {
+    const remoteId =
+      target.resourceType === "ticket"
+        ? ticket.externalIds?.emailTicketId
+        : ticket.externalIds?.emailThreadId;
+    return ticket.source === "gmail" && remoteId != null && String(remoteId) === target.resourceId;
+  }
+
+  if (eventKey.includes("website") && target.resourceType === "ticket") {
+    const remoteId = ticket.externalIds?.websiteTicketId;
+    return (
+      ticket.source === "website" && remoteId != null && String(remoteId) === target.resourceId
+    );
+  }
+
+  return false;
+}
+
+function clearNotificationResourceTarget() {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.delete("notificationEventKey");
+  url.searchParams.delete("notificationResourceId");
+  url.searchParams.delete("notificationResourceType");
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
   const { error, ensureTicketDetails, getById, isLoading, markAsRead, refreshTickets } =
     useTickets();
@@ -27,6 +89,21 @@ export function CustomerServiceWorkspace({ title, tickets, scopeKey }: Props) {
     setIsComposingEmail(false);
     setReplyToData(null);
   }, [scopeKey]);
+
+  useEffect(() => {
+    const target = getNotificationResourceTarget();
+    if (!target) return;
+
+    const matchedTicket = tickets.find((ticket) =>
+      ticketMatchesNotificationResource(ticket, target),
+    );
+    if (!matchedTicket) return;
+
+    setSelectedId(matchedTicket.id);
+    setIsComposingEmail(false);
+    setReplyToData(null);
+    clearNotificationResourceTarget();
+  }, [tickets]);
 
   useEffect(() => {
     if (selectedId) {

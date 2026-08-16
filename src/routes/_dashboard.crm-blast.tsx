@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTickets } from "@/contexts/TicketsContext";
 import {
   getEmailBlastContacts,
+  getEmailBlastDeliveries,
   getEmailQuota,
   getWhatsappBlastContacts,
   getUploadedAssetIds,
@@ -49,6 +50,7 @@ import {
   uploadCustomerServiceAttachment,
   type WhatsappBlastContact,
   type RemoteChatBlastHistory,
+  type RemoteEmailBlastDelivery,
   type UploadedAttachment,
 } from "@/lib/customer-service-api";
 import type { Ticket } from "@/lib/types/ticket";
@@ -60,6 +62,7 @@ export const Route = createFileRoute("/_dashboard/crm-blast")({
 
 interface BlastCampaign {
   id: string;
+  remoteId: number;
   campaignName: string;
   platform: "whatsapp" | "gmail" | "website";
   status: "success" | "schedule" | "queued" | "processing" | "failed";
@@ -139,15 +142,12 @@ function toCampaignStatus(status?: string | null): BlastCampaign["status"] {
   return "queued";
 }
 
-function shouldPollBlastHistory(history: RemoteChatBlastHistory) {
-  const broadcastType = history.broadcastType?.toLowerCase();
-  const status = toCampaignStatus(history.status);
+function getBlastHistoriesRefetchInterval(histories?: RemoteChatBlastHistory[]) {
+  const statuses = (histories ?? []).map((history) => toCampaignStatus(history.status));
 
-  return broadcastType !== "scheduled" && (status === "queued" || status === "processing");
-}
-
-function shouldPollBlastHistories(histories?: RemoteChatBlastHistory[]) {
-  return (histories ?? []).some(shouldPollBlastHistory);
+  if (statuses.some((status) => status === "queued" || status === "processing")) return 5_000;
+  if (statuses.includes("schedule")) return 30_000;
+  return false;
 }
 
 function formatBlastDate(value?: string | null) {
@@ -168,7 +168,7 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
       ? "gmail"
       : history.channelType === "website"
         ? "website"
-      : "whatsapp";
+        : "whatsapp";
   const targets = (history.targets ?? []).filter(Boolean);
   const totalAssign = Number(history.totalAssign ?? 0);
   const attachments = (history.attachments ?? [])
@@ -185,6 +185,7 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
 
   return {
     id: `remote-${history.id}`,
+    remoteId: Number(history.id),
     campaignName: history.subject?.trim() || `Blast #${history.id}`,
     platform,
     status: toCampaignStatus(history.status),
@@ -196,6 +197,58 @@ function mapRemoteBlast(history: RemoteChatBlastHistory): BlastCampaign {
     purpose: history.purpose === "marketing" ? "marketing" : "operational",
     attachments: attachments.length ? attachments : undefined,
     targets: targets.join(", "),
+  };
+}
+
+function getEmailDeliveryRecipient(delivery: RemoteEmailBlastDelivery) {
+  const recipient = delivery.recipient;
+
+  if (typeof recipient === "string") return recipient.trim();
+
+  return (
+    recipient?.address?.trim() ||
+    delivery.recipientAddress?.trim() ||
+    delivery.recipientEmail?.trim() ||
+    delivery.normalizedRecipient?.trim() ||
+    delivery.email?.trim() ||
+    "Penerima email"
+  );
+}
+
+function getEmailDeliveryStatus(delivery: RemoteEmailBlastDelivery) {
+  return (delivery.status ?? delivery.sentStatus)?.trim().toLowerCase() || "pending";
+}
+
+function isPendingEmailDelivery(delivery: RemoteEmailBlastDelivery) {
+  const status = getEmailDeliveryStatus(delivery);
+  return status === "pending" || status === "queued" || status === "processing";
+}
+
+function getEmailDeliveryStatusMeta(status: string) {
+  if (status === "sent" || status === "success") {
+    return {
+      label: "Sent",
+      className: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
+    };
+  }
+
+  if (status === "failed" || status === "bounced") {
+    return {
+      label: status === "bounced" ? "Bounced" : "Failed",
+      className: "border-red-500/20 bg-red-500/10 text-red-600",
+    };
+  }
+
+  if (status === "delivery_unknown") {
+    return {
+      label: "Unknown",
+      className: "border-amber-500/20 bg-amber-500/10 text-amber-700",
+    };
+  }
+
+  return {
+    label: status === "processing" ? "Processing" : "Pending",
+    className: "border-blue-500/20 bg-blue-500/10 text-blue-600",
   };
 }
 
@@ -321,7 +374,25 @@ function CrmBlastPage() {
     queryFn: getChatBlastHistories,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchInterval: (query) => (shouldPollBlastHistories(query.state.data) ? 5_000 : false),
+    refetchInterval: (query) => getBlastHistoriesRefetchInterval(query.state.data),
+  });
+
+  const emailBlastDeliveriesQuery = useQuery({
+    queryKey: ["crm-blast", "email-deliveries", selectedBlast?.remoteId],
+    queryFn: () => getEmailBlastDeliveries(selectedBlast!.remoteId),
+    enabled:
+      isDetailOpen &&
+      selectedBlast?.platform === "gmail" &&
+      Number.isFinite(selectedBlast.remoteId),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const deliveries = query.state.data;
+      const campaignIsActive =
+        selectedBlast?.status === "queued" || selectedBlast?.status === "processing";
+
+      return campaignIsActive || deliveries?.some(isPendingEmailDelivery) ? 3_000 : false;
+    },
   });
 
   const remoteBlasts = useMemo(
@@ -329,6 +400,40 @@ function CrmBlastPage() {
     [blastHistoriesQuery.data],
   );
   const blasts = remoteBlasts;
+
+  useEffect(() => {
+    if (!selectedBlast) return;
+
+    const refreshedBlast = blasts.find((blast) => blast.id === selectedBlast.id);
+    if (!refreshedBlast) return;
+    if (refreshedBlast === selectedBlast) return;
+
+    setSelectedBlast((current) => (current?.id === refreshedBlast.id ? refreshedBlast : current));
+  }, [blasts, selectedBlast]);
+
+  const selectedBlastRecipients = useMemo(() => {
+    const fallbackRecipients = (selectedBlast?.targets ?? "")
+      .split(",")
+      .map((target) => target.trim())
+      .filter(Boolean)
+      .map((recipient, index) => ({
+        id: `target-${index}-${recipient}`,
+        recipient,
+        status: null as string | null,
+        error: null as string | null,
+      }));
+
+    if (selectedBlast?.platform !== "gmail" || !emailBlastDeliveriesQuery.data?.length) {
+      return fallbackRecipients;
+    }
+
+    return emailBlastDeliveriesQuery.data.map((delivery, index) => ({
+      id: String(delivery.id ?? `delivery-${index}`),
+      recipient: getEmailDeliveryRecipient(delivery),
+      status: getEmailDeliveryStatus(delivery),
+      error: delivery.lastErrorMessage ?? delivery.lastErrorCode ?? null,
+    }));
+  }, [emailBlastDeliveriesQuery.data, selectedBlast]);
 
   const filteredBlasts = blasts.filter((b) =>
     b.campaignName.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -498,6 +603,10 @@ function CrmBlastPage() {
 
       await blastHistoriesQuery.refetch();
 
+      if (activePlatform === "gmail") {
+        void emailQuotaQuery.refetch();
+      }
+
       setViewMode("list");
       setBlastAttachments([]);
       refreshTickets();
@@ -531,10 +640,7 @@ function CrmBlastPage() {
         selectedFiles.map((file) => uploadCustomerServiceAttachment(file)),
       );
 
-      setBlastAttachments((currentAttachments) => [
-        ...currentAttachments,
-        ...uploadedAttachments,
-      ]);
+      setBlastAttachments((currentAttachments) => [...currentAttachments, ...uploadedAttachments]);
     } catch (error) {
       setSendBlastError(
         error instanceof Error ? error.message : "Gagal mengunggah lampiran blast.",
@@ -727,6 +833,9 @@ function CrmBlastPage() {
       });
 
       await blastHistoriesQuery.refetch();
+      if (activePlatform === "gmail") {
+        void emailQuotaQuery.refetch();
+      }
       setIsScheduleModalOpen(false);
       setViewMode("list");
       setBlastAttachments([]);
@@ -1620,7 +1729,9 @@ function CrmBlastPage() {
                       className="font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1.5 transition-colors text-left"
                     >
                       <Users className="h-4 w-4 shrink-0" />
-                      {selectedBlast.assign} Penerima
+                      {selectedBlast.succeedAssign != null
+                        ? `${selectedBlast.succeedAssign}/${selectedBlast.assign} terkirim`
+                        : `${selectedBlast.assign} Penerima`}
                     </button>
                   </div>
 
@@ -1656,7 +1767,7 @@ function CrmBlastPage() {
                     </div>
                   ) : (
                     <div
-                      className="bg-muted/40 border border-border p-4 rounded-lg text-sm text-foreground leading-relaxed prose max-w-none 
+                      className="bg-muted/40 border border-border p-4 rounded-lg text-sm text-foreground leading-relaxed prose max-w-none
                         [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-sm [&_h2]:font-bold [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline"
                       dangerouslySetInnerHTML={{ __html: selectedBlast.message }}
                     />
@@ -1743,29 +1854,62 @@ function CrmBlastPage() {
 
             <ScrollArea className="flex-1">
               <div className="divide-y divide-border/60 px-5 py-2">
-                {selectedBlast.targets
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean)
-                  .filter((handle) => handle.toLowerCase().includes(recipientSearch.toLowerCase()))
-                  .map((handle, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <span className="font-semibold text-foreground">{handle}</span>
-                      <Badge className="bg-muted text-muted-foreground font-medium border text-[10px]">
-                        Recipient #{idx + 1}
-                      </Badge>
-                    </div>
-                  ))}
-                {selectedBlast.targets
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean)
-                  .filter((handle) => handle.toLowerCase().includes(recipientSearch.toLowerCase()))
-                  .length === 0 && (
-                  <p className="p-8 text-center text-xs text-muted-foreground">
-                    Tidak ada penerima yang cocok.
-                  </p>
+                {selectedBlast.platform === "gmail" && emailBlastDeliveriesQuery.isLoading && (
+                  <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Memuat status delivery...
+                  </div>
                 )}
+                {selectedBlast.platform === "gmail" && emailBlastDeliveriesQuery.isError && (
+                  <div className="flex items-start gap-2 p-3 text-xs text-amber-700">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Status delivery belum dapat dimuat; daftar target campaign tetap ditampilkan.
+                  </div>
+                )}
+                {selectedBlastRecipients
+                  .filter((item) =>
+                    item.recipient.toLowerCase().includes(recipientSearch.toLowerCase()),
+                  )
+                  .map((item, idx) => {
+                    const statusMeta = item.status ? getEmailDeliveryStatusMeta(item.status) : null;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 py-2.5 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <span className="block truncate font-semibold text-foreground">
+                            {item.recipient}
+                          </span>
+                          {item.error && (
+                            <span
+                              className="mt-0.5 block truncate text-[10px] text-red-600"
+                              title={item.error}
+                            >
+                              {item.error}
+                            </span>
+                          )}
+                        </div>
+                        <Badge
+                          className={cn(
+                            "shrink-0 border text-[10px] font-medium",
+                            statusMeta?.className ?? "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {statusMeta?.label ?? `Recipient #${idx + 1}`}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                {selectedBlastRecipients.filter((item) =>
+                  item.recipient.toLowerCase().includes(recipientSearch.toLowerCase()),
+                ).length === 0 &&
+                  !emailBlastDeliveriesQuery.isLoading && (
+                    <p className="p-8 text-center text-xs text-muted-foreground">
+                      Tidak ada penerima yang cocok.
+                    </p>
+                  )}
               </div>
             </ScrollArea>
 
