@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PaymentMethodItem } from "./types";
 import { formatIDR } from "./utils";
+import { ImageTokenPricePanel } from "./ImageTokenPricePanel";
 import {
   Plus,
   Edit3,
@@ -282,6 +283,8 @@ export function PaymentTableList({
           </button>
         </div>
       </div>
+
+      <ImageTokenPricePanel />
 
       <div className="flex items-center gap-3 bg-card p-4 rounded-xl border border-border/60 shadow-sm">
         <div className="relative flex-1 max-w-md">
