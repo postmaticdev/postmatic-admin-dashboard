@@ -89,6 +89,13 @@ function TableRow({
       </td>
 
       <td className="py-4 px-4 whitespace-nowrap">
+        <span className="inline-flex min-w-14 justify-center rounded-md border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
+          {item.totalUsage.toLocaleString("id-ID")}/
+          {item.maxUsage.toLocaleString("id-ID")}
+        </span>
+      </td>
+
+      <td className="py-4 px-4 whitespace-nowrap">
         <div className="flex items-center gap-1.5">
           {item.status === "Active" ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
@@ -212,6 +219,13 @@ function VoucherDetailModal({
               <div className="flex items-center justify-between">
                 <span>Maksimal Diskon</span>
                 <span className="font-semibold text-foreground">{item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Telah Digunakan</span>
+                <span className="font-semibold text-foreground">
+                  {item.totalUsage.toLocaleString("id-ID")}/
+                  {item.maxUsage.toLocaleString("id-ID")}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Masa Berlaku</span>
@@ -344,7 +358,8 @@ export function VoucherTableList({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1120px] w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-xs font-semibold text-muted-foreground">
               <th className="py-3 px-4">Nama Voucher</th>
@@ -352,6 +367,7 @@ export function VoucherTableList({
               <th className="py-3 px-4">Tanggal Kedaluwarsa</th>
               <th className="py-3 px-4">Nilai Diskon</th>
               <th className="py-3 px-4">Ketentuan Diskon</th>
+              <th className="py-3 px-4">Telah Digunakan</th>
               <th className="py-3 px-4">Status</th>
               <th className="py-3 pr-4 pl-3 text-right">Action</th>
             </tr>
@@ -359,7 +375,7 @@ export function VoucherTableList({
           <tbody>
             {filteredItems.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                <td colSpan={8} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Wallet className="h-8 w-8 text-muted-foreground/50" />
                     <p className="text-sm font-medium">
@@ -383,7 +399,8 @@ export function VoucherTableList({
               ))
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
         <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
           <span>
             Menampilkan <strong>{filteredItems.length}</strong> dari{" "}

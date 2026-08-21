@@ -25,12 +25,12 @@ import {
 interface UserTableListProps {
   items: UserAccount[];
   onEdit?: (item: UserAccount) => void;
-  onPromoteToAdmin?: (item: UserAccount) => void;
+  onEditRole?: (item: UserAccount) => void;
   onToggleBan?: (item: UserAccount, isBanned: boolean) => void;
   isLoading?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
-  promotingUserId?: string | null;
+  updatingRoleUserId?: string | null;
   updatingBanUserId?: string | null;
   onRetry?: () => void;
 }
@@ -71,23 +71,23 @@ function UserInfoModal({
   user,
   onClose,
   onEdit,
-  onPromoteToAdmin,
+  onEditRole,
   onToggleBan,
   isReadOnly,
-  isPromoting,
+  isUpdatingRole,
   isUpdatingBan,
 }: {
   user: UserAccount;
   onClose: () => void;
   onEdit?: () => void;
-  onPromoteToAdmin?: () => void;
+  onEditRole?: () => void;
   onToggleBan?: () => void;
   isReadOnly?: boolean;
-  isPromoting?: boolean;
+  isUpdatingRole?: boolean;
   isUpdatingBan?: boolean;
 }) {
   const isSuspended = user.status === "Suspended";
-  const hasActions = !isReadOnly && Boolean(onEdit || onPromoteToAdmin || onToggleBan);
+  const hasActions = !isReadOnly && Boolean(onEdit || onEditRole || onToggleBan);
 
   return (
     <div
@@ -185,26 +185,26 @@ function UserInfoModal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {hasActions && onPromoteToAdmin && (
+            {hasActions && onEditRole && (
               <button
                 type="button"
-                onClick={onPromoteToAdmin}
-                disabled={isPromoting || isUpdatingBan}
+                onClick={onEditRole}
+                disabled={isUpdatingRole || isUpdatingBan}
                 className="flex-1 inline-flex min-w-[9rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500 text-white text-sm font-semibold shadow-md shadow-violet-500/20 hover:bg-violet-600 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isPromoting ? (
+                {isUpdatingRole ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <ShieldCheck className="h-3.5 w-3.5" />
                 )}
-                Jadikan Admin
+                Edit Role
               </button>
             )}
             {hasActions && onToggleBan && (
               <button
                 type="button"
                 onClick={onToggleBan}
-                disabled={isPromoting || isUpdatingBan}
+                disabled={isUpdatingRole || isUpdatingBan}
                 className={`flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                   isSuspended
                     ? "border border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
@@ -225,7 +225,7 @@ function UserInfoModal({
               <button
                 type="button"
                 onClick={onEdit}
-                disabled={isPromoting || isUpdatingBan}
+                disabled={isUpdatingRole || isUpdatingBan}
                 className="flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Edit3 className="h-3.5 w-3.5" />
@@ -272,36 +272,36 @@ function StatusBadge({ status }: { status: UserAccount["status"] }) {
 function UserActionButtons({
   user,
   onEdit,
-  onPromoteToAdmin,
+  onEditRole,
   onToggleBan,
-  isPromoting,
+  isUpdatingRole,
   isUpdatingBan,
 }: {
   user: UserAccount;
   onEdit?: (item: UserAccount) => void;
-  onPromoteToAdmin?: (item: UserAccount) => void;
+  onEditRole?: (item: UserAccount) => void;
   onToggleBan?: (item: UserAccount, isBanned: boolean) => void;
-  isPromoting?: boolean;
+  isUpdatingRole?: boolean;
   isUpdatingBan?: boolean;
 }) {
   const isSuspended = user.status === "Suspended";
-  const isBusy = Boolean(isPromoting || isUpdatingBan);
+  const isBusy = Boolean(isUpdatingRole || isUpdatingBan);
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      {onPromoteToAdmin && (
+      {onEditRole && (
         <button
           type="button"
-          onClick={() => onPromoteToAdmin(user)}
+          onClick={() => onEditRole(user)}
           disabled={isBusy}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500 hover:text-white transition-all duration-150 shadow-sm disabled:pointer-events-none disabled:opacity-60"
         >
-          {isPromoting ? (
+          {isUpdatingRole ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <ShieldCheck className="h-3.5 w-3.5" />
           )}
-          Admin
+          Edit Role
         </button>
       )}
       {onToggleBan && (
@@ -343,12 +343,12 @@ function UserActionButtons({
 export function UserTableList({
   items,
   onEdit,
-  onPromoteToAdmin,
+  onEditRole,
   onToggleBan,
   isLoading = false,
   errorMessage,
   isReadOnly = false,
-  promotingUserId,
+  updatingRoleUserId,
   updatingBanUserId,
   onRetry,
 }: UserTableListProps) {
@@ -365,7 +365,7 @@ export function UserTableList({
   const totalUsers = items.length;
   const activeUsers = items.filter((u) => u.status === "Active").length;
   const suspendedUsers = items.filter((u) => u.status === "Suspended").length;
-  const hasActions = !isReadOnly && Boolean(onEdit || onPromoteToAdmin || onToggleBan);
+  const hasActions = !isReadOnly && Boolean(onEdit || onEditRole || onToggleBan);
   const tableColSpan = hasActions ? 6 : 5;
 
   return (
@@ -532,9 +532,9 @@ export function UserTableList({
                       <UserActionButtons
                         user={user}
                         onEdit={onEdit}
-                        onPromoteToAdmin={onPromoteToAdmin}
+                        onEditRole={onEditRole}
                         onToggleBan={onToggleBan}
-                        isPromoting={promotingUserId === user.id}
+                        isUpdatingRole={updatingRoleUserId === user.id}
                         isUpdatingBan={updatingBanUserId === user.id}
                       />
                     </td>
@@ -555,10 +555,10 @@ export function UserTableList({
         <UserInfoModal
           user={modalUser}
           onClose={() => setModalUser(null)}
-          onPromoteToAdmin={
-            onPromoteToAdmin
+          onEditRole={
+            onEditRole
               ? () => {
-                  onPromoteToAdmin(modalUser);
+                  onEditRole(modalUser);
                   setModalUser(null);
                 }
               : undefined
@@ -580,7 +580,7 @@ export function UserTableList({
               : undefined
           }
           isReadOnly={isReadOnly}
-          isPromoting={promotingUserId === modalUser.id}
+          isUpdatingRole={updatingRoleUserId === modalUser.id}
           isUpdatingBan={updatingBanUserId === modalUser.id}
         />
       )}

@@ -10,8 +10,12 @@ export interface VoucherItem {
   discountValue: number; // percentage or fixed amount
   minOrder: number;
   maxDiscount: number | null; // null if no max
+  totalUsage: number;
+  maxUsage: number;
   status: "Active" | "Inactive";
 }
+
+export type VoucherFormData = Omit<VoucherItem, "id" | "totalUsage">;
 
 export interface ReferralItem {
   id: string;
@@ -36,6 +40,8 @@ export const initialVoucherData: VoucherItem[] = [
     discountValue: 17,
     minOrder: 100000,
     maxDiscount: 50000,
+    totalUsage: 8,
+    maxUsage: 20,
     status: "Active",
   },
   {
@@ -48,6 +54,8 @@ export const initialVoucherData: VoucherItem[] = [
     discountValue: 15000,
     minOrder: 50000,
     maxDiscount: null,
+    totalUsage: 12,
+    maxUsage: 100,
     status: "Active",
   },
 ];

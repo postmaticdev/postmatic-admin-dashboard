@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { VoucherItem, DiscountType } from "./types";
+import { VoucherItem, DiscountType, VoucherFormData } from "./types";
 import { formatNumberString, parseNumberString } from "./utils";
 import {
   ArrowLeft,
@@ -11,7 +11,7 @@ import {
 
 interface VoucherFormViewProps {
   initialItem: VoucherItem | null;
-  onSave: (data: Omit<VoucherItem, "id">, id?: string) => void;
+  onSave: (data: VoucherFormData, id?: string) => void;
   onCancel: () => void;
   onDelete?: (id: string) => void;
 }
@@ -34,6 +34,7 @@ export function VoucherFormView({
   const [minOrder, setMinOrder] = useState(initialItem?.minOrder || 0);
   const [hasMaxDiscount, setHasMaxDiscount] = useState(Boolean(initialItem?.maxDiscount));
   const [maxDiscount, setMaxDiscount] = useState(initialItem?.maxDiscount || 0);
+  const [maxUsage, setMaxUsage] = useState(initialItem?.maxUsage || 1);
   const [status, setStatus] = useState<"Active" | "Inactive">(initialItem?.status || "Active");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -41,6 +42,18 @@ export function VoucherFormView({
     e.preventDefault();
     if (!name.trim() || !code.trim() || !startDate) {
       alert("Harap isi semua kolom wajib!");
+      return;
+    }
+
+    if (!Number.isInteger(maxUsage) || maxUsage < 1) {
+      alert("Limit penggunaan harus berupa bilangan bulat minimal 1 kali.");
+      return;
+    }
+
+    if (initialItem && maxUsage < initialItem.totalUsage) {
+      alert(
+        `Limit penggunaan tidak boleh kurang dari ${initialItem.totalUsage}, karena voucher sudah digunakan sebanyak itu.`
+      );
       return;
     }
 
@@ -54,6 +67,7 @@ export function VoucherFormView({
         discountValue,
         minOrder,
         maxDiscount: hasMaxDiscount ? maxDiscount : null,
+        maxUsage,
         status,
       },
       initialItem?.id
@@ -252,6 +266,28 @@ export function VoucherFormView({
               placeholder="Tidak ada batas"
               className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium disabled:opacity-50"
             />
+          </div>
+
+          {/* Limit Penggunaan */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">
+              Limit Penggunaan <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="number"
+              required
+              min={Math.max(1, initialItem?.totalUsage || 1)}
+              step={1}
+              value={maxUsage}
+              onChange={(e) => setMaxUsage(Math.max(0, Number(e.target.value)))}
+              placeholder="Contoh: 20"
+              className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {initialItem
+                ? `Voucher telah digunakan ${initialItem.totalUsage} kali.`
+                : "Voucher baru akan mulai dengan 0 penggunaan."}
+            </p>
           </div>
 
           {/* Status */}

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ImageUploadField } from "@/components/admin/business/ImageUploadField";
 import { PaymentMethodItem, FeeType } from "./types";
 import { formatNumberString, parseNumberString } from "./utils";
 import { ArrowLeft, Save, Trash2, AlertTriangle, CreditCard, Loader2 } from "lucide-react";
@@ -37,9 +38,12 @@ export function PaymentFormView({
   const [logoUrl, setLogoUrl] = useState(initialItem?.logoUrl || "");
   const [adminFeeType, setAdminFeeType] = useState<FeeType>(initialItem?.adminFeeType || "Fixed");
   const [adminFee, setAdminFee] = useState(initialItem?.adminFee || 0);
-  const [otherFeeType] = useState<FeeType>(initialItem?.otherFeeType || "Percentage");
+  const [otherFeeType, setOtherFeeType] = useState<FeeType>(
+    initialItem?.otherFeeType || "Percentage",
+  );
   const [otherFee, setOtherFee] = useState(initialItem?.otherFee || 0);
   const [status, setStatus] = useState<"Active" | "Inactive">(initialItem?.status || "Active");
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -54,6 +58,10 @@ export function PaymentFormView({
     }
     if (!type.trim()) {
       alert("Harap pilih tipe payment method!");
+      return;
+    }
+    if (isUploadingLogo) {
+      alert("Tunggu hingga upload logo selesai.");
       return;
     }
     onSave(
@@ -96,7 +104,7 @@ export function PaymentFormView({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSaving || isDeleting}
+            disabled={isSaving || isDeleting || isUploadingLogo}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20 disabled:pointer-events-none disabled:opacity-60"
           >
             {isSaving ? (
@@ -163,29 +171,14 @@ export function PaymentFormView({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">URL Logo</label>
-            <input
-              type="url"
+            <ImageUploadField
+              label="Logo Payment Method"
               value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              placeholder="https://example.com/logo.png"
-              className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
+              onChange={setLogoUrl}
+              onUploadingChange={setIsUploadingLogo}
+              previewFit="contain"
+              disabled={isSaving || isDeleting}
             />
-            {logoUrl && (
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground">Preview:</span>
-                <div className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center overflow-hidden">
-                  <img
-                    src={logoUrl}
-                    alt="preview"
-                    className="h-6 w-6 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="space-y-1.5">
@@ -224,12 +217,33 @@ export function PaymentFormView({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">Tax Fee (%)</label>
+            <label className="text-xs font-semibold text-foreground">Tipe Tax Fee</label>
+            <select
+              value={otherFeeType}
+              onChange={(e) => {
+                setOtherFeeType(e.target.value as FeeType);
+                setOtherFee(0);
+              }}
+              className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-medium"
+            >
+              <option value="Fixed">Nominal Tetap (IDR)</option>
+              <option value="Percentage">Persentase (%)</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">
+              Tax Fee ({otherFeeType === "Percentage" ? "%" : "IDR"})
+            </label>
             <input
               type="text"
-              value={otherFee || ""}
+              value={otherFeeType === "Fixed" ? formatNumberString(otherFee) : otherFee || ""}
               onChange={(e) => {
-                setOtherFee(parsePercentageInput(e.target.value));
+                if (otherFeeType === "Fixed") {
+                  setOtherFee(parseNumberString(e.target.value));
+                } else {
+                  setOtherFee(parsePercentageInput(e.target.value));
+                }
               }}
               placeholder="0"
               className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"

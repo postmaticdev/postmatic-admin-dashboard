@@ -160,7 +160,7 @@ function RequestApprovalView({
           <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center"><Sparkles className="h-5 w-5 text-violet-500" /></div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">Account Management</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">Creator Management</span>
               <span className="text-xs text-muted-foreground font-mono">/ Creator / Approval</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground mt-1">Approval Pendaftaran Creator</h1>

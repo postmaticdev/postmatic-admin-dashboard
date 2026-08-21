@@ -20,11 +20,12 @@ function normalizeNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function remoteAdminTypeToFeeType(value?: string | null): FeeType {
+function remoteFeeTypeToFeeType(value?: string | null, fallback: FeeType = "Fixed"): FeeType {
+  if (!value) return fallback;
   return value?.toLowerCase() === "percentage" ? "Percentage" : "Fixed";
 }
 
-function feeTypeToRemoteAdminType(value: FeeType): PaymentMethodPayload["adminType"] {
+function feeTypeToRemoteType(value: FeeType): "fixed" | "percentage" {
   return value === "Percentage" ? "percentage" : "fixed";
 }
 
@@ -39,9 +40,9 @@ function mapRemotePaymentMethod(item: RemotePaymentMethod): PaymentMethodItem {
     name,
     type: item.type?.trim() || "bank",
     logoUrl: item.image?.trim() || "",
-    adminFeeType: remoteAdminTypeToFeeType(item.adminType),
+    adminFeeType: remoteFeeTypeToFeeType(item.adminType),
     adminFee: normalizeNumber(item.adminFee),
-    otherFeeType: "Percentage",
+    otherFeeType: remoteFeeTypeToFeeType(item.taxType, "Percentage"),
     otherFee: normalizeNumber(item.taxFee),
     status: item.isActive === false ? "Inactive" : "Active",
   };
@@ -49,7 +50,8 @@ function mapRemotePaymentMethod(item: RemotePaymentMethod): PaymentMethodItem {
 
 function toPaymentMethodPayload(data: Omit<PaymentMethodItem, "id">): PaymentMethodPayload {
   return {
-    adminType: feeTypeToRemoteAdminType(data.adminFeeType),
+    adminType: feeTypeToRemoteType(data.adminFeeType),
+    taxType: feeTypeToRemoteType(data.otherFeeType),
     code: data.code.trim(),
     name: data.name.trim(),
     type: data.type.trim(),

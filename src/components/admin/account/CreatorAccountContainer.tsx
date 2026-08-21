@@ -73,7 +73,7 @@ export function CreatorAccountContainer() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
-                  <Users className="h-3 w-3" />Account Management
+                  <Users className="h-3 w-3" />Creator Management
                 </span>
                 <span className="text-xs text-muted-foreground font-mono">/ Creator</span>
               </div>

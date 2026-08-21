@@ -5,16 +5,19 @@ import {
   getManagedProfiles,
   updateManagedProfileBan,
   updateManagedProfileRole,
+  type ManagedProfileRole,
   type RemoteManagedProfile,
 } from "@/lib/account-management-api";
 import { UserAccount } from "./types";
 import { UserTableList } from "./UserTableList";
 import { UserCreateForm } from "./UserCreateForm";
+import { UserRoleChangeDialog, type UserRoleOption } from "./UserRoleChangeDialog";
 import { Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 const ACCOUNT_PROFILE_QUERY_KEY = ["account-management", "profiles"] as const;
 const USER_QUERY_KEY = [...ACCOUNT_PROFILE_QUERY_KEY, "user"] as const;
+const USER_ROLE_OPTIONS: UserRoleOption[] = [{ label: "Admin", value: "admin" }];
 
 interface UserCreateFormValues {
   fullName: string;
@@ -87,7 +90,8 @@ function getErrorMessage(error: unknown, fallback: string) {
 export function UserContainer() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
-  const [promotingUserId, setPromotingUserId] = useState<string | null>(null);
+  const [roleChangeUser, setRoleChangeUser] = useState<UserAccount | null>(null);
+  const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
   const [updatingBanUserId, setUpdatingBanUserId] = useState<string | null>(null);
 
   const usersQuery = useQuery({
@@ -106,8 +110,9 @@ export function UserContainer() {
       }),
   });
 
-  const promoteMutation = useMutation({
-    mutationFn: (id: string) => updateManagedProfileRole(id, "admin"),
+  const roleUpdateMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: ManagedProfileRole }) =>
+      updateManagedProfileRole(id, role),
   });
 
   const banMutation = useMutation({
@@ -137,19 +142,22 @@ export function UserContainer() {
     }
   };
 
-  const handlePromoteToAdmin = async (user: UserAccount) => {
-    if (!window.confirm(`Ubah "${user.fullName}" menjadi admin?`)) return;
+  const handleConfirmRoleChange = async (role: ManagedProfileRole) => {
+    if (!roleChangeUser) return;
 
-    setPromotingUserId(user.id);
+    const user = roleChangeUser;
+    const roleLabel = USER_ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
+    setUpdatingRoleUserId(user.id);
 
     try {
-      await promoteMutation.mutateAsync(user.id);
+      await roleUpdateMutation.mutateAsync({ id: user.id, role });
       await invalidateProfiles();
-      toast.success(`"${user.fullName}" berhasil diubah menjadi admin.`);
+      toast.success(`Role "${user.fullName}" berhasil diubah menjadi ${roleLabel}.`);
+      setRoleChangeUser(null);
     } catch (error) {
       toast.error(getErrorMessage(error, `Gagal mengubah role "${user.fullName}".`));
     } finally {
-      setPromotingUserId(null);
+      setUpdatingRoleUserId(null);
     }
   };
 
@@ -226,12 +234,23 @@ export function UserContainer() {
             ? getErrorMessage(usersQuery.error, "Gagal memuat data pengguna.")
             : undefined
         }
-        promotingUserId={promotingUserId}
+        updatingRoleUserId={updatingRoleUserId}
         updatingBanUserId={updatingBanUserId}
-        onPromoteToAdmin={handlePromoteToAdmin}
+        onEditRole={setRoleChangeUser}
         onToggleBan={handleToggleBan}
         onRetry={() => usersQuery.refetch()}
       />
+
+      {roleChangeUser && (
+        <UserRoleChangeDialog
+          key={roleChangeUser.id}
+          user={roleChangeUser}
+          roleOptions={USER_ROLE_OPTIONS}
+          isSubmitting={roleUpdateMutation.isPending}
+          onClose={() => setRoleChangeUser(null)}
+          onConfirm={handleConfirmRoleChange}
+        />
+      )}
     </div>
   );
 }

@@ -186,7 +186,7 @@ function PaymentDetailModal({
               </div>
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
-                  Biaya Lain-lain
+                  Tax Fee
                 </span>
                 <span className="text-sm font-semibold text-foreground mt-1 block">
                   {item.otherFeeType === "Percentage"
@@ -303,7 +303,7 @@ export function PaymentTableList({
               <tr className="border-b border-border bg-muted text-xs font-semibold text-muted-foreground shadow-sm">
                 <th className="py-3 px-4">Logo & Nama Payment</th>
                 <th className="py-3 px-4">Biaya Admin</th>
-                <th className="py-3 px-4">Biaya Lain-lain</th>
+                <th className="py-3 px-4">Tax Fee</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 pr-4 pl-3 text-right">Action</th>
               </tr>

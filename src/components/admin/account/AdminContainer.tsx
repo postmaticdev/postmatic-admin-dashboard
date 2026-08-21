@@ -1,11 +1,19 @@
-import React, { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getManagedProfiles, type RemoteManagedProfile } from "@/lib/account-management-api";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getManagedProfiles,
+  updateManagedProfileBan,
+  updateManagedProfileRole,
+  type RemoteManagedProfile,
+} from "@/lib/account-management-api";
 import { AdminAccount } from "./types";
 import { AdminTableList } from "./AdminTableList";
+import { AdminRoleRemovalDialog } from "./AdminRoleRemovalDialog";
 import { ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 
-const ADMIN_QUERY_KEY = ["account-management", "profiles", "admin"] as const;
+const ACCOUNT_PROFILE_QUERY_KEY = ["account-management", "profiles"] as const;
+const ADMIN_QUERY_KEY = [...ACCOUNT_PROFILE_QUERY_KEY, "admin"] as const;
 
 function formatDate(value?: string | null) {
   if (!value) return new Date().toISOString().slice(0, 10);
@@ -56,10 +64,24 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function AdminContainer() {
+  const queryClient = useQueryClient();
+  const [roleRemovalAdmin, setRoleRemovalAdmin] = useState<AdminAccount | null>(null);
+  const [updatingBanAdminId, setUpdatingBanAdminId] = useState<string | null>(null);
+  const [removingRoleAdminId, setRemovingRoleAdminId] = useState<string | null>(null);
+
   const adminsQuery = useQuery({
     queryKey: ADMIN_QUERY_KEY,
     queryFn: () => getManagedProfiles({ role: "admin" }),
     staleTime: 30_000,
+  });
+
+  const banMutation = useMutation({
+    mutationFn: ({ id, isBanned }: { id: string; isBanned: boolean }) =>
+      updateManagedProfileBan(id, isBanned),
+  });
+
+  const removeRoleMutation = useMutation({
+    mutationFn: (id: string) => updateManagedProfileRole(id, "user"),
   });
 
   const admins = useMemo(
@@ -69,6 +91,50 @@ export function AdminContainer() {
         .map(mapRemoteAdmin),
     [adminsQuery.data],
   );
+
+  const invalidateProfiles = () =>
+    queryClient.invalidateQueries({ queryKey: ACCOUNT_PROFILE_QUERY_KEY });
+
+  const handleToggleBan = async (admin: AdminAccount, isBanned: boolean) => {
+    const confirmed = window.confirm(
+      isBanned ? `Ban admin "${admin.fullName}"?` : `Buka ban untuk "${admin.fullName}"?`,
+    );
+    if (!confirmed) return;
+
+    setUpdatingBanAdminId(admin.id);
+
+    try {
+      await banMutation.mutateAsync({ id: admin.id, isBanned });
+      await invalidateProfiles();
+      toast.success(
+        isBanned
+          ? `Admin "${admin.fullName}" berhasil diban.`
+          : `Ban admin "${admin.fullName}" berhasil dibuka.`,
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error, `Gagal mengubah status ban "${admin.fullName}".`));
+    } finally {
+      setUpdatingBanAdminId(null);
+    }
+  };
+
+  const handleRemoveRole = async () => {
+    if (!roleRemovalAdmin) return;
+
+    const admin = roleRemovalAdmin;
+    setRemovingRoleAdminId(admin.id);
+
+    try {
+      await removeRoleMutation.mutateAsync(admin.id);
+      await invalidateProfiles();
+      toast.success(`Role admin "${admin.fullName}" berhasil dihapus.`);
+      setRoleRemovalAdmin(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error, `Gagal menghapus role "${admin.fullName}".`));
+    } finally {
+      setRemovingRoleAdminId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -104,9 +170,22 @@ export function AdminContainer() {
             ? getErrorMessage(adminsQuery.error, "Gagal memuat data admin.")
             : undefined
         }
-        isReadOnly
+        updatingBanAdminId={updatingBanAdminId}
+        removingRoleAdminId={removingRoleAdminId}
+        onToggleBan={handleToggleBan}
+        onRemoveRole={setRoleRemovalAdmin}
         onRetry={() => adminsQuery.refetch()}
       />
+
+      {roleRemovalAdmin && (
+        <AdminRoleRemovalDialog
+          key={roleRemovalAdmin.id}
+          admin={roleRemovalAdmin}
+          isSubmitting={removeRoleMutation.isPending}
+          onClose={() => setRoleRemovalAdmin(null)}
+          onConfirm={handleRemoveRole}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { VoucherItem, initialVoucherData } from "./types";
+import { VoucherFormData, VoucherItem, initialVoucherData } from "./types";
 import { VoucherTableList } from "./VoucherTableList";
 import { VoucherFormView } from "./VoucherFormView";
 import { toast } from "sonner";
@@ -34,7 +34,7 @@ export function VoucherContainer() {
     );
   };
 
-  const handleSave = (data: Omit<VoucherItem, "id">, id?: string) => {
+  const handleSave = (data: VoucherFormData, id?: string) => {
     if (id) {
       // Update
       setItems((prev) =>
@@ -46,6 +46,7 @@ export function VoucherContainer() {
       const newItem: VoucherItem = {
         ...data,
         id: `v-${Date.now()}`,
+        totalUsage: 0,
       };
       setItems((prev) => [newItem, ...prev]);
       toast.success(`Voucher "${data.name}" berhasil dibuat!`);

@@ -30,6 +30,7 @@ import {
   Activity,
   BellRing,
   UserRound,
+  CircleDollarSign,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -59,14 +60,14 @@ const NAV: NavItem[] = [
       { label: "User", to: "/workspace/account/user", icon: Users },
       { label: "Admin", to: "/workspace/account/admin", icon: UserCircle },
       { label: "Role Management", to: "/workspace/account/role", icon: Shield },
-      { label: "Creator", to: "/workspace/account/creator", icon: Sparkles },
     ],
   },
   {
     label: "Creator Management",
     icon: Sparkles,
     children: [
-      { label: "Creator", to: "/workspace/creator", icon: Sparkles },
+      { label: "Creator", to: "/workspace/account/creator", icon: Sparkles },
+      { label: "Monetization", to: "/workspace/creator", icon: CircleDollarSign },
       { label: "Gallery", to: "/workspace/creator/gallery", icon: GalleryHorizontal },
     ],
   },

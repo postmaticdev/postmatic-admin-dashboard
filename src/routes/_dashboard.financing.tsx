@@ -12,6 +12,8 @@ import {
   Search,
   Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Pencil,
   X,
   Check,
@@ -49,6 +51,7 @@ export const Route = createFileRoute("/_dashboard/financing")({
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type FilterPeriod = "daily" | "weekly" | "monthly" | "yearly";
+type TransactionPeriod = FilterPeriod | "custom";
 type TxCategory = "Income" | "Expense";
 type TxType = "manual" | "system";
 type TxStatus = "Success" | "Pending" | "Failed";
@@ -137,6 +140,7 @@ const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
   "businesses",
   "image-token-injection-history",
 ] as const;
+const TRANSACTIONS_PER_PAGE = 20;
 
 function normalizeNumber(value: unknown) {
   const numeric = Number(value);
@@ -155,6 +159,42 @@ function formatTransactionDateTime(value?: string | null) {
       pad(safeDate.getDate()),
     ].join("-") + ` ${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}`
   );
+}
+
+function formatDateInput(date: Date) {
+  const pad = (number: number) => String(number).padStart(2, "0");
+  return [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join("-");
+}
+
+function getPeriodDateRange(period: FilterPeriod, referenceDate = new Date()) {
+  const start = new Date(referenceDate);
+  const end = new Date(referenceDate);
+
+  if (period === "weekly") {
+    const daysFromMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysFromMonday);
+    end.setTime(start.getTime());
+    end.setDate(start.getDate() + 6);
+  } else if (period === "monthly") {
+    start.setDate(1);
+    end.setMonth(end.getMonth() + 1, 0);
+  } else if (period === "yearly") {
+    start.setMonth(0, 1);
+    end.setMonth(11, 31);
+  }
+
+  return { from: formatDateInput(start), to: formatDateInput(end) };
+}
+
+function splitTransactionDateTime(value: string) {
+  const [date = "", time = ""] = value.split(" ");
+  return { date, time: time.slice(0, 5) };
+}
+
+function getVisiblePageNumbers(currentPage: number, totalPages: number) {
+  const firstPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  const lastPage = Math.min(totalPages, firstPage + 4);
+  return Array.from({ length: lastPage - firstPage + 1 }, (_, index) => firstPage + index);
 }
 
 function getProfileName(profile: RemoteImageTokenInjection["injectedByProfile"]) {
@@ -264,7 +304,7 @@ const CATEGORY_CONFIG: Record<TxCategory, { bg: string }> = {
 };
 
 const EMPTY_TX: Omit<Transaction, "id" | "txId"> = {
-  datetime: new Date().toISOString().slice(0, 16).replace("T", " "),
+  datetime: formatTransactionDateTime(),
   description: "",
   category: "Income",
   type: "manual",
@@ -276,20 +316,28 @@ const EMPTY_TX: Omit<Transaction, "id" | "txId"> = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 function FinancingPage() {
-  const [period, setPeriod] = useState<FilterPeriod>("monthly");
+  const initialPeriodRange = getPeriodDateRange(
+    "monthly",
+    new Date(MOCK_TRANSACTIONS[MOCK_TRANSACTIONS.length - 1].datetime.replace(" ", "T")),
+  );
+  const initialTransactionDateTime = splitTransactionDateTime(EMPTY_TX.datetime);
+  const [period, setPeriod] = useState<TransactionPeriod>("monthly");
   const [periodDropOpen, setPeriodDropOpen] = useState(false);
-  const [dateFrom, setDateFrom] = useState("2026-07-01");
-  const [dateTo, setDateTo] = useState("2026-07-13");
+  const [dateFrom, setDateFrom] = useState(initialPeriodRange.from);
+  const [dateTo, setDateTo] = useState(initialPeriodRange.to);
   const [showDateRange, setShowDateRange] = useState(false);
   const [chartPeriod, setChartPeriod] = useState<FilterPeriod>("monthly");
   const [chartDropOpen, setChartDropOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [localTxList, setLocalTxList] = useState<Transaction[]>(MOCK_TRANSACTIONS);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Omit<Transaction, "id" | "txId">>(EMPTY_TX);
+  const [transactionDate, setTransactionDate] = useState(initialTransactionDateTime.date);
+  const [transactionTime, setTransactionTime] = useState(initialTransactionDateTime.time);
   const [amountInput, setAmountInput] = useState("");
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
 
@@ -351,9 +399,22 @@ function FinancingPage() {
     return MONTHLY_TREND;
   }, [chartPeriod]);
 
+  const periodTransactions = useMemo(
+    () =>
+      txList.filter((transaction) => {
+        const transactionDate = transaction.datetime.slice(0, 10);
+        return (!dateFrom || transactionDate >= dateFrom) && (!dateTo || transactionDate <= dateTo);
+      }),
+    [dateFrom, dateTo, txList],
+  );
+
   // Scorecard aggregations
-  const totalRevenue = txList.filter(t => t.category === "Income").reduce((s, t) => s + t.amount, 0);
-  const totalExpense = Math.abs(txList.filter(t => t.category === "Expense").reduce((s, t) => s + t.amount, 0));
+  const totalRevenue = periodTransactions
+    .filter(t => t.category === "Income")
+    .reduce((s, t) => s + t.amount, 0);
+  const totalExpense = Math.abs(
+    periodTransactions.filter(t => t.category === "Expense").reduce((s, t) => s + t.amount, 0),
+  );
   const nettProfit = totalRevenue - totalExpense;
 
   // Donut data
@@ -365,8 +426,8 @@ function FinancingPage() {
 
   // Filtered transactions
   const filtered = useMemo(() => {
-    return txList.filter(t => {
-      const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
+    return periodTransactions.filter(t => {
       return (
         t.description.toLowerCase().includes(q) ||
         t.txId.toLowerCase().includes(q) ||
@@ -375,11 +436,23 @@ function FinancingPage() {
         t.status.toLowerCase().includes(q)
       );
     });
-  }, [txList, search]);
+  }, [periodTransactions, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / TRANSACTIONS_PER_PAGE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedTransactions = filtered.slice(
+    (activePage - 1) * TRANSACTIONS_PER_PAGE,
+    activePage * TRANSACTIONS_PER_PAGE,
+  );
+  const visiblePageNumbers = getVisiblePageNumbers(activePage, totalPages);
+  const firstVisibleTransaction = filtered.length
+    ? (activePage - 1) * TRANSACTIONS_PER_PAGE + 1
+    : 0;
+  const lastVisibleTransaction = Math.min(activePage * TRANSACTIONS_PER_PAGE, filtered.length);
 
   // Excel Export
   const handleExport = () => {
-    const rows = txList.map(t => ({
+    const rows = filtered.map(t => ({
       "Date & Time": t.datetime,
       "Transaction ID": t.txId,
       "Description": t.description,
@@ -397,14 +470,19 @@ function FinancingPage() {
 
   // Modal helpers
   const openCreate = () => {
+    const currentDateTime = formatTransactionDateTime();
+    const dateTimeParts = splitTransactionDateTime(currentDateTime);
     setEditingTx(null);
-    setFormData(EMPTY_TX);
+    setFormData({ ...EMPTY_TX, datetime: currentDateTime });
+    setTransactionDate(dateTimeParts.date);
+    setTransactionTime(dateTimeParts.time);
     setAmountInput("");
     setIsModalOpen(true);
   };
   const openEdit = (tx: Transaction) => {
     if (tx.type === "system") return; // Prevent system transactions from being edited
     setEditingTx(tx);
+    const dateTimeParts = splitTransactionDateTime(tx.datetime);
     setFormData({
       datetime: tx.datetime,
       description: tx.description,
@@ -415,15 +493,20 @@ function FinancingPage() {
       amount: tx.amount,
       user: tx.user || "Admin (hayhasan)",
     });
+    setTransactionDate(dateTimeParts.date);
+    setTransactionTime(dateTimeParts.time);
     setAmountInput(formatNumberString(Math.abs(tx.amount)));
     setIsModalOpen(true);
   };
   const handleSave = () => {
+    if (!transactionDate || !transactionTime) return;
+
     const numericAmount = Number(amountInput.replace(/\./g, ""));
     const finalAmount = formData.category === "Expense" ? -Math.abs(numericAmount) : Math.abs(numericAmount);
     
     const updatedData = {
       ...formData,
+      datetime: `${transactionDate} ${transactionTime}`,
       amount: finalAmount,
       status: editingTx ? formData.status : ("Success" as const),
       type: editingTx ? formData.type : ("manual" as const),
@@ -436,21 +519,61 @@ function FinancingPage() {
       const newTxId = `TRX-${49224 + txList.length}`;
       const newTx: Transaction = { id: newId, txId: newTxId, ...updatedData };
       setLocalTxList(prev => [newTx, ...prev]);
+      if (
+        (dateFrom && transactionDate < dateFrom) ||
+        (dateTo && transactionDate > dateTo)
+      ) {
+        setDateFrom(transactionDate);
+        setDateTo(transactionDate);
+        setPeriod("custom");
+      }
     }
+    setCurrentPage(1);
     setIsModalOpen(false);
   };
   const handleDelete = () => {
     if (editingTx) {
       setLocalTxList(prev => prev.filter(t => t.id !== editingTx.id));
+      setCurrentPage(1);
       setIsModalOpen(false);
     }
   };
 
-  const PERIOD_LABELS: Record<FilterPeriod, string> = {
+  const handlePeriodChange = (nextPeriod: FilterPeriod) => {
+    const latestTransactionDate = txList[0]?.datetime.replace(" ", "T");
+    const parsedReferenceDate = latestTransactionDate ? new Date(latestTransactionDate) : new Date();
+    const nextRange = getPeriodDateRange(
+      nextPeriod,
+      Number.isNaN(parsedReferenceDate.getTime()) ? new Date() : parsedReferenceDate,
+    );
+    setPeriod(nextPeriod);
+    setChartPeriod(nextPeriod);
+    setDateFrom(nextRange.from);
+    setDateTo(nextRange.to);
+    setCurrentPage(1);
+    setPeriodDropOpen(false);
+  };
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value > dateTo) setDateTo(value);
+    setPeriod("custom");
+    setCurrentPage(1);
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value < dateFrom) setDateFrom(value);
+    setPeriod("custom");
+    setCurrentPage(1);
+  };
+
+  const PERIOD_LABELS: Record<TransactionPeriod, string> = {
     daily: "Daily",
     weekly: "Weekly",
     monthly: "Monthly",
     yearly: "Yearly",
+    custom: "Custom",
   };
 
   return (
@@ -484,7 +607,7 @@ function FinancingPage() {
                 {(["daily", "weekly", "monthly", "yearly"] as FilterPeriod[]).map(p => (
                   <button
                     key={p}
-                    onClick={() => { setPeriod(p); setPeriodDropOpen(false); }}
+                    onClick={() => handlePeriodChange(p)}
                     className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors capitalize ${period === p ? "text-primary font-semibold bg-primary/5" : "text-foreground"}`}
                   >
                     {PERIOD_LABELS[p]}
@@ -520,10 +643,10 @@ function FinancingPage() {
       {showDateRange && (
         <div className="flex items-center gap-3 border-b border-border bg-card px-6 py-2.5 shrink-0">
           <label className="text-xs font-semibold text-muted-foreground">Dari:</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          <input type="date" value={dateFrom} onChange={e => handleDateFromChange(e.target.value)}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
           <label className="text-xs font-semibold text-muted-foreground">Hingga:</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          <input type="date" value={dateTo} onChange={e => handleDateToChange(e.target.value)}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
           <button onClick={() => setShowDateRange(false)} className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors">
             <Check className="h-4 w-4 text-primary" />
@@ -705,7 +828,10 @@ function FinancingPage() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  onChange={e => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Cari transaksi..."
                   className="pl-9 pr-4 h-9 text-xs border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 w-52"
                 />
@@ -744,7 +870,7 @@ function FinancingPage() {
                     </td>
                   </tr>
                 )}
-                {filtered.map(tx => (
+                {paginatedTransactions.map(tx => (
                   <tr
                     key={tx.id}
                     onClick={() => setSelectedDetailTx(tx)}
@@ -795,6 +921,49 @@ function FinancingPage() {
               </tbody>
             </table>
           </div>
+          <div className="flex flex-col gap-3 border-t border-border bg-muted/20 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan <strong className="text-foreground">{firstVisibleTransaction}</strong>
+              {" - "}
+              <strong className="text-foreground">{lastVisibleTransaction}</strong> dari{" "}
+              <strong className="text-foreground">{filtered.length}</strong> transaksi
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(Math.max(1, activePage - 1))}
+                disabled={activePage === 1}
+                aria-label="Halaman sebelumnya"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {visiblePageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNumber)}
+                  aria-current={pageNumber === activePage ? "page" : undefined}
+                  className={`inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors ${
+                    pageNumber === activePage
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(Math.min(totalPages, activePage + 1))}
+                disabled={activePage === totalPages}
+                aria-label="Halaman berikutnya"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -816,14 +985,31 @@ function FinancingPage() {
             {/* Body */}
             <div className="px-6 py-5 space-y-4">
               <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-foreground mb-1.5 block">Date & Time</label>
-                  <input
-                    type="datetime-local"
-                    value={formData.datetime.replace(" ", "T")}
-                    onChange={e => setFormData(p => ({ ...p, datetime: e.target.value.replace("T", " ") }))}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1.5 block">
+                      Tanggal
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={transactionDate}
+                      onChange={e => setTransactionDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1.5 block">
+                      Waktu
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={transactionTime}
+                      onChange={e => setTransactionTime(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-foreground mb-1.5 block">Deskripsi</label>
@@ -909,7 +1095,12 @@ function FinancingPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!formData.description.trim() || !amountInput}
+                  disabled={
+                    !transactionDate ||
+                    !transactionTime ||
+                    !formData.description.trim() ||
+                    !amountInput
+                  }
                   className="px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[.98] transition-all"
                 >
                   {editingTx ? "Simpan Perubahan" : "Tambah Transaksi"}

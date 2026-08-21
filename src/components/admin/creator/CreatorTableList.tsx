@@ -9,6 +9,7 @@ import {
   Package,
   ChevronUp,
   ChevronDown,
+  CircleDollarSign,
 } from "lucide-react";
 import { CreatorItem, MOCK_CREATORS } from "./types";
 import { WithdrawalApprovalModal } from "./WithdrawalApprovalModal";
@@ -131,11 +132,11 @@ export function CreatorTableList() {
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
-                <Sparkles className="h-3.5 w-3.5" /> Creator Monetization
+                <CircleDollarSign className="h-3.5 w-3.5" /> Creator Management
               </span>
-              <span className="text-xs text-muted-foreground font-mono">Creator / Monetisasi</span>
+              <span className="text-xs text-muted-foreground font-mono">/ Monetization</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Creator Monetization Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Monetization Dashboard</h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
               Monitor saldo, penjualan template, dan kelola persetujuan pencairan dana kreator Postmatic.
             </p>

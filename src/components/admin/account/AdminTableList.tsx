@@ -16,14 +16,21 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Ban,
+  Unlock,
+  ShieldOff,
 } from "lucide-react";
 
 interface AdminTableListProps {
   items: AdminAccount[];
   onEdit?: (item: AdminAccount) => void;
+  onToggleBan?: (item: AdminAccount, isBanned: boolean) => void;
+  onRemoveRole?: (item: AdminAccount) => void;
   isLoading?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
+  updatingBanAdminId?: string | null;
+  removingRoleAdminId?: string | null;
   onRetry?: () => void;
 }
 
@@ -91,7 +98,7 @@ function StatusBadge({ status }: { status: AdminAccount["status"] }) {
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
       <Clock className="h-3 w-3" />
-      Inactive
+      Banned
     </span>
   );
 }
@@ -100,13 +107,25 @@ function AdminInfoModal({
   admin,
   onClose,
   onEdit,
+  onToggleBan,
+  onRemoveRole,
   isReadOnly,
+  isUpdatingBan,
+  isRemovingRole,
 }: {
   admin: AdminAccount;
   onClose: () => void;
   onEdit?: () => void;
+  onToggleBan?: () => void;
+  onRemoveRole?: () => void;
   isReadOnly?: boolean;
+  isUpdatingBan?: boolean;
+  isRemovingRole?: boolean;
 }) {
+  const isBanned = admin.status === "Inactive";
+  const isBusy = Boolean(isUpdatingBan || isRemovingRole);
+  const hasActions = !isReadOnly && Boolean(onEdit || onToggleBan || onRemoveRole);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -182,11 +201,48 @@ function AdminInfoModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            {!isReadOnly && onEdit && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {hasActions && onRemoveRole && (
+              <button
+                type="button"
+                onClick={onRemoveRole}
+                disabled={isBusy}
+                className="flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400 text-sm font-semibold hover:bg-red-500/10 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRemovingRole ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldOff className="h-3.5 w-3.5" />
+                )}
+                Hapus Role
+              </button>
+            )}
+            {hasActions && onToggleBan && (
+              <button
+                type="button"
+                onClick={onToggleBan}
+                disabled={isBusy}
+                className={`flex-1 inline-flex min-w-[8rem] items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isBanned
+                    ? "border border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                    : "border border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                }`}
+              >
+                {isUpdatingBan ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : isBanned ? (
+                  <Unlock className="h-3.5 w-3.5" />
+                ) : (
+                  <Ban className="h-3.5 w-3.5" />
+                )}
+                {isBanned ? "Buka Ban" : "Ban Admin"}
+              </button>
+            )}
+            {hasActions && onEdit && (
               <button
                 type="button"
                 onClick={onEdit}
+                disabled={isBusy}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
               >
                 <Edit3 className="h-3.5 w-3.5" />
@@ -196,7 +252,7 @@ function AdminInfoModal({
             <button
               type="button"
               onClick={onClose}
-              className={`${isReadOnly ? "flex-1" : "px-4"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
+              className={`${hasActions ? "px-4" : "flex-1"} py-2.5 rounded-xl border border-border bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all`}
             >
               Tutup
             </button>
@@ -207,12 +263,87 @@ function AdminInfoModal({
   );
 }
 
+function AdminActionButtons({
+  admin,
+  onEdit,
+  onToggleBan,
+  onRemoveRole,
+  isUpdatingBan,
+  isRemovingRole,
+}: {
+  admin: AdminAccount;
+  onEdit?: (item: AdminAccount) => void;
+  onToggleBan?: (item: AdminAccount, isBanned: boolean) => void;
+  onRemoveRole?: (item: AdminAccount) => void;
+  isUpdatingBan?: boolean;
+  isRemovingRole?: boolean;
+}) {
+  const isBanned = admin.status === "Inactive";
+  const isBusy = Boolean(isUpdatingBan || isRemovingRole);
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {onRemoveRole && (
+        <button
+          type="button"
+          onClick={() => onRemoveRole(admin)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-600 shadow-sm transition-all duration-150 hover:bg-red-500 hover:text-white disabled:pointer-events-none disabled:opacity-60 dark:text-red-400"
+        >
+          {isRemovingRole ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ShieldOff className="h-3.5 w-3.5" />
+          )}
+          Hapus Role
+        </button>
+      )}
+      {onToggleBan && (
+        <button
+          type="button"
+          onClick={() => onToggleBan(admin, !isBanned)}
+          disabled={isBusy}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 disabled:pointer-events-none disabled:opacity-60 ${
+            isBanned
+              ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white dark:text-amber-400"
+              : "bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white dark:text-red-400"
+          }`}
+        >
+          {isUpdatingBan ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : isBanned ? (
+            <Unlock className="h-3.5 w-3.5" />
+          ) : (
+            <Ban className="h-3.5 w-3.5" />
+          )}
+          {isBanned ? "Buka" : "Ban"}
+        </button>
+      )}
+      {onEdit && (
+        <button
+          type="button"
+          onClick={() => onEdit(admin)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-all duration-150 hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-60"
+        >
+          <Edit3 className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AdminTableList({
   items,
   onEdit,
+  onToggleBan,
+  onRemoveRole,
   isLoading = false,
   errorMessage,
   isReadOnly = false,
+  updatingBanAdminId,
+  removingRoleAdminId,
   onRetry,
 }: AdminTableListProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -228,7 +359,8 @@ export function AdminTableList({
   const totalAdmins = items.length;
   const activeAdmins = items.filter((a) => a.status === "Active").length;
   const inactiveAdmins = items.filter((a) => a.status === "Inactive").length;
-  const tableColSpan = isReadOnly ? 5 : 6;
+  const hasActions = !isReadOnly && Boolean(onEdit || onToggleBan || onRemoveRole);
+  const tableColSpan = hasActions ? 6 : 5;
 
   return (
     <>
@@ -263,9 +395,9 @@ export function AdminTableList({
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Admin Nonaktif</p>
+              <p className="text-xs font-medium text-muted-foreground">Admin Diban</p>
               <p className="text-3xl font-bold text-foreground mt-1">{inactiveAdmins}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Sedang tidak aktif</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Akun dibatasi</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-amber-500/10 flex items-center justify-center">
               <Clock className="h-6 w-6 text-amber-500" />
@@ -300,7 +432,7 @@ export function AdminTableList({
               <th className="py-3 px-4">No. Telepon</th>
               <th className="py-3 px-4">Role</th>
               <th className="py-3 px-4">Status</th>
-              {!isReadOnly && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
+              {hasActions && <th className="py-3 pr-4 pl-3 text-right">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -384,22 +516,19 @@ export function AdminTableList({
                   <td className="py-3 px-4 whitespace-nowrap">
                     <StatusBadge status={admin.status} />
                   </td>
-                  {!isReadOnly && onEdit && (
+                  {hasActions && (
                     <td
                       className="py-3 pr-4 pl-3 text-right whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(admin);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-150 shadow-sm"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
+                      <AdminActionButtons
+                        admin={admin}
+                        onEdit={onEdit}
+                        onToggleBan={onToggleBan}
+                        onRemoveRole={onRemoveRole}
+                        isUpdatingBan={updatingBanAdminId === admin.id}
+                        isRemovingRole={removingRoleAdminId === admin.id}
+                      />
                     </td>
                   )}
                 </tr>
@@ -417,6 +546,22 @@ export function AdminTableList({
         <AdminInfoModal
           admin={modalAdmin}
           onClose={() => setModalAdmin(null)}
+          onToggleBan={
+            onToggleBan
+              ? () => {
+                  onToggleBan(modalAdmin, modalAdmin.status !== "Inactive");
+                  setModalAdmin(null);
+                }
+              : undefined
+          }
+          onRemoveRole={
+            onRemoveRole
+              ? () => {
+                  onRemoveRole(modalAdmin);
+                  setModalAdmin(null);
+                }
+              : undefined
+          }
           onEdit={
             onEdit
               ? () => {
@@ -426,6 +571,8 @@ export function AdminTableList({
               : undefined
           }
           isReadOnly={isReadOnly}
+          isUpdatingBan={updatingBanAdminId === modalAdmin.id}
+          isRemovingRole={removingRoleAdminId === modalAdmin.id}
         />
       )}
     </>

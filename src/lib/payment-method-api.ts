@@ -25,6 +25,7 @@ export interface RemotePaymentMethod {
   type?: string | null;
   image?: string | null;
   taxFee?: number | null;
+  taxType?: string | null;
   adminType?: string | null;
   adminFee?: number | null;
   isActive?: boolean | null;
@@ -34,6 +35,7 @@ export interface RemotePaymentMethod {
 
 export interface PaymentMethodPayload {
   adminType: "fixed" | "percentage";
+  taxType: "fixed" | "percentage";
   code: string;
   name: string;
   type: string;

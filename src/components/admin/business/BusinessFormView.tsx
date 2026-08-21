@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { BusinessAccount, BusinessFormValues } from "./types";
+import { CountryCodeSelect } from "./CountryCodeSelect";
 import { ImageUploadField } from "./ImageUploadField";
 
 interface BusinessFormViewProps {
@@ -40,8 +41,6 @@ const categories = [
   "Retail & E-commerce",
   "Education",
 ];
-
-const countryCodes = ["+62", "+1", "+44", "+60", "+65", "+61", "+81", "+82"];
 
 const fallbackLogoUrl = "https://api.dicebear.com/7.x/initials/svg?seed=Biz&backgroundColor=4f46e5";
 
@@ -149,7 +148,7 @@ export function BusinessFormView({
               onChange={setLogoUrl}
               disabled={isBusinessDisabled}
             />
-            <Button
+            {/* <Button
               type="button"
               variant="outline"
               size="sm"
@@ -158,7 +157,7 @@ export function BusinessFormView({
             >
               <Sparkles className="h-4 w-4" />
               Acak Logo
-            </Button>
+            </Button> */}
           </div>
         </div>
 
@@ -224,18 +223,11 @@ export function BusinessFormView({
 
       <Field label="Phone">
         <div className="flex gap-2">
-          <select
+          <CountryCodeSelect
             value={countryCode}
-            onChange={(event) => setCountryCode(event.target.value)}
+            onValueChange={setCountryCode}
             disabled={isBusinessDisabled}
-            className="flex h-9 w-32 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {countryCodes.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          />
           <Input
             value={businessPhone}
             onChange={(event) => setBusinessPhone(event.target.value.replace(/[^\d]/g, ""))}

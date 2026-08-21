@@ -9,6 +9,8 @@ interface ImageUploadFieldProps {
   label: string;
   value?: string | null;
   onChange: (url: string) => void;
+  onUploadingChange?: (isUploading: boolean) => void;
+  previewFit?: "cover" | "contain";
   disabled?: boolean;
 }
 
@@ -16,6 +18,8 @@ export function ImageUploadField({
   label,
   value,
   onChange,
+  onUploadingChange,
+  previewFit = "cover",
   disabled = false,
 }: ImageUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -32,6 +36,7 @@ export function ImageUploadField({
     }
 
     setIsUploading(true);
+    onUploadingChange?.(true);
     try {
       const attachment = await uploadCustomerServiceAttachment(file);
       onChange(attachment.url);
@@ -40,6 +45,7 @@ export function ImageUploadField({
       toast.error(getErrorMessage(error, "Gagal mengunggah gambar."));
     } finally {
       setIsUploading(false);
+      onUploadingChange?.(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   };
@@ -61,7 +67,11 @@ export function ImageUploadField({
           </div>
         ) : value ? (
           <>
-            <img src={value} alt={label} className="h-full w-full object-cover" />
+            <img
+              src={value}
+              alt={label}
+              className={`h-full w-full ${previewFit === "contain" ? "object-contain p-3" : "object-cover"}`}
+            />
             <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
               <Upload className="h-5 w-5 text-white" />
             </span>

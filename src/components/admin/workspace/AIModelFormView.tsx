@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ImageUploadField } from "@/components/admin/business/ImageUploadField";
 import { AIModelItem } from "./types";
 import { ArrowLeft, Save, Trash2, AlertTriangle, Image, Type, Loader2 } from "lucide-react";
 
@@ -28,12 +29,17 @@ export function AIModelFormView({
   const [temperature, setTemperature] = useState(initialItem?.temperature ?? 0.7);
   const [preprompt, setPreprompt] = useState(initialItem?.preprompt || "");
   const [status, setStatus] = useState<"Active" | "Inactive">(initialItem?.status || "Active");
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !source.trim()) {
       alert("Harap isi semua kolom wajib!");
+      return;
+    }
+    if (isUploadingLogo) {
+      alert("Tunggu hingga upload logo selesai.");
       return;
     }
     onSave(
@@ -90,7 +96,7 @@ export function AIModelFormView({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSaving}
+            disabled={isSaving || isDeleting || isUploadingLogo}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition-all shadow-md shadow-primary/20 disabled:pointer-events-none disabled:opacity-70"
           >
             {isSaving ? (
@@ -142,29 +148,14 @@ export function AIModelFormView({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">URL Logo</label>
-            <input
-              type="url"
+            <ImageUploadField
+              label="Logo Model"
               value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              placeholder="https://example.com/logo.png"
-              className="w-full h-[42px] px-3.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all font-medium"
+              onChange={setLogoUrl}
+              onUploadingChange={setIsUploadingLogo}
+              previewFit="contain"
+              disabled={isSaving || isDeleting}
             />
-            {logoUrl && (
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground">Preview:</span>
-                <div className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center overflow-hidden">
-                  <img
-                    src={logoUrl}
-                    alt="Logo preview"
-                    className="h-6 w-6 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="space-y-1.5">
