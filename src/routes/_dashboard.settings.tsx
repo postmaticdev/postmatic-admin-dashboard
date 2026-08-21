@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Camera, Mail, Phone, User, Lock, Save, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CountryCodeSelect } from "@/components/admin/business/CountryCodeSelect";
 import { cn } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
 
@@ -27,7 +28,8 @@ function SettingsPage() {
   const [form, setForm] = useState({
     fullName: "Admin Postmatic",
     email: "admin@postmatic.id",
-    phone: "+62 812-3456-7890",
+    countryCode: "+62",
+    phone: "81234567890",
   });
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,13 +183,30 @@ function SettingsPage() {
                 <Phone className="h-3.5 w-3.5" />
                 Nomor HP
               </label>
-              <Input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="Masukkan nomor HP"
-                className="h-10 rounded-xl border-border/80 bg-background text-sm focus-visible:ring-primary/30"
-              />
+              <div className="flex gap-2">
+                <CountryCodeSelect
+                  value={form.countryCode}
+                  onValueChange={(countryCode) =>
+                    setForm((current) => ({ ...current, countryCode }))
+                  }
+                  disabled={isSaving}
+                  className="h-10 rounded-xl border-border/80 bg-background"
+                />
+                <Input
+                  type="tel"
+                  inputMode="numeric"
+                  value={form.phone}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      phone: event.target.value.replace(/\D/g, ""),
+                    }))
+                  }
+                  placeholder="81234567890"
+                  disabled={isSaving}
+                  className="h-10 rounded-xl border-border/80 bg-background text-sm focus-visible:ring-primary/30"
+                />
+              </div>
             </div>
 
             {/* Save button */}

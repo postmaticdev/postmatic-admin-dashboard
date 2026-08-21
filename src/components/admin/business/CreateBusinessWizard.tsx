@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { createManagedBusiness, type CreateManagedBusinessPayload } from "@/lib/business-api";
 import { cn } from "@/lib/utils";
 
+import { CountryCodeSelect } from "./CountryCodeSelect";
 import { ImageUploadField } from "./ImageUploadField";
 import { getErrorMessage } from "./mappers";
 
@@ -57,17 +58,6 @@ const businessCategories = [
 ];
 
 const currencies = ["IDR", "USD", "SGD", "MYR"];
-
-const countryCodes = [
-  { label: "+62", value: "62" },
-  { label: "+1", value: "1" },
-  { label: "+44", value: "44" },
-  { label: "+60", value: "60" },
-  { label: "+65", value: "65" },
-  { label: "+61", value: "61" },
-  { label: "+81", value: "81" },
-  { label: "+82", value: "82" },
-];
 
 type FormErrors = Record<string, string>;
 
@@ -135,7 +125,7 @@ export function CreateBusinessWizard() {
     websiteUrl: "",
     colorTone: "FFFFFF",
     businessPhone: "",
-    countryCode: "62",
+    countryCode: "+62",
   });
   const [product, setProduct] = useState({
     name: "",
@@ -276,7 +266,7 @@ export function CreateBusinessWizard() {
         websiteUrl: knowledge.websiteUrl.trim(),
         colorTone: knowledge.colorTone,
         businessPhone: knowledge.businessPhone.trim(),
-        countryCode: knowledge.countryCode,
+        countryCode: knowledge.countryCode.replace(/\D/g, ""),
       },
       role: {
         hashtags: submittedHashtags,
@@ -458,19 +448,11 @@ export function CreateBusinessWizard() {
                   error={errors.countryCode || errors.businessPhone}
                 >
                   <div className="flex gap-2">
-                    <select
-                      aria-label="Kode negara"
+                    <CountryCodeSelect
                       value={knowledge.countryCode}
-                      onChange={(event) => updateKnowledge("countryCode", event.target.value)}
+                      onValueChange={(value) => updateKnowledge("countryCode", value)}
                       disabled={isSubmitting}
-                      className="flex h-9 w-28 shrink-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {countryCodes.map((country) => (
-                        <option key={country.value} value={country.value}>
-                          {country.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                     <Input
                       id="business-phone"
                       inputMode="numeric"

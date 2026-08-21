@@ -188,7 +188,7 @@ export function BusinessFormView({
         </div>
       </div>
 
-      <Field label="Logo URL">
+      {/* <Field label="Logo URL">
         <div className="relative">
           <ImageIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -199,7 +199,7 @@ export function BusinessFormView({
             className="pl-9"
           />
         </div>
-      </Field>
+      </Field> */}
 
       <Field label="Deskripsi">
         <Textarea
