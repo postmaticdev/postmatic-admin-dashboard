@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ImageIcon, Loader2, Save, Sparkles } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { BusinessAccount, BusinessFormValues } from "./types";
+import { BusinessCategorySelect } from "./BusinessFormSelects";
 import { CountryCodeSelect } from "./CountryCodeSelect";
 import { ImageUploadField } from "./ImageUploadField";
 
@@ -30,17 +31,6 @@ interface FieldProps {
   required?: boolean;
   children: React.ReactNode;
 }
-
-const categories = [
-  "Information Technology",
-  "Food & Beverage",
-  "Logistics & Supply Chain",
-  "Healthcare",
-  "Manufacturing",
-  "Finance & Banking",
-  "Retail & E-commerce",
-  "Education",
-];
 
 const fallbackLogoUrl = "https://api.dicebear.com/7.x/initials/svg?seed=Biz&backgroundColor=4f46e5";
 
@@ -78,7 +68,7 @@ export function BusinessFormView({
   isLoadingInitialData = false,
 }: BusinessFormViewProps) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("Information Technology");
+  const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState(fallbackLogoUrl);
@@ -90,7 +80,7 @@ export function BusinessFormView({
     if (!business) return;
 
     setName(business.name || "");
-    setCategory(business.category || "Information Technology");
+    setCategory(business.category || "");
     setDescription(business.description || "");
     setWebsiteUrl(business.websiteUrl || "");
     setLogoUrl(business.logoUrl || fallbackLogoUrl);
@@ -104,17 +94,19 @@ export function BusinessFormView({
   const isSubmitDisabled = isSaving || isLoadingInitialData;
   const isBusinessDisabled = isSaving || isLoadingInitialData;
 
-  const handleRandomLogo = () => {
-    const seed = encodeURIComponent(name.trim() || Math.random().toString(36).slice(2, 8));
-    setLogoUrl(`https://api.dicebear.com/7.x/initials/svg?seed=${seed}&backgroundColor=4f46e5`);
-  };
-
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
     if (!business) return;
-    if (!name.trim() || !category.trim()) {
-      toast.error("Harap isi semua kolom wajib!");
+    if (
+      !name.trim() ||
+      !category.trim() ||
+      !description.trim() ||
+      !businessPhone.trim() ||
+      !countryCode.trim() ||
+      !/^[0-9A-F]{6}$/i.test(colorTone)
+    ) {
+      toast.error("Lengkapi semua kolom wajib dengan data yang valid.");
       return;
     }
 
@@ -171,19 +163,12 @@ export function BusinessFormView({
             />
           </Field>
 
-          <Field label="Kategori" required>
-            <select
+          <Field label="Kategori Bisnis" required>
+            <BusinessCategorySelect
               value={category}
-              onChange={(event) => setCategory(event.target.value)}
+              onChange={setCategory}
               disabled={isBusinessDisabled}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {categories.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
         </div>
       </div>
@@ -201,7 +186,7 @@ export function BusinessFormView({
         </div>
       </Field> */}
 
-      <Field label="Deskripsi">
+      <Field label="Deskripsi" required>
         <Textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -221,7 +206,7 @@ export function BusinessFormView({
         />
       </Field>
 
-      <Field label="Phone">
+      <Field label="Nomor Telepon" required>
         <div className="flex gap-2">
           <CountryCodeSelect
             value={countryCode}
@@ -238,7 +223,7 @@ export function BusinessFormView({
         </div>
       </Field>
 
-      <Field label="Color Tone">
+      <Field label="Color Tone" required>
         <div className="flex gap-2">
           <Input
             type="color"

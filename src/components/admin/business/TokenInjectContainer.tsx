@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getBusinessDashboardData,
-  getImageTokenInjectionDashboardData,
+  getImageTokenInjectionDashboardPage,
   injectImageToken,
 } from "@/lib/business-api";
 import { InjectHistoryItem } from "./types";
@@ -26,6 +26,7 @@ import {
   mapInjectionHistoryToItem,
 } from "./mappers";
 import { toast } from "sonner";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
 const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
@@ -33,6 +34,7 @@ const TOKEN_INJECTION_HISTORY_QUERY_KEY = [
   "businesses",
   "image-token-injection-history",
 ] as const;
+const TOKEN_HISTORY_PAGE_SIZE = 20;
 
 // Detail Modal for selected row
 function InjectDetailModal({ item, onClose }: { item: InjectHistoryItem; onClose: () => void }) {
@@ -144,10 +146,13 @@ export function TokenInjectContainer() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showInjectModal, setShowInjectModal] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState<InjectHistoryItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const businessQuery = useQuery({
     queryKey: BUSINESS_QUERY_KEY,
     queryFn: getBusinessDashboardData,
+    enabled: showInjectModal,
     staleTime: 30_000,
   });
 
@@ -161,8 +166,14 @@ export function TokenInjectContainer() {
   );
 
   const historyQuery = useQuery({
-    queryKey: TOKEN_INJECTION_HISTORY_QUERY_KEY,
-    queryFn: getImageTokenInjectionDashboardData,
+    queryKey: [...TOKEN_INJECTION_HISTORY_QUERY_KEY, currentPage, deferredSearchQuery] as const,
+    queryFn: () =>
+      getImageTokenInjectionDashboardPage({
+        search: deferredSearchQuery || undefined,
+        page: currentPage,
+        limit: TOKEN_HISTORY_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 
@@ -184,6 +195,21 @@ export function TokenInjectContainer() {
     },
   });
 
+  const pagination = historyQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: TOKEN_HISTORY_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
+
   const handleInjectToken = async (businessId: string, amount: number) => {
     const target = businesses.find((business) => business.id === businessId);
     const businessRootId = Number(businessId);
@@ -204,12 +230,6 @@ export function TokenInjectContainer() {
     }
   };
 
-  const filteredHistory = history.filter(
-    (item) =>
-      item.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.adminName.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
   // Scorecard calculations
   const injectionOverview = historyQuery.data?.overview;
   const totalTokensInjected =
@@ -226,7 +246,6 @@ export function TokenInjectContainer() {
     ? getErrorMessage(historyQuery.error, "Gagal memuat riwayat token injection.")
     : undefined;
 
-  const canOpenInject = !businessQuery.isLoading && !businessQuery.isError && businesses.length > 0;
   const formatNumber = (num: number) => num.toLocaleString("id-ID");
   const formatCurrency = (amount: number, currency: string) =>
     currency.toUpperCase() === "IDR"
@@ -265,7 +284,7 @@ export function TokenInjectContainer() {
           <button
             type="button"
             onClick={() => setShowInjectModal(true)}
-            disabled={!canOpenInject || injectMutation.isPending}
+            disabled={injectMutation.isPending}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all shrink-0 self-start md:self-auto disabled:pointer-events-none disabled:opacity-60"
           >
             <Plus className="h-4 w-4" /> Inject Token
@@ -330,11 +349,14 @@ export function TokenInjectContainer() {
             type="text"
             placeholder="Cari bisnis atau nama admin..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all text-foreground"
           />
         </div>
-        <span className="text-xs text-muted-foreground">{filteredHistory.length} riwayat</span>
+        <span className="text-xs text-muted-foreground">{pagination.total} riwayat</span>
       </div>
 
       {/* History Table */}
@@ -379,7 +401,7 @@ export function TokenInjectContainer() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredHistory.length === 0 ? (
+              ) : history.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
@@ -389,7 +411,7 @@ export function TokenInjectContainer() {
                   </td>
                 </tr>
               ) : (
-                filteredHistory.map((item) => (
+                history.map((item) => (
                   <tr
                     key={item.id}
                     onClick={() => setSelectedHistory(item)}
@@ -443,10 +465,12 @@ export function TokenInjectContainer() {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filteredHistory.length}</strong> dari{" "}
-          <strong>{history.length}</strong> riwayat
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="riwayat"
+          onPageChange={setCurrentPage}
+          disabled={historyQuery.isFetching && !historyQuery.isLoading}
+        />
       </div>
 
       {/* Inject Token Modal Popup */}

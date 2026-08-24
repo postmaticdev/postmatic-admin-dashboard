@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult } from "@/lib/pagination";
 
 export const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -426,6 +427,12 @@ export interface RemoteChatBlastHistory {
   scheduledFor?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export interface ChatBlastHistoryQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
 }
 
 export interface RemoteEmailBlastDelivery {
@@ -1531,6 +1538,25 @@ const getEmailBlastContactsServer = createServerFn({ method: "GET" }).handler(as
   return contacts;
 });
 
+const getChatBlastHistoryPageServer = createServerFn({ method: "POST" })
+  .validator((data: ChatBlastHistoryQuery = {}) => data)
+  .handler(async ({ data }) => {
+    const page = data.page ?? 1;
+    const limit = data.limit ?? 20;
+    const response = await apiRequest<RemoteChatBlastHistory[]>(
+      appendQuery("/api/chat/blast", {
+        limit,
+        page,
+        search: data.search,
+        sort: "desc",
+        sortBy: "id",
+      }),
+      { cache: "no-store" },
+    );
+
+    return toPaginatedResult(response.data, response.pagination, page, limit);
+  });
+
 const getChatBlastHistoriesServer = createServerFn({ method: "POST" }).handler(async () => {
   return apiRequestAllPages<RemoteChatBlastHistory>(
     "/api/chat/blast",
@@ -1733,6 +1759,10 @@ export function getEmailBlastContacts() {
 
 export function getChatBlastHistories() {
   return getChatBlastHistoriesServer();
+}
+
+export function getChatBlastHistoryPage(query: ChatBlastHistoryQuery = {}) {
+  return getChatBlastHistoryPageServer({ data: query });
 }
 
 export function getChatBlastHistory(id: number) {

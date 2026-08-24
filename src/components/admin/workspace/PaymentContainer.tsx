@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createPaymentMethod,
   deletePaymentMethod,
   getPaymentMethodById,
-  getPaymentMethods,
+  getPaymentMethodPage,
   updatePaymentMethod,
   type PaymentMethodPayload,
   type RemotePaymentMethod,
@@ -15,6 +15,7 @@ import { PaymentFormView } from "./PaymentFormView";
 import { toast } from "sonner";
 
 const PAYMENT_METHOD_QUERY_KEY = ["workspace", "payment-methods"] as const;
+const PAYMENT_METHOD_PAGE_SIZE = 20;
 
 function normalizeNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -73,17 +74,44 @@ export function PaymentContainer() {
   const [editingItem, setEditingItem] = useState<PaymentMethodItem | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const paymentMethodsQuery = useQuery({
-    queryKey: PAYMENT_METHOD_QUERY_KEY,
-    queryFn: getPaymentMethods,
+    queryKey: [
+      ...PAYMENT_METHOD_QUERY_KEY,
+      { page: currentPage, search: deferredSearchQuery },
+    ] as const,
+    queryFn: () =>
+      getPaymentMethodPage({
+        search: deferredSearchQuery || undefined,
+        page: currentPage,
+        limit: PAYMENT_METHOD_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 
   const items = useMemo(
-    () => (paymentMethodsQuery.data ?? []).map(mapRemotePaymentMethod),
+    () => (paymentMethodsQuery.data?.items ?? []).map(mapRemotePaymentMethod),
     [paymentMethodsQuery.data],
   );
+
+  const pagination = paymentMethodsQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: PAYMENT_METHOD_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   const createMutation = useMutation({
     mutationFn: (data: Omit<PaymentMethodItem, "id">) =>
@@ -176,7 +204,10 @@ export function PaymentContainer() {
       {viewMode === "list" ? (
         <PaymentTableList
           items={items}
+          searchQuery={searchQuery}
+          pagination={pagination}
           isLoading={paymentMethodsQuery.isLoading}
+          isPageChanging={paymentMethodsQuery.isFetching && !paymentMethodsQuery.isLoading}
           errorMessage={
             paymentMethodsQuery.isError
               ? getErrorMessage(paymentMethodsQuery.error, "Gagal memuat payment method.")
@@ -191,6 +222,11 @@ export function PaymentContainer() {
           onEdit={handleEdit}
           onToggleStatus={handleToggleStatus}
           onRetry={() => paymentMethodsQuery.refetch()}
+          onSearchChange={(value) => {
+            setSearchQuery(value);
+            setCurrentPage(1);
+          }}
+          onPageChange={setCurrentPage}
         />
       ) : (
         <PaymentFormView

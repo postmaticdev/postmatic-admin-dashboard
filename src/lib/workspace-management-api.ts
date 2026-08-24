@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -21,6 +22,7 @@ interface ApiResponse<T> {
 export interface RemoteRssFeed {
   id: number | string;
   title?: string | null;
+  thumbnailImageUrl?: string | null;
   url?: string | null;
   publisher?: string | null;
   masterRssCategoryId?: number | string | null;
@@ -43,10 +45,13 @@ export interface RemoteRssCategory {
 export interface RssFeedQuery {
   category?: string;
   search?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface RssFeedPayload {
   title: string;
+  thumbnailImageUrl: string;
   url: string;
   publisher: string;
   appRssCategoryId: number;
@@ -235,6 +240,25 @@ const getRssFeedsServer = createServerFn({ method: "GET" })
       category: data.category,
       search: data.search,
     });
+  });
+
+const getRssFeedPageServer = createServerFn({ method: "GET" })
+  .validator((data: RssFeedQuery = {}) => data)
+  .handler(async ({ data }) => {
+    const page = data.page ?? 1;
+    const limit = data.limit ?? 20;
+    const response = await apiRequest<RemoteRssFeed[]>(
+      appendQuery("/api/app/rss", {
+        limit,
+        page,
+        sort: "asc",
+        sortBy: "title",
+        category: data.category,
+        search: data.search,
+      }),
+    );
+
+    return toPaginatedResult(response.data, response.pagination, page, limit);
   });
 
 const createRssCategoryServer = createServerFn({ method: "POST" })
@@ -439,6 +463,10 @@ export function getRssCategories() {
 
 export function getRssFeeds(query: RssFeedQuery = {}) {
   return getRssFeedsServer({ data: query });
+}
+
+export function getRssFeedPage(query: RssFeedQuery = {}) {
+  return getRssFeedPageServer({ data: query });
 }
 
 export function createRssCategory(payload: RssCategoryPayload) {

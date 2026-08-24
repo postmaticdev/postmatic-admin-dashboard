@@ -37,6 +37,8 @@ import {
   type BusinessProductPayload,
   type RemoteBusinessProduct,
 } from "@/lib/business-api";
+import { CurrencySelect, ProductCategorySelect } from "./BusinessFormSelects";
+import { BusinessPriceInput } from "./BusinessPriceInput";
 import { ImageUploadField } from "./ImageUploadField";
 import { getErrorMessage } from "./mappers";
 
@@ -210,15 +212,22 @@ export function ProductKnowledgeSection({
       >
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Product" : "Tambah Product"}</DialogTitle>
-            <DialogDescription>Lengkapi informasi product business.</DialogDescription>
+            <DialogTitle>{editing ? "Edit Produk" : "Tambah Produk"}</DialogTitle>
+            <DialogDescription>Lengkapi informasi produk business.</DialogDescription>
           </DialogHeader>
           <form
             className="space-y-5"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!form.name.trim() || !form.category.trim() || form.price < 0) {
-                toast.error("Nama, kategori, dan harga product wajib valid.");
+              if (
+                !form.imageUrls[0]?.trim() ||
+                !form.name.trim() ||
+                !form.category.trim() ||
+                !form.description.trim() ||
+                !form.currency.trim() ||
+                form.price < 1
+              ) {
+                toast.error("Lengkapi semua kolom produk dengan data yang valid.");
                 return;
               }
               saveMutation.mutate();
@@ -226,36 +235,33 @@ export function ProductKnowledgeSection({
           >
             <div className="flex flex-col gap-5 sm:flex-row">
               <ImageUploadField
-                label="Foto Product"
+                label="Foto Produk"
                 value={form.imageUrls[0]}
                 onChange={(url) => setForm((current) => ({ ...current, imageUrls: [url] }))}
                 disabled={saveMutation.isPending}
               />
               <div className="flex-1 space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Nama Product</label>
+                  <label className="text-sm font-medium">Nama Produk</label>
                   <Input
                     value={form.name}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, name: event.target.value }))
                     }
-                    placeholder="Masukkan nama product"
+                    placeholder="Masukkan nama produk"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Kategori</label>
-                  <Input
+                  <label className="text-sm font-medium">Kategori Produk</label>
+                  <ProductCategorySelect
                     value={form.category}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, category: event.target.value }))
-                    }
-                    placeholder="Masukkan kategori product"
+                    onChange={(value) => setForm((current) => ({ ...current, category: value }))}
                   />
                 </div>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Deskripsi</label>
+              <label className="text-sm font-medium">Deskripsi Produk</label>
               <Textarea
                 value={form.description}
                 onChange={(event) =>
@@ -264,28 +270,26 @@ export function ProductKnowledgeSection({
                 rows={3}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
+            <div className="grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Mata Uang</label>
-                <Input
+                <CurrencySelect
                   value={form.currency}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setForm((current) => ({
                       ...current,
-                      currency: event.target.value.toUpperCase(),
+                      currency: value,
                     }))
                   }
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Harga</label>
-                <Input
-                  type="number"
-                  min={0}
+                <BusinessPriceInput
                   value={form.price}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, price: Number(event.target.value) }))
-                  }
+                  onChange={(value) => setForm((current) => ({ ...current, price: value }))}
+                  currency={form.currency}
+                  disabled={saveMutation.isPending}
                 />
               </div>
             </div>

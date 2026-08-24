@@ -22,17 +22,25 @@ import {
   Unlock,
 } from "lucide-react";
 
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
+
 interface UserTableListProps {
   items: UserAccount[];
+  searchQuery: string;
+  pagination: PaginationMeta;
   onEdit?: (item: UserAccount) => void;
   onEditRole?: (item: UserAccount) => void;
   onToggleBan?: (item: UserAccount, isBanned: boolean) => void;
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
   updatingRoleUserId?: string | null;
   updatingBanUserId?: string | null;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
 }
 
 function getInitials(name: string) {
@@ -342,27 +350,24 @@ function UserActionButtons({
 
 export function UserTableList({
   items,
+  searchQuery,
+  pagination,
   onEdit,
   onEditRole,
   onToggleBan,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   isReadOnly = false,
   updatingRoleUserId,
   updatingBanUserId,
   onRetry,
+  onSearchChange,
+  onPageChange,
 }: UserTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [modalUser, setModalUser] = useState<UserAccount | null>(null);
 
-  const filtered = items.filter(
-    (u) =>
-      u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.phone.includes(searchQuery),
-  );
-
-  const totalUsers = items.length;
+  const totalUsers = pagination.total;
   const activeUsers = items.filter((u) => u.status === "Active").length;
   const suspendedUsers = items.filter((u) => u.status === "Suspended").length;
   const hasActions = !isReadOnly && Boolean(onEdit || onEditRole || onToggleBan);
@@ -388,9 +393,9 @@ export function UserTableList({
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Pengguna Aktif</p>
+              <p className="text-xs font-medium text-muted-foreground">Aktif di Halaman</p>
               <p className="text-3xl font-bold text-foreground mt-1">{activeUsers}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Status aktif saat ini</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Dari data halaman ini</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
               <CheckCircle2 className="h-6 w-6 text-emerald-500" />
@@ -401,9 +406,9 @@ export function UserTableList({
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Disuspend</p>
+              <p className="text-xs font-medium text-muted-foreground">Diban di Halaman</p>
               <p className="text-3xl font-bold text-foreground mt-1">{suspendedUsers}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Akun dibatasi</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Dari data halaman ini</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center">
               <AlertTriangle className="h-6 w-6 text-red-500" />
@@ -421,11 +426,11 @@ export function UserTableList({
             type="text"
             placeholder="Cari nama, email, atau no. telepon..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} pengguna</span>
+        <span className="text-xs text-muted-foreground">{pagination.total} pengguna</span>
       </div>
 
       {/* Table */}
@@ -473,7 +478,7 @@ export function UserTableList({
                   </div>
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={tableColSpan} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
@@ -483,7 +488,7 @@ export function UserTableList({
                 </td>
               </tr>
             ) : (
-              filtered.map((user) => (
+              items.map((user) => (
                 <tr
                   key={user.id}
                   className="group transition-colors border-b border-border/60 hover:bg-muted/40 bg-card cursor-pointer"
@@ -544,10 +549,12 @@ export function UserTableList({
             )}
           </tbody>
         </table>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong>{" "}
-          pengguna
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="pengguna"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {/* Modal */}

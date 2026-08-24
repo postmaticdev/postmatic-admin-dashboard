@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -121,10 +122,12 @@ function appendQuery(path: string, query: Record<string, string | number | undef
 const getAdminActivityLogsServer = createServerFn({ method: "GET" })
   .validator((data: AdminActivityLogQuery) => data)
   .handler(async ({ data }) => {
+    const page = data.page ?? 1;
+    const limit = data.limit ?? 20;
     const response = await apiRequest<RemoteAdminActivityLog[]>(
       appendQuery("/api/activity-log/admin", {
-        page: data.page ?? 1,
-        limit: data.limit ?? 100,
+        page,
+        limit,
         search: data.search ?? "",
         type: data.type,
         dateStart: data.dateStart,
@@ -134,7 +137,7 @@ const getAdminActivityLogsServer = createServerFn({ method: "GET" })
       }),
     );
 
-    return Array.isArray(response.data) ? response.data : [];
+    return toPaginatedResult(response.data, response.pagination, page, limit);
   });
 
 const getAdminActivityLogFilterTypesServer = createServerFn({ method: "GET" }).handler(async () => {

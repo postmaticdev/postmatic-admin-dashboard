@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   AlertCircle,
   Edit3,
@@ -12,18 +12,25 @@ import {
   X,
 } from "lucide-react";
 
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
 import type { RSSCategoryItem, RSSItem } from "./types";
 
 interface RSSTableListProps {
   items: RSSItem[];
   categories?: RSSCategoryItem[];
   selectedCategoryId?: string;
+  searchQuery: string;
+  pagination: PaginationMeta;
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
   onCreateNew?: () => void;
   onEdit?: (item: RSSItem) => void;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
   onCategoryChange?: (categoryId: string) => void;
 }
 
@@ -215,28 +222,20 @@ export function RSSTableList({
   items,
   categories = [],
   selectedCategoryId = "",
+  searchQuery,
+  pagination,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   isReadOnly = false,
   onCreateNew,
   onEdit,
   onRetry,
+  onSearchChange,
+  onPageChange,
   onCategoryChange,
 }: RSSTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedRss, setSelectedRss] = useState<RSSItem | null>(null);
-
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.publisher.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.categoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.sourceUrl.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
-    [items, searchQuery],
-  );
 
   return (
     <div className="space-y-6">
@@ -277,7 +276,7 @@ export function RSSTableList({
             type="text"
             placeholder="Cari title, publisher, category, atau URL..."
             value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) => onSearchChange(event.target.value)}
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
@@ -341,7 +340,7 @@ export function RSSTableList({
                     </div>
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : items.length === 0 ? (
                 <tr>
                   <td
                     colSpan={isReadOnly ? 4 : 5}
@@ -354,7 +353,7 @@ export function RSSTableList({
                   </td>
                 </tr>
               ) : (
-                filtered.map((item) => (
+                items.map((item) => (
                   <TableRow
                     key={item.id}
                     item={item}
@@ -367,10 +366,12 @@ export function RSSTableList({
             </tbody>
           </table>
         </div>
-        <div className="border-t border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong> RSS
-          source
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="RSS source"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {selectedRss && (

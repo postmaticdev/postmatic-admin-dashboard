@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, FolderTree, Rss, Save, Trash2 } from "lucide-react";
 
+import { ImageUploadField } from "@/components/admin/business/ImageUploadField";
 import type { RSSCategoryItem, RSSFormValues, RSSItem } from "./types";
 
 interface RSSFormViewProps {
@@ -23,9 +24,11 @@ export function RSSFormView({
   const isEditMode = Boolean(initialItem);
   const firstCategoryId = categories[0]?.id ?? "";
   const [name, setName] = useState(initialItem?.name || "");
+  const [thumbnailImageUrl, setThumbnailImageUrl] = useState(initialItem?.thumbnailImageUrl || "");
   const [sourceUrl, setSourceUrl] = useState(initialItem?.sourceUrl || "");
   const [publisher, setPublisher] = useState(initialItem?.publisher || "");
   const [categoryId, setCategoryId] = useState(initialItem?.categoryId || firstCategoryId);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -42,10 +45,16 @@ export function RSSFormView({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const nextName = name.trim();
+    const nextThumbnailImageUrl = thumbnailImageUrl.trim();
     const nextUrl = sourceUrl.trim();
     const nextPublisher = publisher.trim();
 
-    if (!nextName || !nextUrl || !nextPublisher || !categoryId) {
+    if (isUploadingThumbnail) {
+      alert("Tunggu hingga upload thumbnail selesai.");
+      return;
+    }
+
+    if (!nextName || !nextThumbnailImageUrl || !nextUrl || !nextPublisher || !categoryId) {
       alert("Harap isi semua kolom wajib.");
       return;
     }
@@ -53,6 +62,7 @@ export function RSSFormView({
     onSave(
       {
         name: nextName,
+        thumbnailImageUrl: nextThumbnailImageUrl,
         sourceUrl: nextUrl,
         publisher: nextPublisher,
         categoryId,
@@ -96,11 +106,11 @@ export function RSSFormView({
           <button
             type="submit"
             form="rss-source-form"
-            disabled={isSaving || categories.length === 0}
+            disabled={isSaving || isUploadingThumbnail || categories.length === 0}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-3.5 w-3.5" />
-            {isSaving ? "Menyimpan..." : "Simpan"}
+            {isSaving ? "Menyimpan..." : isUploadingThumbnail ? "Mengunggah..." : "Simpan"}
           </button>
         </div>
       </div>
@@ -116,6 +126,20 @@ export function RSSFormView({
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="space-y-2 md:col-span-2">
+            <ImageUploadField
+              label="Thumbnail RSS *"
+              value={thumbnailImageUrl}
+              onChange={setThumbnailImageUrl}
+              onUploadingChange={setIsUploadingThumbnail}
+              previewFit="cover"
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              Pilih gambar yang akan digunakan sebagai thumbnail RSS.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">
               Judul RSS <span className="text-destructive">*</span>

@@ -31,6 +31,7 @@ export interface RSSItem {
   id: string;
   name: string;
   logoUrl: string;
+  thumbnailImageUrl?: string;
   sourceUrl: string;
   publisher: string;
   categoryId: string;
@@ -49,6 +50,7 @@ export interface RSSCategoryItem {
 
 export interface RSSFormValues {
   name: string;
+  thumbnailImageUrl: string;
   sourceUrl: string;
   publisher: string;
   categoryId: string;

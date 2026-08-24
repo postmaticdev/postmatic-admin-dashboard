@@ -15,6 +15,9 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const REFERRAL_PAGE_SIZE = 20;
 
 interface ReferralTableListProps {
   items: ReferralItem[];
@@ -268,6 +271,7 @@ export function ReferralTableList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("ALL");
   const [selectedReferral, setSelectedReferral] = useState<ReferralItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const roleCategories = ["ALL", "Global", "User", "Admin"];
 
@@ -278,6 +282,20 @@ export function ReferralTableList({
 
     return matchesSearch && matchesRole;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / REFERRAL_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const pagedItems = filteredItems.slice(
+    (activePage - 1) * REFERRAL_PAGE_SIZE,
+    activePage * REFERRAL_PAGE_SIZE,
+  );
+  const pagination = {
+    total: filteredItems.length,
+    page: activePage,
+    limit: REFERRAL_PAGE_SIZE,
+    totalPages,
+    hasNextPage: activePage < totalPages,
+    hasPrevPage: activePage > 1,
+  };
 
   return (
     <div className="space-y-6">
@@ -319,7 +337,10 @@ export function ReferralTableList({
             type="text"
             placeholder="Cari berdasarkan role..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
@@ -331,7 +352,10 @@ export function ReferralTableList({
           </div>
           <select
             value={selectedRoleFilter}
-            onChange={(e) => setSelectedRoleFilter(e.target.value)}
+            onChange={(e) => {
+              setSelectedRoleFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-3 py-2 text-xs font-medium bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
             {roleCategories.map((cat) => (
@@ -400,7 +424,7 @@ export function ReferralTableList({
                 </td>
               </tr>
             ) : (
-              filteredItems.map((item) => (
+              pagedItems.map((item) => (
                 <TableRow
                   key={item.id}
                   item={item}
@@ -413,12 +437,11 @@ export function ReferralTableList({
             )}
           </tbody>
         </table>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Menampilkan <strong>{filteredItems.length}</strong> dari <strong>{items.length}</strong>{" "}
-            referral
-          </span>
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="referral"
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Referral Detail Modal */}

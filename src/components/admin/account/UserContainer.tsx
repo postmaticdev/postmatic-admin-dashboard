@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createManagedUser,
-  getManagedProfiles,
+  getManagedProfilePage,
   updateManagedProfileBan,
   updateManagedProfileRole,
   type ManagedProfileRole,
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 const ACCOUNT_PROFILE_QUERY_KEY = ["account-management", "profiles"] as const;
 const USER_QUERY_KEY = [...ACCOUNT_PROFILE_QUERY_KEY, "user"] as const;
+const ACCOUNT_PAGE_SIZE = 20;
 const USER_ROLE_OPTIONS: UserRoleOption[] = [{ label: "Admin", value: "admin" }];
 
 interface UserCreateFormValues {
@@ -93,10 +94,20 @@ export function UserContainer() {
   const [roleChangeUser, setRoleChangeUser] = useState<UserAccount | null>(null);
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
   const [updatingBanUserId, setUpdatingBanUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const usersQuery = useQuery({
-    queryKey: USER_QUERY_KEY,
-    queryFn: () => getManagedProfiles({ role: "user" }),
+    queryKey: [...USER_QUERY_KEY, { page: currentPage, search: deferredSearchQuery }] as const,
+    queryFn: () =>
+      getManagedProfilePage({
+        role: "user",
+        search: deferredSearchQuery || undefined,
+        page: currentPage,
+        limit: ACCOUNT_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 
@@ -122,11 +133,26 @@ export function UserContainer() {
 
   const users = useMemo(
     () =>
-      (usersQuery.data ?? [])
+      (usersQuery.data?.items ?? [])
         .filter((profile) => (profile.role ?? "user").toLowerCase() === "user")
         .map(mapRemoteUser),
     [usersQuery.data],
   );
+
+  const pagination = usersQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: ACCOUNT_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   const invalidateProfiles = () =>
     queryClient.invalidateQueries({ queryKey: ACCOUNT_PROFILE_QUERY_KEY });
@@ -228,7 +254,10 @@ export function UserContainer() {
 
       <UserTableList
         items={users}
+        searchQuery={searchQuery}
+        pagination={pagination}
         isLoading={usersQuery.isLoading}
+        isPageChanging={usersQuery.isFetching && !usersQuery.isLoading}
         errorMessage={
           usersQuery.isError
             ? getErrorMessage(usersQuery.error, "Gagal memuat data pengguna.")
@@ -239,6 +268,11 @@ export function UserContainer() {
         onEditRole={setRoleChangeUser}
         onToggleBan={handleToggleBan}
         onRetry={() => usersQuery.refetch()}
+        onSearchChange={(value) => {
+          setSearchQuery(value);
+          setCurrentPage(1);
+        }}
+        onPageChange={setCurrentPage}
       />
 
       {roleChangeUser && (

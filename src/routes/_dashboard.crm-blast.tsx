@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { useTickets } from "@/contexts/TicketsContext";
 import {
   getEmailBlastContacts,
@@ -44,7 +45,7 @@ import {
   getEmailQuota,
   getWhatsappBlastContacts,
   getUploadedAssetIds,
-  getChatBlastHistories,
+  getChatBlastHistoryPage,
   normalizeRemoteChatAttachment,
   sendChatBlast,
   uploadCustomerServiceAttachment,
@@ -59,6 +60,8 @@ import { whatsappPhonesMatch } from "@/lib/whatsapp-room-aliases";
 export const Route = createFileRoute("/_dashboard/crm-blast")({
   component: CrmBlastPage,
 });
+
+const BLAST_HISTORY_PAGE_SIZE = 20;
 
 interface BlastCampaign {
   id: string;
@@ -313,6 +316,8 @@ function isVideoAttachment(attachment: UploadedAttachment) {
 function CrmBlastPage() {
   const { getBySource, refreshTickets } = useTickets();
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Detail Dialog modal states
@@ -370,11 +375,17 @@ function CrmBlastPage() {
   });
 
   const blastHistoriesQuery = useQuery({
-    queryKey: ["crm-blast", "history-table"],
-    queryFn: getChatBlastHistories,
+    queryKey: ["crm-blast", "history-table", currentPage, deferredSearchQuery],
+    queryFn: () =>
+      getChatBlastHistoryPage({
+        page: currentPage,
+        limit: BLAST_HISTORY_PAGE_SIZE,
+        search: deferredSearchQuery || undefined,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchInterval: (query) => getBlastHistoriesRefetchInterval(query.state.data),
+    refetchInterval: (query) => getBlastHistoriesRefetchInterval(query.state.data?.items),
   });
 
   const emailBlastDeliveriesQuery = useQuery({
@@ -396,10 +407,24 @@ function CrmBlastPage() {
   });
 
   const remoteBlasts = useMemo(
-    () => (blastHistoriesQuery.data ?? []).map(mapRemoteBlast),
+    () => (blastHistoriesQuery.data?.items ?? []).map(mapRemoteBlast),
     [blastHistoriesQuery.data],
   );
   const blasts = remoteBlasts;
+  const blastPagination = blastHistoriesQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: BLAST_HISTORY_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > blastPagination.totalPages) {
+      setCurrentPage(blastPagination.totalPages);
+    }
+  }, [currentPage, blastPagination.totalPages]);
 
   useEffect(() => {
     if (!selectedBlast) return;
@@ -434,10 +459,6 @@ function CrmBlastPage() {
       error: delivery.lastErrorMessage ?? delivery.lastErrorCode ?? null,
     }));
   }, [emailBlastDeliveriesQuery.data, selectedBlast]);
-
-  const filteredBlasts = blasts.filter((b) =>
-    b.campaignName.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
 
   const handleOpenDetail = (blast: BlastCampaign) => {
     setSelectedBlast(blast);
@@ -1017,7 +1038,10 @@ function CrmBlastPage() {
                 type="search"
                 placeholder="Cari campaign blast..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="h-9 pl-9 text-xs"
               />
             </div>
@@ -1049,14 +1073,14 @@ function CrmBlastPage() {
                         Gagal memuat riwayat blast.
                       </td>
                     </tr>
-                  ) : filteredBlasts.length === 0 ? (
+                  ) : blasts.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">
                         Belum ada riwayat blast.
                       </td>
                     </tr>
                   ) : (
-                    filteredBlasts.map((b) => (
+                    blasts.map((b) => (
                       <tr
                         key={b.id}
                         onClick={() => handleOpenDetail(b)}
@@ -1110,6 +1134,12 @@ function CrmBlastPage() {
                   )}
                 </tbody>
               </table>
+              <TablePagination
+                pagination={blastPagination}
+                itemLabel="campaign"
+                onPageChange={setCurrentPage}
+                disabled={blastHistoriesQuery.isFetching && !blastHistoriesQuery.isLoading}
+              />
             </div>
           </div>
         </>

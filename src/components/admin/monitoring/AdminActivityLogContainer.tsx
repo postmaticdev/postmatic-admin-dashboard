@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TablePagination } from "@/components/ui/table-pagination";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 const ACTIVITY_QUERY_KEY = ["monitoring", "admin-activity-log"] as const;
 const ACTIVITY_TYPE_QUERY_KEY = ["monitoring", "admin-activity-log", "types"] as const;
+const ACTIVITY_PAGE_SIZE = 20;
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
@@ -96,15 +98,19 @@ function typeClassName(type?: string | null) {
 export function AdminActivityLogContainer() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearch = useDeferredValue(search.trim());
 
   const activityQuery = useQuery({
-    queryKey: [...ACTIVITY_QUERY_KEY, search, typeFilter],
+    queryKey: [...ACTIVITY_QUERY_KEY, deferredSearch, typeFilter, currentPage],
     queryFn: () =>
       getAdminActivityLogs({
-        search,
+        search: deferredSearch,
         type: typeFilter === "all" ? undefined : typeFilter,
-        limit: 100,
+        page: currentPage,
+        limit: ACTIVITY_PAGE_SIZE,
       }),
+    placeholderData: (previousData) => previousData,
     staleTime: 20_000,
   });
 
@@ -114,7 +120,15 @@ export function AdminActivityLogContainer() {
     staleTime: 60_000,
   });
 
-  const logs = useMemo(() => activityQuery.data ?? [], [activityQuery.data]);
+  const logs = useMemo(() => activityQuery.data?.items ?? [], [activityQuery.data]);
+  const pagination = activityQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: ACTIVITY_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
   const latestLog = logs[0] ?? null;
   const uniqueAdmins = useMemo(() => new Set(logs.map(adminEmail)).size, [logs]);
   const destructiveCount = useMemo(
@@ -125,6 +139,12 @@ export function AdminActivityLogContainer() {
       }).length,
     [logs],
   );
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   const refresh = () => {
     void activityQuery.refetch();
@@ -170,14 +190,14 @@ export function AdminActivityLogContainer() {
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs font-semibold text-muted-foreground">Total Activity</p>
-          <p className="mt-2 text-2xl font-extrabold text-foreground">{logs.length}</p>
+          <p className="mt-2 text-2xl font-extrabold text-foreground">{pagination.total}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Active Admins</p>
+          <p className="text-xs font-semibold text-muted-foreground">Admins di Halaman</p>
           <p className="mt-2 text-2xl font-extrabold text-blue-600">{uniqueAdmins}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Sensitive Actions</p>
+          <p className="text-xs font-semibold text-muted-foreground">Sensitive di Halaman</p>
           <p className="mt-2 text-2xl font-extrabold text-destructive">{destructiveCount}</p>
         </div>
       </div>
@@ -207,12 +227,21 @@ export function AdminActivityLogContainer() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Cari admin, aksi, atau deskripsi..."
                 className="pl-9"
               />
             </div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select
+              value={typeFilter}
+              onValueChange={(value) => {
+                setTypeFilter(value);
+                setCurrentPage(1);
+              }}
+            >
               <SelectTrigger className="w-full md:w-56">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <SelectValue placeholder="Filter type" />
@@ -227,7 +256,9 @@ export function AdminActivityLogContainer() {
               </SelectContent>
             </Select>
           </div>
-          <span className="text-xs font-semibold text-muted-foreground">{logs.length} log</span>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {pagination.total} log
+          </span>
         </div>
 
         <div className="max-h-[640px] overflow-auto">
@@ -320,6 +351,12 @@ export function AdminActivityLogContainer() {
             </tbody>
           </table>
         </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="log"
+          onPageChange={setCurrentPage}
+          disabled={activityQuery.isFetching && !activityQuery.isLoading}
+        />
       </div>
     </div>
   );

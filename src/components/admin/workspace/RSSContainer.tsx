@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -14,13 +14,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { TablePagination } from "@/components/ui/table-pagination";
 import {
   createRssCategory,
   createRssFeed,
   deleteRssCategory,
   deleteRssFeed,
   getRssCategories,
-  getRssFeeds,
+  getRssFeedPage,
   updateRssCategory,
   updateRssFeed,
   type RemoteRssCategory,
@@ -33,6 +34,8 @@ import { RSSTableList } from "./RSSTableList";
 
 const RSS_FEEDS_QUERY_KEY = ["workspace", "rss-feeds"] as const;
 const RSS_CATEGORIES_QUERY_KEY = ["workspace", "rss-categories"] as const;
+const RSS_PAGE_SIZE = 20;
+const RSS_CATEGORY_PAGE_SIZE = 20;
 
 function faviconFromUrl(value?: string | null) {
   if (!value) return "";
@@ -85,6 +88,7 @@ function mapRemoteCategory(item: RemoteRssCategory): RSSCategoryItem {
 function mapRemoteRss(item: RemoteRssFeed, categoryById: Map<string, RSSCategoryItem>): RSSItem {
   const id = String(item.id);
   const sourceUrl = item.url?.trim() || "";
+  const thumbnailImageUrl = item.thumbnailImageUrl?.trim() || "";
   const categoryId = String(categoryIdFromFeed(item));
   const categoryName =
     categoryNameFromFeed(item) || categoryById.get(categoryId)?.name || `Category #${categoryId}`;
@@ -93,7 +97,8 @@ function mapRemoteRss(item: RemoteRssFeed, categoryById: Map<string, RSSCategory
   return {
     id,
     name: title,
-    logoUrl: faviconFromUrl(sourceUrl),
+    logoUrl: thumbnailImageUrl || faviconFromUrl(sourceUrl),
+    thumbnailImageUrl,
     sourceUrl,
     publisher: item.publisher?.trim() || "-",
     categoryId,
@@ -112,6 +117,7 @@ function toRssFeedPayload(data: RSSFormValues): RssFeedPayload {
 
   return {
     title: data.name.trim(),
+    thumbnailImageUrl: data.thumbnailImageUrl.trim(),
     url: data.sourceUrl.trim(),
     publisher: data.publisher.trim(),
     appRssCategoryId,
@@ -142,10 +148,29 @@ function CategoryManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [deletingCategory, setDeletingCategory] = useState<RSSCategoryItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filteredCategories = categories.filter((category) =>
     category.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+  const totalPages = Math.max(1, Math.ceil(filteredCategories.length / RSS_CATEGORY_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const visibleCategories = filteredCategories.slice(
+    (activePage - 1) * RSS_CATEGORY_PAGE_SIZE,
+    activePage * RSS_CATEGORY_PAGE_SIZE,
+  );
+  const pagination = {
+    total: filteredCategories.length,
+    page: activePage,
+    limit: RSS_CATEGORY_PAGE_SIZE,
+    totalPages,
+    hasNextPage: activePage < totalPages,
+    hasPrevPage: activePage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage !== activePage) setCurrentPage(activePage);
+  }, [activePage, currentPage]);
 
   const handleCreate = (event: React.FormEvent) => {
     event.preventDefault();
@@ -215,7 +240,10 @@ function CategoryManager({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Cari category..."
               className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
@@ -268,7 +296,7 @@ function CategoryManager({
                   </td>
                 </tr>
               ) : (
-                filteredCategories.map((category) => (
+                visibleCategories.map((category) => (
                   <tr
                     key={category.id}
                     className="border-b border-border/60 bg-card hover:bg-muted/40"
@@ -345,10 +373,12 @@ function CategoryManager({
             </tbody>
           </table>
         </div>
-        <div className="border-t border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-          Menampilkan <strong>{filteredCategories.length}</strong> dari{" "}
-          <strong>{categories.length}</strong> category
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="category"
+          onPageChange={setCurrentPage}
+          disabled={isLoading || isMutating}
+        />
       </div>
 
       {deletingCategory && (
@@ -404,6 +434,9 @@ export function RSSContainer() {
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list");
   const [editingItem, setEditingItem] = useState<RSSItem | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const categoriesQuery = useQuery({
     queryKey: RSS_CATEGORIES_QUERY_KEY,
@@ -412,8 +445,18 @@ export function RSSContainer() {
   });
 
   const feedsQuery = useQuery({
-    queryKey: [...RSS_FEEDS_QUERY_KEY, { category: selectedCategoryId }] as const,
-    queryFn: () => getRssFeeds({ category: selectedCategoryId || undefined }),
+    queryKey: [
+      ...RSS_FEEDS_QUERY_KEY,
+      { category: selectedCategoryId, page: currentPage, search: deferredSearchQuery },
+    ] as const,
+    queryFn: () =>
+      getRssFeedPage({
+        category: selectedCategoryId || undefined,
+        search: deferredSearchQuery || undefined,
+        page: currentPage,
+        limit: RSS_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 
@@ -428,9 +471,24 @@ export function RSSContainer() {
   );
 
   const items = useMemo(
-    () => (feedsQuery.data ?? []).map((item) => mapRemoteRss(item, categoryById)),
+    () => (feedsQuery.data?.items ?? []).map((item) => mapRemoteRss(item, categoryById)),
     [feedsQuery.data, categoryById],
   );
+
+  const pagination = feedsQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: RSS_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   const createFeedMutation = useMutation({
     mutationFn: (data: RSSFormValues) => createRssFeed(toRssFeedPayload(data)),
@@ -579,7 +637,10 @@ export function RSSContainer() {
           items={items}
           categories={categories}
           selectedCategoryId={selectedCategoryId}
+          searchQuery={searchQuery}
+          pagination={pagination}
           isLoading={feedsQuery.isLoading || categoriesQuery.isLoading}
+          isPageChanging={feedsQuery.isFetching && !feedsQuery.isLoading}
           errorMessage={
             feedsQuery.isError
               ? getErrorMessage(feedsQuery.error, "Gagal memuat RSS source.")
@@ -587,7 +648,15 @@ export function RSSContainer() {
                 ? getErrorMessage(categoriesQuery.error, "Gagal memuat RSS category.")
                 : undefined
           }
-          onCategoryChange={setSelectedCategoryId}
+          onSearchChange={(value) => {
+            setSearchQuery(value);
+            setCurrentPage(1);
+          }}
+          onPageChange={setCurrentPage}
+          onCategoryChange={(categoryId) => {
+            setSelectedCategoryId(categoryId);
+            setCurrentPage(1);
+          }}
           onCreateNew={() => {
             if (categories.length === 0) {
               toast.info("Buat RSS category terlebih dahulu.");

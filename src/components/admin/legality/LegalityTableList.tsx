@@ -14,10 +14,17 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
 
 interface LegalityTableListProps {
   items: LegalityItem[];
+  searchQuery: string;
+  selectedCategory: string;
+  categoryOptions: Array<{ label: string; value: string }>;
+  pagination: PaginationMeta;
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   loadingDetailId?: string | null;
   togglingStatusId?: string | null;
@@ -25,6 +32,9 @@ interface LegalityTableListProps {
   onEdit: (item: LegalityItem) => void;
   onToggleStatus: (id: string) => void;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onCategoryChange: (value: string) => void;
+  onPageChange: (page: number) => void;
 }
 
 // Helper function to strip HTML tags for preview snippet
@@ -269,7 +279,12 @@ function LegalityDetailModal({
 
 export function LegalityTableList({
   items,
+  searchQuery,
+  selectedCategory,
+  categoryOptions,
+  pagination,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   loadingDetailId,
   togglingStatusId,
@@ -277,25 +292,11 @@ export function LegalityTableList({
   onEdit,
   onToggleStatus,
   onRetry,
+  onSearchChange,
+  onCategoryChange,
+  onPageChange,
 }: LegalityTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedMenuFilter, setSelectedMenuFilter] = useState("ALL");
   const [selectedItem, setSelectedItem] = useState<LegalityItem | null>(null);
-
-  // Get distinct menu labels for filter
-  const menuCategories = ["ALL", ...Array.from(new Set(items.map((d) => d.menuLabel)))];
-
-  // Filter items
-  const filteredItems = items.filter((item) => {
-    const matchesSearch =
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.menuLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.content.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesCategory = selectedMenuFilter === "ALL" || item.menuLabel === selectedMenuFilter;
-
-    return matchesSearch && matchesCategory;
-  });
 
   return (
     <div className="space-y-6">
@@ -342,7 +343,7 @@ export function LegalityTableList({
             type="text"
             placeholder="Cari judul, kategori, atau konten legal..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
@@ -353,13 +354,14 @@ export function LegalityTableList({
             <span>Kategori:</span>
           </div>
           <select
-            value={selectedMenuFilter}
-            onChange={(e) => setSelectedMenuFilter(e.target.value)}
+            value={selectedCategory}
+            onChange={(e) => onCategoryChange(e.target.value)}
             className="px-3 py-2 text-xs font-medium bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
-            {menuCategories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat === "ALL" ? "Semua Kategori" : cat}
+            <option value="ALL">Semua Kategori</option>
+            {categoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
               </option>
             ))}
           </select>
@@ -410,7 +412,7 @@ export function LegalityTableList({
                   </div>
                 </td>
               </tr>
-            ) : filteredItems.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-2">
@@ -423,7 +425,7 @@ export function LegalityTableList({
                 </td>
               </tr>
             ) : (
-              filteredItems.map((item) => (
+              items.map((item) => (
                 <TableRow
                   key={item.id}
                   item={item}
@@ -437,12 +439,12 @@ export function LegalityTableList({
             )}
           </tbody>
         </table>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Menampilkan <strong>{filteredItems.length}</strong> dari <strong>{items.length}</strong>{" "}
-            dokumen legal
-          </span>
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="dokumen legal"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {/* Legality Detail Modal */}

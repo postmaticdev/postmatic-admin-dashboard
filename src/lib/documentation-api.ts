@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult, type PaginatedResult } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -257,6 +258,25 @@ const getDocumentationsServer = createServerFn({ method: "POST" })
     });
   });
 
+const getDocumentationPageServer = createServerFn({ method: "POST" })
+  .validator((data: DocumentationListQuery & { type: DocumentationType }) => data)
+  .handler(async ({ data }): Promise<PaginatedResult<RemoteDocumentation>> => {
+    const { type, ...query } = data;
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const response = await apiRequest<RemoteDocumentation[]>(
+      appendQuery(articlePath(type), {
+        limit,
+        page,
+        sort: "desc",
+        sortBy: "id",
+        ...query,
+      }),
+    );
+
+    return toPaginatedResult(response.data, response.pagination, page, limit);
+  });
+
 const getDocumentationByIdServer = createServerFn({ method: "POST" })
   .validator((data: { type: DocumentationType; id: string }) => data)
   .handler(async ({ data }) => {
@@ -396,6 +416,10 @@ const deleteDocumentationCategoryServer = createServerFn({ method: "POST" })
 
 export function getDocumentations(type: DocumentationType, query: DocumentationListQuery = {}) {
   return getDocumentationsServer({ data: { type, ...query } });
+}
+
+export function getDocumentationPage(type: DocumentationType, query: DocumentationListQuery = {}) {
+  return getDocumentationPageServer({ data: { type, ...query } });
 }
 
 export function getDocumentationById(type: DocumentationType, id: string) {

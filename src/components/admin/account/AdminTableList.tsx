@@ -21,17 +21,25 @@ import {
   ShieldOff,
 } from "lucide-react";
 
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
+
 interface AdminTableListProps {
   items: AdminAccount[];
+  searchQuery: string;
+  pagination: PaginationMeta;
   onEdit?: (item: AdminAccount) => void;
   onToggleBan?: (item: AdminAccount, isBanned: boolean) => void;
   onRemoveRole?: (item: AdminAccount) => void;
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
   updatingBanAdminId?: string | null;
   removingRoleAdminId?: string | null;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
 }
 
 function getInitials(name: string) {
@@ -336,27 +344,24 @@ function AdminActionButtons({
 
 export function AdminTableList({
   items,
+  searchQuery,
+  pagination,
   onEdit,
   onToggleBan,
   onRemoveRole,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   isReadOnly = false,
   updatingBanAdminId,
   removingRoleAdminId,
   onRetry,
+  onSearchChange,
+  onPageChange,
 }: AdminTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [modalAdmin, setModalAdmin] = useState<AdminAccount | null>(null);
 
-  const filtered = items.filter(
-    (a) =>
-      a.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.phone.includes(searchQuery),
-  );
-
-  const totalAdmins = items.length;
+  const totalAdmins = pagination.total;
   const activeAdmins = items.filter((a) => a.status === "Active").length;
   const inactiveAdmins = items.filter((a) => a.status === "Inactive").length;
   const hasActions = !isReadOnly && Boolean(onEdit || onToggleBan || onRemoveRole);
@@ -382,9 +387,9 @@ export function AdminTableList({
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Admin Aktif</p>
+              <p className="text-xs font-medium text-muted-foreground">Aktif di Halaman</p>
               <p className="text-3xl font-bold text-foreground mt-1">{activeAdmins}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Status aktif saat ini</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Dari data halaman ini</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
               <CheckCircle2 className="h-6 w-6 text-emerald-500" />
@@ -395,9 +400,9 @@ export function AdminTableList({
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Admin Diban</p>
+              <p className="text-xs font-medium text-muted-foreground">Diban di Halaman</p>
               <p className="text-3xl font-bold text-foreground mt-1">{inactiveAdmins}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Akun dibatasi</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Dari data halaman ini</p>
             </div>
             <div className="h-12 w-12 rounded-2xl bg-amber-500/10 flex items-center justify-center">
               <Clock className="h-6 w-6 text-amber-500" />
@@ -415,11 +420,11 @@ export function AdminTableList({
             type="text"
             placeholder="Cari nama, email, atau no. telepon..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} admin</span>
+        <span className="text-xs text-muted-foreground">{pagination.total} admin</span>
       </div>
 
       {/* Table */}
@@ -467,7 +472,7 @@ export function AdminTableList({
                   </div>
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={tableColSpan} className="py-12 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
@@ -477,7 +482,7 @@ export function AdminTableList({
                 </td>
               </tr>
             ) : (
-              filtered.map((admin) => (
+              items.map((admin) => (
                 <tr
                   key={admin.id}
                   className="group transition-colors border-b border-border/60 hover:bg-muted/40 bg-card cursor-pointer"
@@ -536,9 +541,12 @@ export function AdminTableList({
             )}
           </tbody>
         </table>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong> admin
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="admin"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {/* Modal */}

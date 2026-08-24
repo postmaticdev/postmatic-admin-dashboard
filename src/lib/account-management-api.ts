@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -79,6 +80,7 @@ export interface ManagedProfileListQuery {
   dateEnd?: string;
   sort?: "asc" | "desc";
   sortBy?: string;
+  page?: number;
   limit?: number;
 }
 
@@ -194,6 +196,24 @@ const getManagedProfilesServer = createServerFn({ method: "GET" })
     });
   });
 
+const getManagedProfilePageServer = createServerFn({ method: "GET" })
+  .validator((data: ManagedProfileListQuery) => data)
+  .handler(async ({ data }) => {
+    const page = data.page ?? 1;
+    const limit = data.limit ?? 20;
+    const response = await apiRequest<RemoteManagedProfile[]>(
+      appendQuery("/api/user/manage", {
+        sort: "desc",
+        sortBy: "createdAt",
+        ...data,
+        page,
+        limit,
+      }),
+    );
+
+    return toPaginatedResult(response.data, response.pagination, page, limit);
+  });
+
 const getManagedProfileByIdServer = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
@@ -250,6 +270,10 @@ const updateManagedProfileBanServer = createServerFn({ method: "POST" })
 
 export function getManagedProfiles(query: ManagedProfileListQuery = {}) {
   return getManagedProfilesServer({ data: query });
+}
+
+export function getManagedProfilePage(query: ManagedProfileListQuery = {}) {
+  return getManagedProfilePageServer({ data: query });
 }
 
 export function getManagedProfileById(id: string) {

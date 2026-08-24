@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult, type PaginationMeta } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -202,6 +203,10 @@ export interface RemoteBusinessDashboardData {
   overview: RemoteBusinessManageOverview | null;
 }
 
+export interface RemoteBusinessDashboardPageData extends RemoteBusinessDashboardData {
+  pagination: PaginationMeta;
+}
+
 export interface RemoteImageTokenInjectionOverview {
   totalInjectedTokenAmount?: number | null;
   totalInjectedTokenTransaction?: number | null;
@@ -211,6 +216,10 @@ export interface RemoteImageTokenInjectionOverview {
 export interface RemoteImageTokenInjectionDashboardData {
   histories: RemoteImageTokenInjection[];
   overview: RemoteImageTokenInjectionOverview | null;
+}
+
+export interface RemoteImageTokenInjectionDashboardPageData extends RemoteImageTokenInjectionDashboardData {
+  pagination: PaginationMeta;
 }
 
 export interface RemoteTokenProduct {
@@ -257,7 +266,7 @@ export interface CreateManagedBusinessPayload {
     description: string;
     name: string;
     primaryLogoUrl: string;
-    websiteUrl: string;
+    websiteUrl?: string;
     colorTone: string;
     businessPhone: string;
     countryCode: string;
@@ -291,6 +300,14 @@ export interface ImageTokenHistoryQuery {
   limit?: number;
 }
 
+export interface BusinessListQuery {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sort?: "asc" | "desc";
+  sortBy?: string;
+}
+
 export interface ImageTokenUsageQuery {
   businessRootId: string;
   dateStart?: string;
@@ -306,6 +323,7 @@ export interface ImageTokenInjectionHistoryQuery {
   dateEnd?: string;
   sort?: "asc" | "desc";
   sortBy?: string;
+  page?: number;
   limit?: number;
 }
 
@@ -434,6 +452,22 @@ async function getManagedBusinessesInternal() {
   });
 }
 
+async function getManagedBusinessPageInternal(query: BusinessListQuery = {}) {
+  const page = query.page ?? 1;
+  const limit = query.limit ?? 20;
+  const response = await apiRequest<RemoteManagedBusiness[]>(
+    appendQuery("/api/business/manage", {
+      sort: "desc",
+      sortBy: "id",
+      ...query,
+      page,
+      limit,
+    }),
+  );
+
+  return toPaginatedResult(response.data, response.pagination, page, limit);
+}
+
 async function getManagedBusinessByIdInternal(id: string) {
   const response = await apiRequest<RemoteManagedBusinessDetail>(
     `/api/business/manage/${encodeURIComponent(id)}`,
@@ -468,6 +502,24 @@ async function getImageTokenInjectionHistoriesInternal(
   );
 }
 
+async function getImageTokenInjectionHistoryPageInternal(
+  query: ImageTokenInjectionHistoryQuery = {},
+) {
+  const page = query.page ?? 1;
+  const limit = query.limit ?? 20;
+  const response = await apiRequest<RemoteImageTokenInjection[]>(
+    appendQuery("/api/generative-token/image-token/injection", {
+      sort: "desc",
+      sortBy: "id",
+      ...query,
+      page,
+      limit,
+    }),
+  );
+
+  return toPaginatedResult(response.data, response.pagination, page, limit);
+}
+
 async function getImageTokenInjectionOverviewInternal() {
   const response = await apiRequest<RemoteImageTokenInjectionOverview>(
     "/api/generative-token/image-token/injection/overview",
@@ -476,11 +528,9 @@ async function getImageTokenInjectionOverviewInternal() {
   return response.data;
 }
 
-async function getBusinessTokenOverviewsInternal() {
-  const businesses = (await getManagedBusinessesInternal()).filter(
-    (business) => business.id != null,
-  );
-  const missingStatusBusinesses = businesses.filter((business) => !business.tokenStatus);
+async function enrichBusinessTokenOverviews(businesses: RemoteManagedBusiness[]) {
+  const validBusinesses = businesses.filter((business) => business.id != null);
+  const missingStatusBusinesses = validBusinesses.filter((business) => !business.tokenStatus);
   const statusResults = await Promise.allSettled(
     missingStatusBusinesses.map((business) => getImageTokenStatusInternal(String(business.id))),
   );
@@ -491,11 +541,15 @@ async function getBusinessTokenOverviewsInternal() {
     }),
   );
 
-  return businesses.map<RemoteBusinessTokenOverview>((business) => ({
+  return validBusinesses.map<RemoteBusinessTokenOverview>((business) => ({
     business,
     detail: null,
     tokenStatus: business.tokenStatus ?? statusByBusinessId.get(String(business.id)) ?? null,
   }));
+}
+
+async function getBusinessTokenOverviewsInternal() {
+  return enrichBusinessTokenOverviews(await getManagedBusinessesInternal());
 }
 
 const getBusinessDashboardDataServer = createServerFn({ method: "GET" }).handler(async () => {
@@ -513,6 +567,25 @@ const getBusinessDashboardDataServer = createServerFn({ method: "GET" }).handler
     overview: overviewResult.status === "fulfilled" ? overviewResult.value : null,
   } satisfies RemoteBusinessDashboardData;
 });
+
+const getBusinessDashboardPageServer = createServerFn({ method: "GET" })
+  .validator((data: BusinessListQuery = {}) => data)
+  .handler(async ({ data }) => {
+    const [businessesResult, overviewResult] = await Promise.allSettled([
+      getManagedBusinessPageInternal(data),
+      getBusinessManageOverviewInternal(),
+    ]);
+
+    if (businessesResult.status === "rejected") {
+      throw businessesResult.reason;
+    }
+
+    return {
+      businesses: await enrichBusinessTokenOverviews(businessesResult.value.items),
+      overview: overviewResult.status === "fulfilled" ? overviewResult.value : null,
+      pagination: businessesResult.value.pagination,
+    } satisfies RemoteBusinessDashboardPageData;
+  });
 
 const getManagedBusinessByIdServer = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
@@ -601,6 +674,25 @@ const getImageTokenInjectionDashboardDataServer = createServerFn({ method: "GET"
     } satisfies RemoteImageTokenInjectionDashboardData;
   },
 );
+
+const getImageTokenInjectionDashboardPageServer = createServerFn({ method: "GET" })
+  .validator((data: ImageTokenInjectionHistoryQuery = {}) => data)
+  .handler(async ({ data }) => {
+    const [historiesResult, overviewResult] = await Promise.allSettled([
+      getImageTokenInjectionHistoryPageInternal(data),
+      getImageTokenInjectionOverviewInternal(),
+    ]);
+
+    if (historiesResult.status === "rejected") {
+      throw historiesResult.reason;
+    }
+
+    return {
+      histories: historiesResult.value.items.sort(sortByLatestCreatedAt),
+      overview: overviewResult.status === "fulfilled" ? overviewResult.value : null,
+      pagination: historiesResult.value.pagination,
+    } satisfies RemoteImageTokenInjectionDashboardPageData;
+  });
 
 const getImageTokenProductPriceServer = createServerFn({ method: "GET" }).handler(async () => {
   const response = await apiRequest<RemoteTokenProduct>(
@@ -815,6 +907,10 @@ export function getBusinessDashboardData() {
   return getBusinessDashboardDataServer();
 }
 
+export function getBusinessDashboardPage(query: BusinessListQuery = {}) {
+  return getBusinessDashboardPageServer({ data: query });
+}
+
 export function getManagedBusinessById(id: string) {
   return getManagedBusinessByIdServer({ data: { id } });
 }
@@ -841,6 +937,10 @@ export function getImageTokenInjectionHistoriesForBusinesses(businessRootIds: st
 
 export function getImageTokenInjectionDashboardData() {
   return getImageTokenInjectionDashboardDataServer();
+}
+
+export function getImageTokenInjectionDashboardPage(query: ImageTokenInjectionHistoryQuery = {}) {
+  return getImageTokenInjectionDashboardPageServer({ data: query });
 }
 
 export function getImageTokenProductPrice() {

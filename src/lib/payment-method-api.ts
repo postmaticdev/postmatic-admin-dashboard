@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
 import { ACCESS_TOKEN_HEADER, ACCESS_TOKEN_KEY, getAccessToken } from "@/lib/auth";
+import { toPaginatedResult, type PaginatedResult } from "@/lib/pagination";
 
 const API_ORIGIN =
   (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
@@ -43,6 +44,12 @@ export interface PaymentMethodPayload {
   adminFee: number;
   image?: string;
   isActive: boolean;
+}
+
+export interface PaymentMethodListQuery {
+  search?: string;
+  page?: number;
+  limit?: number;
 }
 
 function buildUrl(path: string) {
@@ -147,6 +154,24 @@ const getPaymentMethodsServer = createServerFn({ method: "GET" }).handler(async 
   });
 });
 
+const getPaymentMethodPageServer = createServerFn({ method: "GET" })
+  .validator((data: PaymentMethodListQuery) => data)
+  .handler(async ({ data }): Promise<PaginatedResult<RemotePaymentMethod>> => {
+    const page = data.page ?? 1;
+    const limit = data.limit ?? 20;
+    const response = await apiRequest<RemotePaymentMethod[]>(
+      appendQuery("/api/app/payment-method", {
+        search: data.search,
+        page,
+        limit,
+        sort: "desc",
+        sortBy: "id",
+      }),
+    );
+
+    return toPaginatedResult(response.data, response.pagination, page, limit);
+  });
+
 const getPaymentMethodByIdServer = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
@@ -197,6 +222,10 @@ const deletePaymentMethodServer = createServerFn({ method: "POST" })
 
 export function getPaymentMethods() {
   return getPaymentMethodsServer();
+}
+
+export function getPaymentMethodPage(query: PaymentMethodListQuery = {}) {
+  return getPaymentMethodPageServer({ data: query });
 }
 
 export function getPaymentMethodById(id: string) {

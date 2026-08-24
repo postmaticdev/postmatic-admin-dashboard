@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  getManagedProfiles,
+  getManagedProfilePage,
   updateManagedProfileBan,
   updateManagedProfileRole,
   type RemoteManagedProfile,
@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 const ACCOUNT_PROFILE_QUERY_KEY = ["account-management", "profiles"] as const;
 const ADMIN_QUERY_KEY = [...ACCOUNT_PROFILE_QUERY_KEY, "admin"] as const;
+const ACCOUNT_PAGE_SIZE = 20;
 
 function formatDate(value?: string | null) {
   if (!value) return new Date().toISOString().slice(0, 10);
@@ -68,10 +69,20 @@ export function AdminContainer() {
   const [roleRemovalAdmin, setRoleRemovalAdmin] = useState<AdminAccount | null>(null);
   const [updatingBanAdminId, setUpdatingBanAdminId] = useState<string | null>(null);
   const [removingRoleAdminId, setRemovingRoleAdminId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const adminsQuery = useQuery({
-    queryKey: ADMIN_QUERY_KEY,
-    queryFn: () => getManagedProfiles({ role: "admin" }),
+    queryKey: [...ADMIN_QUERY_KEY, { page: currentPage, search: deferredSearchQuery }] as const,
+    queryFn: () =>
+      getManagedProfilePage({
+        role: "admin",
+        search: deferredSearchQuery || undefined,
+        page: currentPage,
+        limit: ACCOUNT_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 
@@ -86,11 +97,26 @@ export function AdminContainer() {
 
   const admins = useMemo(
     () =>
-      (adminsQuery.data ?? [])
+      (adminsQuery.data?.items ?? [])
         .filter((profile) => (profile.role ?? "").toLowerCase() === "admin")
         .map(mapRemoteAdmin),
     [adminsQuery.data],
   );
+
+  const pagination = adminsQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: ACCOUNT_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   const invalidateProfiles = () =>
     queryClient.invalidateQueries({ queryKey: ACCOUNT_PROFILE_QUERY_KEY });
@@ -164,7 +190,10 @@ export function AdminContainer() {
 
       <AdminTableList
         items={admins}
+        searchQuery={searchQuery}
+        pagination={pagination}
         isLoading={adminsQuery.isLoading}
+        isPageChanging={adminsQuery.isFetching && !adminsQuery.isLoading}
         errorMessage={
           adminsQuery.isError
             ? getErrorMessage(adminsQuery.error, "Gagal memuat data admin.")
@@ -175,6 +204,11 @@ export function AdminContainer() {
         onToggleBan={handleToggleBan}
         onRemoveRole={setRoleRemovalAdmin}
         onRetry={() => adminsQuery.refetch()}
+        onSearchChange={(value) => {
+          setSearchQuery(value);
+          setCurrentPage(1);
+        }}
+        onPageChange={setCurrentPage}
       />
 
       {roleRemovalAdmin && (

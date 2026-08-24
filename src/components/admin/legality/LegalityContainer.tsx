@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createDocumentation,
@@ -6,7 +6,7 @@ import {
   deleteDocumentation,
   getDocumentationById,
   getDocumentationCategories,
-  getDocumentations,
+  getDocumentationPage,
   updateDocumentation,
   type DocumentationCategoryPayload,
   type DocumentationPayload,
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 const LEGALITY_QUERY_KEY = ["docs", "legality", "articles"] as const;
 const LEGALITY_CATEGORY_QUERY_KEY = ["docs", "legality", "categories"] as const;
+const LEGALITY_PAGE_SIZE = 20;
 
 function slugify(value: string, fallback: string) {
   const slug = value
@@ -118,10 +119,24 @@ export function LegalityContainer() {
   const [editingItem, setEditingItem] = useState<LegalityItem | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   const legalityQuery = useQuery({
-    queryKey: LEGALITY_QUERY_KEY,
-    queryFn: () => getDocumentations("legality"),
+    queryKey: [
+      ...LEGALITY_QUERY_KEY,
+      { category: selectedCategory, page: currentPage, search: deferredSearchQuery },
+    ] as const,
+    queryFn: () =>
+      getDocumentationPage("legality", {
+        search: deferredSearchQuery || undefined,
+        category: selectedCategory === "ALL" ? undefined : selectedCategory,
+        page: currentPage,
+        limit: LEGALITY_PAGE_SIZE,
+      }),
+    placeholderData: (previousData) => previousData,
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -147,8 +162,34 @@ export function LegalityContainer() {
 
   const items = useMemo(
     () =>
-      (legalityQuery.data ?? []).map((item, index) => mapRemoteLegality(item, index, categoryById)),
-    [categoryById, legalityQuery.data],
+      (legalityQuery.data?.items ?? []).map((item, index) =>
+        mapRemoteLegality(item, (currentPage - 1) * LEGALITY_PAGE_SIZE + index, categoryById),
+      ),
+    [categoryById, currentPage, legalityQuery.data],
+  );
+
+  const pagination = legalityQuery.data?.pagination ?? {
+    total: 0,
+    page: currentPage,
+    limit: LEGALITY_PAGE_SIZE,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: currentPage > 1,
+  };
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
+
+  const categoryOptions = useMemo(
+    () =>
+      categories.map((category) => ({
+        label: category.name?.trim() || category.slug?.trim() || String(category.id),
+        value: category.slug?.trim() || category.name?.trim() || String(category.id),
+      })),
+    [categories],
   );
 
   const existingMenuLabels = useMemo(() => {
@@ -326,7 +367,12 @@ export function LegalityContainer() {
       {viewMode === "list" ? (
         <LegalityTableList
           items={items}
+          searchQuery={searchQuery}
+          selectedCategory={selectedCategory}
+          categoryOptions={categoryOptions}
+          pagination={pagination}
           isLoading={legalityQuery.isLoading || categoriesQuery.isLoading}
+          isPageChanging={legalityQuery.isFetching && !legalityQuery.isLoading}
           errorMessage={
             legalityQuery.isError
               ? getErrorMessage(legalityQuery.error, "Gagal memuat dokumen legal.")
@@ -343,6 +389,15 @@ export function LegalityContainer() {
             void legalityQuery.refetch();
             void categoriesQuery.refetch();
           }}
+          onSearchChange={(value) => {
+            setSearchQuery(value);
+            setCurrentPage(1);
+          }}
+          onCategoryChange={(value) => {
+            setSelectedCategory(value);
+            setCurrentPage(1);
+          }}
+          onPageChange={setCurrentPage}
         />
       ) : (
         <LegalityFormView

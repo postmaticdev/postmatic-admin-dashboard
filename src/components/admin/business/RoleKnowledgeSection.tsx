@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Edit3, Hash, Loader2, MessageCircle, Save, Users } from "lucide-react";
+import { CircleAlert, Edit3, Hash, Loader2, MessageCircle, Save, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ import {
   upsertManagedBusinessRoleKnowledge,
   type RemoteBusinessRoleKnowledge,
 } from "@/lib/business-api";
+import { BusinessHashtagInput } from "./BusinessHashtagInput";
+import { normalizeHashtags } from "./business-hashtag-utils";
 import { getErrorMessage } from "./mappers";
 
 interface RoleKnowledgeSectionProps {
@@ -30,18 +32,16 @@ export function RoleKnowledgeSection({ businessId, role, onChanged }: RoleKnowle
   const [isOpen, setIsOpen] = useState(false);
   const [targetAudience, setTargetAudience] = useState("");
   const [tone, setTone] = useState("");
-  const [hashtags, setHashtags] = useState("");
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [hashtagInput, setHashtagInput] = useState("");
+  const [hashtagError, setHashtagError] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (submittedHashtags: string[]) =>
       upsertManagedBusinessRoleKnowledge(businessId, {
         targetAudience: targetAudience.trim(),
         tone: tone.trim(),
-        hashtags: hashtags
-          .split(/[,\n]/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .map((item) => (item.startsWith("#") ? item : `#${item}`)),
+        hashtags: submittedHashtags,
       }),
     onSuccess: () => {
       toast.success("Role knowledge berhasil diperbarui.");
@@ -56,7 +56,9 @@ export function RoleKnowledgeSection({ businessId, role, onChanged }: RoleKnowle
   const openEditor = () => {
     setTargetAudience(role?.targetAudience ?? "");
     setTone(role?.tone ?? "");
-    setHashtags(role?.hashtags?.join(", ") ?? "");
+    setHashtags(normalizeHashtags(role?.hashtags ?? []));
+    setHashtagInput("");
+    setHashtagError("");
     setIsOpen(true);
   };
 
@@ -129,11 +131,19 @@ export function RoleKnowledgeSection({ businessId, role, onChanged }: RoleKnowle
             className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!targetAudience.trim() || !tone.trim()) {
-                toast.error("Target audience dan content tone wajib diisi.");
+              const submittedHashtags = normalizeHashtags([...hashtags, hashtagInput]);
+              if (!targetAudience.trim() || !tone.trim() || submittedHashtags.length === 0) {
+                setHashtagError(
+                  submittedHashtags.length === 0 ? "Tambahkan minimal satu hashtag." : "",
+                );
+                toast.error("Target audience, content tone, dan hashtag wajib diisi.");
                 return;
               }
-              mutation.mutate();
+
+              setHashtags(submittedHashtags);
+              setHashtagInput("");
+              setHashtagError("");
+              mutation.mutate(submittedHashtags);
             }}
           >
             <div className="space-y-2">
@@ -155,13 +165,23 @@ export function RoleKnowledgeSection({ businessId, role, onChanged }: RoleKnowle
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Hashtags</label>
-              <Textarea
+              <BusinessHashtagInput
                 value={hashtags}
-                onChange={(event) => setHashtags(event.target.value)}
-                placeholder="#Brand, #Produk, #Indonesia"
-                rows={3}
+                onChange={(value) => {
+                  setHashtags(value);
+                  setHashtagError("");
+                }}
+                draft={hashtagInput}
+                onDraftChange={setHashtagInput}
+                disabled={mutation.isPending}
+                invalid={Boolean(hashtagError)}
               />
-              <p className="text-xs text-muted-foreground">Pisahkan hashtag dengan koma.</p>
+              {hashtagError && (
+                <p className="flex items-center gap-1.5 text-xs text-destructive">
+                  <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+                  {hashtagError}
+                </p>
+              )}
             </div>
 
             <DialogFooter>

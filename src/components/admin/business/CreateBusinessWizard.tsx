@@ -1,16 +1,7 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  Loader2,
-  Plus,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,8 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { createManagedBusiness, type CreateManagedBusinessPayload } from "@/lib/business-api";
 import { cn } from "@/lib/utils";
 
+import {
+  BusinessCategorySelect,
+  CurrencySelect,
+  ProductCategorySelect,
+} from "./BusinessFormSelects";
+import { BusinessHashtagInput } from "./BusinessHashtagInput";
+import { BusinessPriceInput } from "./BusinessPriceInput";
 import { CountryCodeSelect } from "./CountryCodeSelect";
 import { ImageUploadField } from "./ImageUploadField";
+import { normalizeHashtags } from "./business-hashtag-utils";
 import { getErrorMessage } from "./mappers";
 
 const BUSINESS_QUERY_KEY = ["workspace", "businesses"] as const;
@@ -43,21 +42,6 @@ const steps = [
     imageUrl: "/roleknowledge.PNG",
   },
 ] as const;
-
-const businessCategories = [
-  "Technology",
-  "Information Technology",
-  "Food & Beverage",
-  "Retail & E-commerce",
-  "Finance & Banking",
-  "Healthcare",
-  "Education",
-  "Logistics & Supply Chain",
-  "Manufacturing",
-  "Other",
-];
-
-const currencies = ["IDR", "USD", "SGD", "MYR"];
 
 type FormErrors = Record<string, string>;
 
@@ -99,10 +83,6 @@ function colorInputValue(value: string) {
   return /^[0-9A-F]{6}$/.test(value) ? `#${value}` : "#3B82F6";
 }
 
-function normalizeHashtag(value: string) {
-  return value.trim().replace(/^#+/, "").replace(/\s+/g, "");
-}
-
 function isValidUrl(value: string) {
   try {
     const url = new URL(value);
@@ -119,7 +99,7 @@ export function CreateBusinessWizard() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [knowledge, setKnowledge] = useState({
     name: "",
-    category: "Technology",
+    category: "",
     primaryLogoUrl: "",
     description: "",
     websiteUrl: "",
@@ -182,26 +162,6 @@ export function CreateBusinessWizard() {
     clearError(`role.${key}`);
   };
 
-  const addHashtags = (rawValues: string[]) => {
-    const values = rawValues.map(normalizeHashtag).filter(Boolean);
-    if (values.length === 0) return role.hashtags;
-
-    const next = Array.from(new Set([...role.hashtags, ...values]));
-    setRole((current) => ({ ...current, hashtags: next }));
-    setHashtagInput("");
-    clearError("role.hashtags");
-    return next;
-  };
-
-  const commitHashtagInput = () => addHashtags(hashtagInput.split(/[\s,]+/));
-
-  const removeHashtag = (hashtag: string) => {
-    setRole((current) => ({
-      ...current,
-      hashtags: current.hashtags.filter((item) => item !== hashtag),
-    }));
-  };
-
   const validateStep = (step: number, submittedHashtags = role.hashtags) => {
     const nextErrors: FormErrors = {};
 
@@ -211,9 +171,7 @@ export function CreateBusinessWizard() {
       if (!knowledge.name.trim()) nextErrors.name = "Nama brand wajib diisi.";
       if (!knowledge.category.trim()) nextErrors.category = "Kategori business wajib dipilih.";
       if (!knowledge.description.trim()) nextErrors.description = "Deskripsi business wajib diisi.";
-      if (!knowledge.websiteUrl.trim()) {
-        nextErrors.websiteUrl = "Website wajib diisi.";
-      } else if (!isValidUrl(knowledge.websiteUrl.trim())) {
+      if (knowledge.websiteUrl.trim() && !isValidUrl(knowledge.websiteUrl.trim())) {
         nextErrors.websiteUrl = "Gunakan URL website yang valid.";
       }
       if (!knowledge.businessPhone.trim()) nextErrors.businessPhone = "Nomor telepon wajib diisi.";
@@ -256,6 +214,7 @@ export function CreateBusinessWizard() {
   };
 
   const submitBusiness = (submittedHashtags: string[]) => {
+    const websiteUrl = knowledge.websiteUrl.trim();
     const payload: CreateManagedBusinessPayload = {
       ownerEmail: ownerEmail.trim(),
       knowledge: {
@@ -263,7 +222,7 @@ export function CreateBusinessWizard() {
         description: knowledge.description.trim(),
         name: knowledge.name.trim(),
         primaryLogoUrl: knowledge.primaryLogoUrl.trim(),
-        websiteUrl: knowledge.websiteUrl.trim(),
+        ...(websiteUrl ? { websiteUrl } : {}),
         colorTone: knowledge.colorTone,
         businessPhone: knowledge.businessPhone.trim(),
         countryCode: knowledge.countryCode.replace(/\D/g, ""),
@@ -298,19 +257,9 @@ export function CreateBusinessWizard() {
       return;
     }
 
-    const submittedHashtags = hashtagInput.trim()
-      ? Array.from(
-          new Set([
-            ...role.hashtags,
-            ...hashtagInput
-              .split(/[\s,]+/)
-              .map(normalizeHashtag)
-              .filter(Boolean),
-          ]),
-        )
-      : role.hashtags;
+    const submittedHashtags = normalizeHashtags([...role.hashtags, hashtagInput]);
 
-    if (submittedHashtags.length !== role.hashtags.length) {
+    if (hashtagInput.trim()) {
       setRole((current) => ({ ...current, hashtags: submittedHashtags }));
       setHashtagInput("");
     }
@@ -326,13 +275,6 @@ export function CreateBusinessWizard() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     handleNext();
-  };
-
-  const handleHashtagKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (["Enter", ",", " "].includes(event.key)) {
-      event.preventDefault();
-      commitHashtagInput();
-    }
   };
 
   const handleCancel = () => {
@@ -402,19 +344,13 @@ export function CreateBusinessWizard() {
                     </Field>
 
                     <Field id="business-category" label="Kategori Bisnis" error={errors.category}>
-                      <select
+                      <BusinessCategorySelect
                         id="business-category"
                         value={knowledge.category}
-                        onChange={(event) => updateKnowledge("category", event.target.value)}
+                        onChange={(value) => updateKnowledge("category", value)}
                         disabled={isSubmitting}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {businessCategories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
+                        invalid={Boolean(errors.category)}
+                      />
                     </Field>
                   </div>
                 </div>
@@ -431,7 +367,12 @@ export function CreateBusinessWizard() {
                   />
                 </Field>
 
-                <Field id="business-website" label="Website" error={errors.websiteUrl}>
+                <Field
+                  id="business-website"
+                  label="Website"
+                  error={errors.websiteUrl}
+                  required={false}
+                >
                   <Input
                     id="business-website"
                     type="url"
@@ -533,12 +474,12 @@ export function CreateBusinessWizard() {
                       label="Kategori Produk"
                       error={errors["product.category"]}
                     >
-                      <Input
+                      <ProductCategorySelect
                         id="product-category"
                         value={product.category}
-                        onChange={(event) => updateProduct("category", event.target.value)}
-                        placeholder="Contoh: Product Digital"
+                        onChange={(value) => updateProduct("category", value)}
                         disabled={isSubmitting}
+                        invalid={Boolean(errors["product.category"])}
                       />
                     </Field>
                   </div>
@@ -562,31 +503,24 @@ export function CreateBusinessWizard() {
 
                 <div className="grid gap-5 sm:grid-cols-[140px_minmax(0,1fr)]">
                   <Field id="product-currency" label="Mata Uang" error={errors["product.currency"]}>
-                    <select
+                    <CurrencySelect
                       id="product-currency"
                       value={product.currency}
-                      onChange={(event) => updateProduct("currency", event.target.value)}
+                      onChange={(value) => updateProduct("currency", value)}
                       disabled={isSubmitting}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {currencies.map((currency) => (
-                        <option key={currency} value={currency}>
-                          {currency}
-                        </option>
-                      ))}
-                    </select>
+                      invalid={Boolean(errors["product.currency"])}
+                    />
                   </Field>
 
                   <Field id="product-price" label="Harga" error={errors["product.price"]}>
-                    <Input
+                    <BusinessPriceInput
                       id="product-price"
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={product.price}
-                      onChange={(event) => updateProduct("price", event.target.value)}
+                      value={Number(product.price) || 0}
+                      onChange={(value) => updateProduct("price", value > 0 ? String(value) : "")}
+                      currency={product.currency}
                       placeholder="350000"
                       disabled={isSubmitting}
+                      invalid={Boolean(errors["product.price"])}
                     />
                   </Field>
                 </div>
@@ -620,53 +554,18 @@ export function CreateBusinessWizard() {
                 </Field>
 
                 <Field id="business-hashtag" label="Hashtags" error={errors["role.hashtags"]}>
-                  <div className="flex gap-2">
-                    <Input
-                      id="business-hashtag"
-                      value={hashtagInput}
-                      onChange={(event) => setHashtagInput(event.target.value)}
-                      onKeyDown={handleHashtagKeyDown}
-                      onPaste={(event) => {
-                        const text = event.clipboardData.getData("text");
-                        if (!/[\s,]/.test(text)) return;
-                        event.preventDefault();
-                        addHashtags(text.split(/[\s,]+/));
-                      }}
-                      placeholder="Ketik hashtag lalu tekan Enter"
-                      disabled={isSubmitting}
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      onClick={commitHashtagInput}
-                      disabled={isSubmitting || !hashtagInput.trim()}
-                      title="Tambahkan hashtag"
-                      className="shrink-0"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {role.hashtags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {role.hashtags.map((hashtag) => (
-                        <span
-                          key={hashtag}
-                          className="inline-flex items-center gap-1 rounded bg-blue-500/10 px-2 py-1 text-sm text-blue-700 dark:text-blue-300"
-                        >
-                          #{hashtag}
-                          <button
-                            type="button"
-                            onClick={() => removeHashtag(hashtag)}
-                            disabled={isSubmitting}
-                            title={`Hapus hashtag ${hashtag}`}
-                            className="rounded-sm p-0.5 transition-colors hover:bg-blue-500/15"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <BusinessHashtagInput
+                    id="business-hashtag"
+                    value={role.hashtags}
+                    onChange={(hashtags) => {
+                      setRole((current) => ({ ...current, hashtags }));
+                      clearError("role.hashtags");
+                    }}
+                    draft={hashtagInput}
+                    onDraftChange={setHashtagInput}
+                    disabled={isSubmitting}
+                    invalid={Boolean(errors["role.hashtags"])}
+                  />
                 </Field>
 
                 <div className="border-t border-border pt-5">

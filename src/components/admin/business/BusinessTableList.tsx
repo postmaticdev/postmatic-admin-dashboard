@@ -16,12 +16,25 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
+
 interface BusinessTableListProps {
   items: BusinessAccount[];
+  searchQuery: string;
+  pagination: PaginationMeta;
+  summary: {
+    totalBusiness: number;
+    paidBusiness: number;
+    freeBusiness: number;
+  };
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   onEdit: (item: BusinessAccount) => void;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
 }
 
 // Format number with thousand separator
@@ -161,24 +174,20 @@ function BusinessDetailModal({
 
 export function BusinessTableList({
   items,
+  searchQuery,
+  pagination,
+  summary,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   onEdit,
   onRetry,
+  onSearchChange,
+  onPageChange,
 }: BusinessTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessAccount | null>(null);
 
-  const filtered = items.filter(
-    (b) =>
-      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.category.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
-  const totalBusiness = items.length;
-  const paidBusiness = items.filter((b) => b.status === "Paid").length;
-  const freeBusiness = items.filter((b) => b.status === "Free").length;
+  const { totalBusiness, paidBusiness, freeBusiness } = summary;
 
   return (
     <>
@@ -233,11 +242,11 @@ export function BusinessTableList({
             type="text"
             placeholder="Cari nama bisnis, owner, atau kategori..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} business</span>
+        <span className="text-xs text-muted-foreground">{pagination.total} business</span>
       </div>
 
       {/* Table */}
@@ -286,7 +295,7 @@ export function BusinessTableList({
                     </div>
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
@@ -296,7 +305,7 @@ export function BusinessTableList({
                   </td>
                 </tr>
               ) : (
-                filtered.map((business) => (
+                items.map((business) => (
                   <tr
                     key={business.id}
                     onClick={() => setSelectedBusiness(business)}
@@ -358,10 +367,12 @@ export function BusinessTableList({
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 text-xs text-muted-foreground">
-          Menampilkan <strong>{filtered.length}</strong> dari <strong>{items.length}</strong>{" "}
-          business
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="business"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {/* Business Detail Modal */}

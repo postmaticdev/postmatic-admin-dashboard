@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { PaymentMethodItem } from "./types";
 import { formatIDR } from "./utils";
 import { ImageTokenPricePanel } from "./ImageTokenPricePanel";
+import { TablePagination } from "@/components/ui/table-pagination";
+import type { PaginationMeta } from "@/lib/pagination";
 import {
   Plus,
   Edit3,
@@ -17,7 +19,10 @@ import {
 
 interface PaymentTableListProps {
   items: PaymentMethodItem[];
+  searchQuery: string;
+  pagination: PaginationMeta;
   isLoading?: boolean;
+  isPageChanging?: boolean;
   errorMessage?: string;
   loadingDetailId?: string | null;
   togglingStatusId?: string | null;
@@ -25,6 +30,8 @@ interface PaymentTableListProps {
   onEdit: (item: PaymentMethodItem) => void;
   onToggleStatus: (id: string) => void;
   onRetry?: () => void;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
 }
 
 function TableRow({
@@ -238,7 +245,10 @@ function PaymentDetailModal({
 
 export function PaymentTableList({
   items,
+  searchQuery,
+  pagination,
   isLoading = false,
+  isPageChanging = false,
   errorMessage,
   loadingDetailId,
   togglingStatusId,
@@ -246,13 +256,10 @@ export function PaymentTableList({
   onEdit,
   onToggleStatus,
   onRetry,
+  onSearchChange,
+  onPageChange,
 }: PaymentTableListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethodItem | null>(null);
-
-  const filtered = items.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
 
   return (
     <div className="space-y-6">
@@ -293,7 +300,7 @@ export function PaymentTableList({
             type="text"
             placeholder="Cari metode pembayaran..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
@@ -343,14 +350,14 @@ export function PaymentTableList({
                     </div>
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-muted-foreground">
                     Metode pembayaran tidak ditemukan.
                   </td>
                 </tr>
               ) : (
-                filtered.map((item) => (
+                items.map((item) => (
                   <TableRow
                     key={item.id}
                     item={item}
@@ -365,6 +372,12 @@ export function PaymentTableList({
             </tbody>
           </table>
         </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="payment method"
+          onPageChange={onPageChange}
+          disabled={isPageChanging}
+        />
       </div>
 
       {/* Detail Modal */}

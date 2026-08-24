@@ -15,6 +15,9 @@ import {
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const VOUCHER_PAGE_SIZE = 20;
 
 interface VoucherTableListProps {
   items: VoucherItem[];
@@ -83,15 +86,22 @@ function TableRow({
 
       <td className="py-4 px-4 min-w-[200px]">
         <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-          <span>Min Order: <span className="font-medium text-foreground">{formatIDR(item.minOrder)}</span></span>
-          <span>Max Discount: <span className="font-medium text-foreground">{item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}</span></span>
+          <span>
+            Min Order:{" "}
+            <span className="font-medium text-foreground">{formatIDR(item.minOrder)}</span>
+          </span>
+          <span>
+            Max Discount:{" "}
+            <span className="font-medium text-foreground">
+              {item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}
+            </span>
+          </span>
         </div>
       </td>
 
       <td className="py-4 px-4 whitespace-nowrap">
         <span className="inline-flex min-w-14 justify-center rounded-md border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
-          {item.totalUsage.toLocaleString("id-ID")}/
-          {item.maxUsage.toLocaleString("id-ID")}
+          {item.totalUsage.toLocaleString("id-ID")}/{item.maxUsage.toLocaleString("id-ID")}
         </span>
       </td>
 
@@ -111,7 +121,10 @@ function TableRow({
         </div>
       </td>
 
-      <td className="py-4 pr-4 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+      <td
+        className="py-4 pr-4 pl-3 text-right whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
@@ -161,13 +174,16 @@ function VoucherDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="h-20 bg-gradient-to-br from-blue-500/20 via-blue-500/10 to-transparent" />
-        
+
         <button
           type="button"
           onClick={onClose}
@@ -179,13 +195,19 @@ function VoucherDetailModal({
         <div className="px-6 pb-6 pt-6 space-y-4 text-left">
           <div>
             <h3 className="text-base font-bold text-foreground leading-tight">{item.name}</h3>
-            <span className="text-[10px] text-muted-foreground mt-0.5 block">Kupon Diskon Platform</span>
+            <span className="text-[10px] text-muted-foreground mt-0.5 block">
+              Kupon Diskon Platform
+            </span>
           </div>
 
           <div className="p-3 bg-muted/40 border border-border/50 rounded-xl flex items-center justify-between">
             <div>
-              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide block">Kode Kupon</span>
-              <span className="text-sm font-extrabold text-foreground tracking-wider font-mono">{item.code}</span>
+              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide block">
+                Kode Kupon
+              </span>
+              <span className="text-sm font-extrabold text-foreground tracking-wider font-mono">
+                {item.code}
+              </span>
             </div>
             <button
               onClick={() => handleCopy(item.code)}
@@ -198,13 +220,19 @@ function VoucherDetailModal({
           <div className="border-t border-border/60 pt-4 space-y-3.5">
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Nilai Diskon</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Nilai Diskon
+                </span>
                 <span className="text-sm font-extrabold text-violet-600 dark:text-violet-400 mt-1 block">
-                  {item.type === "Percentage" ? `${item.discountValue}%` : formatIDR(item.discountValue)}
+                  {item.type === "Percentage"
+                    ? `${item.discountValue}%`
+                    : formatIDR(item.discountValue)}
                 </span>
               </div>
               <div className="p-3 bg-muted/30 border border-border/50 rounded-xl">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">Tipe Diskon</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                  Tipe Diskon
+                </span>
                 <span className="text-sm font-semibold text-foreground mt-1 block">
                   {item.type}
                 </span>
@@ -218,18 +246,23 @@ function VoucherDetailModal({
               </div>
               <div className="flex items-center justify-between">
                 <span>Maksimal Diskon</span>
-                <span className="font-semibold text-foreground">{item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}</span>
+                <span className="font-semibold text-foreground">
+                  {item.maxDiscount ? formatIDR(item.maxDiscount) : "Tidak Ada"}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Telah Digunakan</span>
                 <span className="font-semibold text-foreground">
-                  {item.totalUsage.toLocaleString("id-ID")}/
-                  {item.maxUsage.toLocaleString("id-ID")}
+                  {item.totalUsage.toLocaleString("id-ID")}/{item.maxUsage.toLocaleString("id-ID")}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Masa Berlaku</span>
-                <span className="font-semibold text-foreground">{item.startDate} &rarr; {item.endDate || "Unlimited"}</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" /> Masa Berlaku
+                </span>
+                <span className="font-semibold text-foreground">
+                  {item.startDate} &rarr; {item.endDate || "Unlimited"}
+                </span>
               </div>
               <div className="flex items-center justify-between border-t border-border/30 pt-2">
                 <span>Status</span>
@@ -252,7 +285,8 @@ function VoucherDetailModal({
               onClick={onEdit}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
             >
-              <Edit3 className="h-3.5 w-3.5" />Edit Voucher
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Voucher
             </button>
             <button
               type="button"
@@ -277,6 +311,7 @@ export function VoucherTableList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("ALL");
   const [selectedVoucher, setSelectedVoucher] = useState<VoucherItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const statusCategories = ["ALL", "Active", "Inactive"];
 
@@ -285,11 +320,24 @@ export function VoucherTableList({
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.code.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus =
-      selectedStatusFilter === "ALL" || item.status === selectedStatusFilter;
+    const matchesStatus = selectedStatusFilter === "ALL" || item.status === selectedStatusFilter;
 
     return matchesSearch && matchesStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / VOUCHER_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const pagedItems = filteredItems.slice(
+    (activePage - 1) * VOUCHER_PAGE_SIZE,
+    activePage * VOUCHER_PAGE_SIZE,
+  );
+  const pagination = {
+    total: filteredItems.length,
+    page: activePage,
+    limit: VOUCHER_PAGE_SIZE,
+    totalPages,
+    hasNextPage: activePage < totalPages,
+    hasPrevPage: activePage > 1,
+  };
 
   return (
     <div className="space-y-6">
@@ -301,13 +349,9 @@ export function VoucherTableList({
                 <Wallet className="h-3.5 w-3.5" />
                 Discount
               </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                Workspace / Voucher
-              </span>
+              <span className="text-xs text-muted-foreground font-mono">Workspace / Voucher</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Voucher Manager
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Voucher Manager</h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
               Kelola voucher diskon untuk pengguna platform Postmatic.
             </p>
@@ -333,7 +377,10 @@ export function VoucherTableList({
             type="text"
             placeholder="Cari nama atau kode voucher..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
         </div>
@@ -345,7 +392,10 @@ export function VoucherTableList({
           </div>
           <select
             value={selectedStatusFilter}
-            onChange={(e) => setSelectedStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setSelectedStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-3 py-2 text-xs font-medium bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
             {statusCategories.map((cat) => (
@@ -360,53 +410,50 @@ export function VoucherTableList({
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-[1120px] w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-xs font-semibold text-muted-foreground">
-              <th className="py-3 px-4">Nama Voucher</th>
-              <th className="py-3 px-4">Kode Voucher</th>
-              <th className="py-3 px-4">Tanggal Kedaluwarsa</th>
-              <th className="py-3 px-4">Nilai Diskon</th>
-              <th className="py-3 px-4">Ketentuan Diskon</th>
-              <th className="py-3 px-4">Telah Digunakan</th>
-              <th className="py-3 px-4">Status</th>
-              <th className="py-3 pr-4 pl-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <Wallet className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-sm font-medium">
-                      Tidak ada voucher yang ditemukan.
-                    </p>
-                    <p className="text-xs text-muted-foreground/80">
-                      Coba sesuaikan filter atau klik &quot;Create New Voucher&quot;.
-                    </p>
-                  </div>
-                </td>
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-xs font-semibold text-muted-foreground">
+                <th className="py-3 px-4">Nama Voucher</th>
+                <th className="py-3 px-4">Kode Voucher</th>
+                <th className="py-3 px-4">Tanggal Kedaluwarsa</th>
+                <th className="py-3 px-4">Nilai Diskon</th>
+                <th className="py-3 px-4">Ketentuan Diskon</th>
+                <th className="py-3 px-4">Telah Digunakan</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 pr-4 pl-3 text-right">Action</th>
               </tr>
-            ) : (
-              filteredItems.map((item) => (
-                <TableRow
-                  key={item.id}
-                  item={item}
-                  onEdit={onEdit}
-                  onToggleStatus={onToggleStatus}
-                  onRowClick={() => setSelectedVoucher(item)}
-                />
-              ))
-            )}
-          </tbody>
+            </thead>
+            <tbody>
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Wallet className="h-8 w-8 text-muted-foreground/50" />
+                      <p className="text-sm font-medium">Tidak ada voucher yang ditemukan.</p>
+                      <p className="text-xs text-muted-foreground/80">
+                        Coba sesuaikan filter atau klik &quot;Create New Voucher&quot;.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                pagedItems.map((item) => (
+                  <TableRow
+                    key={item.id}
+                    item={item}
+                    onEdit={onEdit}
+                    onToggleStatus={onToggleStatus}
+                    onRowClick={() => setSelectedVoucher(item)}
+                  />
+                ))
+              )}
+            </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 bg-muted/20 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Menampilkan <strong>{filteredItems.length}</strong> dari{" "}
-            <strong>{items.length}</strong> voucher
-          </span>
-        </div>
+        <TablePagination
+          pagination={pagination}
+          itemLabel="voucher"
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Voucher Detail Modal */}
@@ -414,7 +461,10 @@ export function VoucherTableList({
         <VoucherDetailModal
           item={selectedVoucher}
           onClose={() => setSelectedVoucher(null)}
-          onEdit={() => { onEdit(selectedVoucher); setSelectedVoucher(null); }}
+          onEdit={() => {
+            onEdit(selectedVoucher);
+            setSelectedVoucher(null);
+          }}
         />
       )}
     </div>
